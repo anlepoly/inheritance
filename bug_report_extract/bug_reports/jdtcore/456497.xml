@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>456497</bug_id>
+          
+          <creation_ts>2015-01-01 17:51:00 -0500</creation_ts>
+          <short_desc>[1.8][null] during inference nullness from target type is lost against weaker hint from applicability analysis</short_desc>
+          <delta_ts>2015-01-28 23:31:29 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2501442</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-01 17:51:41 -0500</bug_when>
+    <thetext>While merging tests from the feature branch for Bug 440477 with master, I&apos;m observing a slight regression in how null hints are used during inference (its ExternalAnnotations18Test.testLibs1()).
+
+//---
+import java.util.Collection;
+import java.util.Iterator;
+import org.eclipse.jdt.annotation.*;
+
+public interface Lib1 {
+	&lt;T&gt; Iterator&lt;T&gt; unconstrainedTypeArguments1(Collection&lt;@Nullable T&gt; in);
+}
+//---
+import org.eclipse.jdt.annotation.*;
+
+import java.util.Collection;
+import java.util.Iterator;
+
+public class Test1 {
+	Iterator&lt;@NonNull String&gt; test1(Lib1 lib, Collection&lt;@Nullable String&gt; coll) {
+		return lib.unconstrainedTypeArguments1(coll);
+	}
+}
+//---
+
+In HEAD, the call to unconstrainedTypeArguments1() is inferred as returning @Iterator&lt;@Nullable String&gt;, ignoring the @NonNull annotation in the target type.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501443</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-01 18:04:40 -0500</bug_when>
+    <thetext>Reason: during applicability analysis we get &quot;T#0 = @Nullable String&quot;. During invocation type inference we try to add &quot;T#0 = @NonNull String&quot; but already finding a type bound involving the same naked types this addition has no effect.
+
+OTOH, we don&apos;t want to blindly overwrite the @Nullable hint, but the first type bound could actually be ..
+- created as &quot;@Nullable T#0 = @Nullable String&quot;
+- &apos;reduced&apos; to &quot;T#0 = String&quot;
+Leaving enough leeway for adding the @NonNull hint later.
+
+Creating the mentioned type bound requires that InferenceSubstitution keeps the @Nullable in Collection&lt;@Nullable T&gt; when replacing T with T#0.
+
+With these changes events go like this:
+
+- initial constraint is 
+     coll  Collection&lt;T#0&gt;
+- reduction creates this type bound:
+     @Nullable T#0 = @Nullable String
+- &apos;reduced&apos; to
+     T#0 = String
+- invocation type inference adds
+     Iterator&lt;T#0&gt;  Iterator&lt;@NonNull String&gt;
+     T#0 = @NonNull String
+- during addBound() we add a tagBit from the RHS, regardless if we are actually adding a type bound or not.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501495</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-02 06:37:38 -0500</bug_when>
+    <thetext>Summarizing the changes:
+
+1. InferenceSubstitution keeps null annotations before a type variable, instead of squashing their effect into IV#nullHints, thus enabling (2) to happen.
+
+2. TypeBounds of shape &quot;@N T#0 :&gt;=&lt;: @N Right&quot; are implicitly reduced to &quot;T#0 :&gt;=&lt;: Right&quot; (for all releations).
+
+3. TypeBounds of shapes other than (2) implicitly propagate null-bits from Right to the LHS IV, respecting the bound&apos;s relation.
+
+4. Extra safety in BoundSet.setInstantiation(): retract existing type annotation if a contradiction is detected (previously a random annotation could theoretically bypass the accumulated computation - not seen in tests, though).
+
+
+Debugging revealed two bugs in TypeSystem/CaptureBinding to the effect that TypeSystem.getUnannotatedType() could answer a CaptureBinding even with contradictory null annotations, instead of none.
+Problem 1: CaptureBinding.&lt;init&gt; could initialize #id twice: once during the super(..) call and once via TypeSystem.cacheDerivedType().
+Problem 2: TypeSystem.getCapturedWildcard() would register the same CaptureBinding still one more time (assigning a new id!!).
+Both problems are fixed in the patch.
+
+Two existing tests now infer a slightly better solution, like in:
+  &lt;X&gt; X m(@Nullable X a) { return null; }
+  @NonNull String s = m(in);
+where X can now be inferred as &apos;@NonNull String&apos; and still the argument of m is instantiated as &apos;@Nullable String&apos;.
+These tests actually follow a similar pattern as the case in comment 0.
+
+Released for 4.5 M5 via commit b035f7a4c467249c63cc869fd5f75e4bad8cf303</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511740</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-28 23:31:29 -0500</bug_when>
+    <thetext>Verified for 4.5 M5 with build I20150127-0900</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

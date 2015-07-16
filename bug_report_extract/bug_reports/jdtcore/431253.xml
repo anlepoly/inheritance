@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>431253</bug_id>
+          
+          <creation_ts>2014-03-26 11:31:00 -0400</creation_ts>
+          <short_desc>Test org.eclipse.jdt.apt.tests.ReadAnnotationTests.test1() failing</short_desc>
+          <delta_ts>2014-04-29 03:56:47 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jay Arthanareeswaran">jarthana</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2380513</commentid>
+    <comment_count>0</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-03-26 11:31:42 -0400</bug_when>
+    <thetext>Test org.eclipse.jdt.apt.tests.ReadAnnotationTests.test1() is failing, the results being here:
+
+http://download.eclipse.org/eclipse/downloads/drops4/N20140325-2000/testresults/html/org.eclipse.jdt.apt.tests_macosx.cocoa.x86_64_7.0.html
+
+The testcase involved is: /org.eclipse.jdt.apt.tests/src-resources/question/AnnotationTest.java
+
+Expected value for one of the annotations used is:
+
+@RTVisibleAnno(name = Foundation, boolValue = false, byteValue = 16, charValue = c, doubleValue = 99.0, floatValue = 9.0, intValue = 999, longValue = 3333, shortValue = 3, colors = {RED, BLUE}, anno = @SimpleAnnotation(value = core), simpleAnnos = {@SimpleAnnotation(value = org), @SimpleAnnotation(value = eclipse), @SimpleAnnotation(value = jdt)}, clazzes = {java.lang.Object, java.lang.String}, clazz = java.lang.Object)
+
+But actual is:
+@RTVisibleAnno(name = Foundation, boolValue = false, byteValue = 16, charValue = c, doubleValue = 99.0, floatValue = 9.0, intValue = 999, longValue = 3333, shortValue = 3, colors = {}, anno = @SimpleAnnotation(value = core), simpleAnnos = {@SimpleAnnotation(value = org), @SimpleAnnotation(value = eclipse), @SimpleAnnotation(value = jdt)}, clazzes = {java.lang.Object, java.lang.String}, clazz = java.lang.Object)
+
+Notice the attribute &apos;colors&apos; being an empty array. Investigated a bit and found out that in the failing case, the ElementValuePair#value is a UnresolvedEnumConstant. Back in the history when it was passing, it was a FieldBinding.
+
+And this is a very recent regression caused by this commit:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=43cdae5117454d896e9e9cf435f63b0b509e3a4c
+
+Stephan, please let me know if you have some clues on what might be happening.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2381644</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-28 08:58:30 -0400</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #0)
+&gt; Notice the attribute &apos;colors&apos; being an empty array. Investigated a bit and
+&gt; found out that in the failing case, the ElementValuePair#value is a
+&gt; UnresolvedEnumConstant. Back in the history when it was passing, it was a
+&gt; FieldBinding.
+&gt; 
+&gt; And this is a very recent regression caused by this commit:
+&gt; 
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/
+&gt; ?id=43cdae5117454d896e9e9cf435f63b0b509e3a4c
+&gt; 
+&gt; Stephan, please let me know if you have some clues on what might be
+&gt; happening.
+
+The commit you cite introduced that enum constants are resolved lazily to avoid infinite recursive resolution.
+
+When you ask UnresolvedEnumConstant.getResolved() you should get the expected field binding.
+
+Question remains: on what path did the UEC escape into APT? I expected the regular path to be ElementValuePair.getValue() which invokes getResolved() if needed. What other paths need this, too?
+
+Does this explanation already help or do you want me to debug that test case?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2381666</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-03-28 09:23:21 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #1)
+&gt; The commit you cite introduced that enum constants are resolved lazily to
+&gt; avoid infinite recursive resolution.
+&gt; 
+&gt; When you ask UnresolvedEnumConstant.getResolved() you should get the
+&gt; expected field binding.
+&gt; 
+&gt; Question remains: on what path did the UEC escape into APT? I expected the
+&gt; regular path to be ElementValuePair.getValue() which invokes getResolved()
+&gt; if needed. What other paths need this, too?
+&gt; 
+&gt; Does this explanation already help or do you want me to debug that test case?
+
+This helps. I will find out why getResolved() doesn&apos;t get called and/or why it remains UEC.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2381756</commentid>
+    <comment_count>3</comment_count>
+      <attachid>241388</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-03-28 10:50:08 -0400</bug_when>
+    <thetext>Created attachment 241388
+Proposed fix
+
+So, the case that had to be handled was that ElementValuePair#value can also be an array of UnresolvedEnumConstant. This patch fixes the failing test.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2381759</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-28 10:52:33 -0400</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #3)
+&gt; Created attachment 241388 [details]
+&gt; Proposed fix
+&gt; 
+&gt; So, the case that had to be handled was that ElementValuePair#value can also
+&gt; be an array of UnresolvedEnumConstant. This patch fixes the failing test.
+
+Sorry, should&apos;ve thought of this in the first place.
+Patch looks good to me :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2381764</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-03-28 10:57:02 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; Patch looks good to me :)
+
+Thanks for looking at the patch, Stephan! I will release this after running the tests.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2381842</commentid>
+    <comment_count>6</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-03-28 12:32:48 -0400</bug_when>
+    <thetext>Released in master: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=d767f31ad272e19eba4786e29173a3473ca8fe5d</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394437</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-04-29 03:56:47 -0400</bug_when>
+    <thetext>Verified for 4.4 M7 using Build id: I20140427-2030</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>241388</attachid>
+            <date>2014-03-28 10:50:00 -0400</date>
+            <delta_ts>2014-03-28 10:50:08 -0400</delta_ts>
+            <desc>Proposed fix</desc>
+            <filename>Bug-431253.patch</filename>
+            <type>text/plain</type>
+            <size>898</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvRWxlbWVudFZhbHVlUGFpci5qYXZhIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L2xvb2t1cC9FbGVtZW50VmFsdWVQYWlyLmphdmEKaW5kZXggYTIyOTdhYi4uZGMwYjU4NyAxMDA2
+NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2lu
+dGVybmFsL2NvbXBpbGVyL2xvb2t1cC9FbGVtZW50VmFsdWVQYWlyLmphdmEKKysrIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L2xvb2t1cC9FbGVtZW50VmFsdWVQYWlyLmphdmEKQEAgLTExNyw0ICsxMTcsMTIgQEAKIAlpZiAo
+dGhpcy52YWx1ZSBpbnN0YW5jZW9mIFVucmVzb2x2ZWRFbnVtQ29uc3RhbnQpCiAJCXRoaXMudmFs
+dWUgPSAoKFVucmVzb2x2ZWRFbnVtQ29uc3RhbnQpdGhpcy52YWx1ZSkuZ2V0UmVzb2x2ZWQoKTsK
+KwllbHNlIGlmICh0aGlzLnZhbHVlIGluc3RhbmNlb2YgT2JqZWN0W10pIHsKKwkJT2JqZWN0W10g
+dmFsdWVBcnJheSA9IChPYmplY3RbXSkgdGhpcy52YWx1ZTsKKwkJZm9yKGludCBpID0gMDsgaSA8
+IHZhbHVlQXJyYXkubGVuZ3RoOyBpKyspIHsKKwkJCU9iamVjdCBvYmplY3QgPSB2YWx1ZUFycmF5
+W2ldOworCQkJaWYgKG9iamVjdCBpbnN0YW5jZW9mIFVucmVzb2x2ZWRFbnVtQ29uc3RhbnQpCisJ
+CQkJdmFsdWVBcnJheVtpXSA9ICgoVW5yZXNvbHZlZEVudW1Db25zdGFudCkgb2JqZWN0KS5nZXRS
+ZXNvbHZlZCgpOworCQl9CisJfQogCXJldHVybiB0aGlzLnZhbHVlOwogfQ==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

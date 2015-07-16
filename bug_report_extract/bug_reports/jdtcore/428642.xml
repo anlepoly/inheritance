@@ -1,0 +1,442 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>428642</bug_id>
+          
+          <creation_ts>2014-02-20 08:11:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler]  java.lang.IllegalArgumentException: Invalid lambda deserialization exception</short_desc>
+          <delta_ts>2014-03-07 02:30:29 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Andrew Clement">aclement</assigned_to>
+          <cc>aclement</cc>
+    
+    <cc>hpietsch</cc>
+    
+    <cc>sarika.sinha</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2365996</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-20 08:11:09 -0500</bug_when>
+    <thetext>From https://bugs.eclipse.org/bugs/show_bug.cgi?id=428552#c3:
+
+The following program throws an exception when executed:
+
+import java.io.*;
+import java.util.function.IntConsumer;
+
+public class QuickSerializedLambdaTest {
+	interface X extends IntConsumer,Serializable{}
+	public static void main(String[] args) throws IOException, ClassNotFoundException {
+		X x1 = i -&gt; System.out.println(i);// lambda expression
+		X x2 = System::exit; // method reference
+		ByteArrayOutputStream debug=new ByteArrayOutputStream();
+		try(ObjectOutputStream oo=new ObjectOutputStream(debug))
+		{
+			oo.writeObject(x1);
+			oo.writeObject(x2);
+		}
+		try(ObjectInputStream oi=new ObjectInputStream(new ByteArrayInputStream(debug.toByteArray())))
+		{
+			X x=(X)oi.readObject();
+			x.accept(42);// shall print &quot;42&quot;
+			x=(X)oi.readObject();
+			x.accept(0);// shall exit
+		}
+		throw new AssertionError(&quot;should not reach this point&quot;);
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366000</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-20 08:12:42 -0500</bug_when>
+    <thetext>I&apos;ll take a look later today, if it proves to be too involved, will assign
+to Andy. Thanks for the report, Holger.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366047</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-20 09:20:45 -0500</bug_when>
+    <thetext>Andy, Could you take a look ? If you don&apos;t expect to schedule time to work
+on this before Feb end, let me know - I&apos;ll make alternate arrangements. TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367079</commentid>
+    <comment_count>3</comment_count>
+    <who name="Andrew Clement">aclement</who>
+    <bug_when>2014-02-21 16:30:53 -0500</bug_when>
+    <thetext>Although there is a problem here with deserialization, clearly. There may also be something odd with the generation of code for lambdas.
+
+When a method reference is used, javac does not generate a lambda helper method in the class, instead the bootstrap method points directly at it:
+
+BootstrapMethods:
+    0: #68 invokestatic java/lang/invoke/LambdaMetafactory.altMetafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+      Method arguments:
+        #69 (I)V
+        #70 invokestatic java/lang/System.exit:(I)V
+        #69 (I)V
+        #71 5
+        #72 0
+
+JDT creates:
+BootstrapMethods:
+    0: #157 invokestatic java/lang/invoke/LambdaMetafactory.altMetafactory:(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;
+      Method arguments:
+        #158 (I)V
+        #161 invokestatic QuickSerializedLambdaTest.lambda$0:(I)V
+        #162 (I)V
+        #163 1
+
+with the lambda method:
+
+private static void lambda$0(int);
+    flags: ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: iload_0       
+         1: invokestatic  #90                 // Method java/lang/System.exit:(I)V
+         4: return        
+      LocalVariableTable:
+        Start  Length  Slot  Name   Signature
+               0       5     0  arg0   I
+
+This isn&apos;t a *bug* as such, but feels somewhat inefficient - just something I&apos;ve observed so far.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367123</commentid>
+    <comment_count>4</comment_count>
+      <attachid>240219</attachid>
+    <who name="Andrew Clement">aclement</who>
+    <bug_when>2014-02-21 19:31:47 -0500</bug_when>
+    <thetext>Created attachment 240219
+patch with testcase and fix
+
+Here is a patch that prevents the IllegalArgumentException. It was being produced because of the wrong functional interface classname was being generated into the deserializeLambda method and it did not match the one in the SerializedLambda object the JVM was building.  All the existing tests seem to pass with this change and two I added based on the testcase included here in the issue.
+
+Note this patch does not address the optimization of not generating the lambda helper method in the type when a method reference is being used (as described above).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367162</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-22 00:35:43 -0500</bug_when>
+    <thetext>Patch looks good - with a minor refactoring to extract a common subexpression
+into a local and a new test that captures the test case from comment#0 verbatim
+as a conformance test, I released the fix here:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=ed84fe583572c00454d25c80a7fbdcb718bd831c
+
+Thanks a lot Andy - I would appreciate your quick assessment and opinion
+on the following:
+
+(In reply to Andrew Clement from comment #3)
+
+&gt; When a method reference is used, javac does not generate a lambda helper
+&gt; method in the class, instead the bootstrap method points directly at it:
+
+This is my handiwork, a deliberate one: See https://bugs.eclipse.org/bugs/show_bug.cgi?id=428552#c1
+
+Also please take a look at ReferenceExpression.shouldGenerateImplicitLambda
+
+&gt; This isn&apos;t a *bug* as such, but feels somewhat inefficient - just something
+&gt; I&apos;ve observed so far.
+
+This was a trade off I was willing to settle for in the other bug for ease of
+fix.
+
+Now for the question/assessment part:
+
+    (1) Does the present approach of generating code for serializable method
+references as though they were implicit lambda expressions &quot;lock us&quot; in to 
+that scheme ? (and the resulting slight inefficiency ?) My reading is that 
+it does not and we can post GA, revisit and opt for the more efficient direct
+code generation approach.
+
+    Do you agree ?
+
+    - Is the fix for https://bugs.eclipse.org/bugs/show_bug.cgi?id=428552
+adequate if we do decide to stick to the present approach for the time being
+(assuming that your assessment for (1 is that &quot;Yes, we can change post GA&quot;
+
+I don&apos;t see any migration/compatibility concern since the method reference
+and the deserialization support code would get freshly regenerated together
+if/when we opt for a more efficient scheme - but I think you understand this
+area better.
+
+Thanks for weighing in</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367163</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-22 00:37:48 -0500</bug_when>
+    <thetext>Resolving. Holger, Thanks in advance for your continued testing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367738</commentid>
+    <comment_count>7</comment_count>
+    <who name="Andrew Clement">aclement</who>
+    <bug_when>2014-02-24 11:45:48 -0500</bug_when>
+    <thetext>I had a think on it for a few minutes. 
+
+I think on (1) we are ok to have this for now, but I would revisit relatively soon.
+
+How many test cases do we have covering this, are all the variants of method reference covered when used in this context? (http://docs.oracle.com/javase/tutorial/java/javaOO/methodreferences.html)
+- Reference to a static method
+- Reference to an instance method of a particular object	 
+- Reference to an instance method of an arbitrary object of a particular type
+
+I can&apos;t see how we are locked in down the road - given that the generation of the lambda and the deserialize are localized to the same class and don&apos;t impact other classes.
+
+Whilst thinking on this area I recall some problems in the base JVM that prevented lambdas capturing &apos;this&apos; (i.e. using field references) being deserialized correctly at runtime (this was a few jdk builds ago). Did we add any test cases to cover this, presuming it has been fixed now? I recall I ensured my generated deserialized code &apos;failed in the same way as the JDK&apos; so it may just work but it&apos;d be good to confirm.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2368430</commentid>
+    <comment_count>8</comment_count>
+    <who name="Holger Pietsch">hpietsch</who>
+    <bug_when>2014-02-25 13:07:05 -0500</bug_when>
+    <thetext>Dont forget constructor references when handling method references. Ordinary constructor references work but array constructor references break with an exception inside of the compiler as soon as they are made Serializable:
+
+import java.io.Serializable;
+import java.util.function.IntFunction;
+
+public class ArrayConstructorReference
+{
+  interface IF extends IntFunction&lt;Object&gt;, Serializable {}
+  public static void main(String[] args)
+  {
+    IF factory=String[]::new;
+  }
+}
+
+produces
+
+Errors occurred during the build.
+Errors running builder &apos;Java Builder&apos; on project &apos;&apos;.
+org.eclipse.jdt.internal.compiler.lookup.ArrayBinding cannot be cast to org.eclipse.jdt.internal.compiler.lookup.ReferenceBinding
+
+Note that this problem only occurs when the functional interface is Serializable.
+
+---
+And I vote for implementing compilation of the direct method handles without the helper method as soon as possible as it influences the binary format of the Serialized method reference, i.e. will break the Serialization compatibility between current eclipse version and a possible future eclipse version (and JDKs javac, of course). For me it means making debugging method references harder than necessary.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2368433</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-25 13:13:06 -0500</bug_when>
+    <thetext>(In reply to Holger Pietsch from comment #8)
+
+&gt; Errors occurred during the build.
+&gt; Errors running builder &apos;Java Builder&apos; on project &apos;&apos;.
+&gt; org.eclipse.jdt.internal.compiler.lookup.ArrayBinding cannot be cast to
+&gt; org.eclipse.jdt.internal.compiler.lookup.ReferenceBinding
+&gt; 
+&gt; Note that this problem only occurs when the functional interface is
+&gt; Serializable.
+
+Thanks for the report Holger. May I request you to open a fresh defect
+for this ? TIA.
+
+&gt; ---
+&gt; And I vote for implementing compilation of the direct method handles without
+&gt; the helper method as soon as possible as it influences the binary format of
+&gt; the Serialized method reference, i.e. will break the Serialization
+&gt; compatibility between current eclipse version and a possible future eclipse
+&gt; version (and JDKs javac, of course). For me it means making debugging
+&gt; method references harder than necessary.
+
+This is what was analyzed in earlier comments as not being an issue wrt to
+binary compatibility. The method reference code generation and the 
+deserialization support code generation happen together while compiling the
+same file by the same compiler and so cannot cause binary compatibility issues
+ - did I miss something ? 
+
+We will get to this soon, not likely for GA though.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2368599</commentid>
+    <comment_count>10</comment_count>
+    <who name="Holger Pietsch">hpietsch</who>
+    <bug_when>2014-02-26 03:43:38 -0500</bug_when>
+    <thetext>Ok, I made a new report.
+
+---
+The serialized form of a lambda consist of symbolic references to the creator class and the target class&amp;method. This implies that for a method reference to a part of a stable API, the serialized form could be long term stable as well if the symbolic reference contains the target as it appeared in the source code. It would be immune to recompilation using different compilers. But the way it is compiled with the current version, the serialized form contains a reference to the synthetic helper method which is subject to change. For lambda expressions which rely on the compiler specific helper methods there is no cure but for method references which do not need a helper method at all, a stable serialized form compatible between compilers is possible.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372825</commentid>
+    <comment_count>11</comment_count>
+    <who name="Sarika Sinha">sarika.sinha</who>
+    <bug_when>2014-03-07 02:30:29 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC2 using Kepler SR2 +   
+Eclipse Java Development Tools Patch for Java 8 Support (BETA)
+1.0.0.v20140306-1935</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>240219</attachid>
+            <date>2014-02-21 19:31:00 -0500</date>
+            <delta_ts>2014-02-21 19:31:47 -0500</delta_ts>
+            <desc>patch with testcase and fix</desc>
+            <filename>Bug428642.patch</filename>
+            <type>text/plain</type>
+            <size>6388</size>
+            <attacher name="Andrew Clement">aclement</attacher>
+            
+              <data encoding="base64">RnJvbSA1YTEwNGY1ZGQ0ZGRmMjljNWQ4ZDg2ODc0MGE2ZWU5Mzg5NzkyN2YxIE1vbiBTZXAgMTcg
+MDA6MDA6MDAgMjAwMQpGcm9tOiBBbmR5IENsZW1lbnQgPGFjbGVtZW50QGdvcGl2b3RhbC5jb20+
+CkRhdGU6IEZyaSwgMjEgRmViIDIwMTQgMTY6Mjc6NDQgLTA4MDAKU3ViamVjdDogW1BBVENIXSBC
+dWcgNDI4NjQyIC0gWzEuOF1bY29tcGlsZXJdCiBqYXZhLmxhbmcuSWxsZWdhbEFyZ3VtZW50RXhj
+ZXB0aW9uOiBJbnZhbGlkIGxhbWJkYQogZGVzZXJpYWxpemF0aW9uIGV4Y2VwdGlvbgoKLS0tCiAu
+Li4vcmVncmVzc2lvbi9TZXJpYWxpemFibGVMYW1iZGFUZXN0LmphdmEgICAgICAgICB8IDgxICsr
+KysrKysrKysrKysrKysrKysrKysKIC4uLi9qZHQvaW50ZXJuYWwvY29tcGlsZXIvY29kZWdlbi9D
+b2RlU3RyZWFtLmphdmEgIHwgMTAgKystCiAyIGZpbGVzIGNoYW5nZWQsIDg5IGluc2VydGlvbnMo
+KyksIDIgZGVsZXRpb25zKC0pCgpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVz
+dHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jl
+c3Npb24vU2VyaWFsaXphYmxlTGFtYmRhVGVzdC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUu
+dGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3Jl
+Z3Jlc3Npb24vU2VyaWFsaXphYmxlTGFtYmRhVGVzdC5qYXZhCmluZGV4IDY4M2EyYzkuLjRmZjNk
+MmYgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL1NlcmlhbGl6YWJs
+ZUxhbWJkYVRlc3QuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxl
+ci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9TZXJp
+YWxpemFibGVMYW1iZGFUZXN0LmphdmEKQEAgLTExMjQsNiArMTEyNCw4NyBAQCBwdWJsaWMgY2xh
+c3MgU2VyaWFsaXphYmxlTGFtYmRhVGVzdCBleHRlbmRzIEFic3RyYWN0UmVncmVzc2lvblRlc3Qg
+ewogCQkJCQluZXcgU3RyaW5nIFtdIHsgIi1EZHVtbXkiIH0pOyAvLyBOb3Qgc3VyZSwgdW5sZXNz
+IHdlIGZvcmNlIHRoZSBWTSB0byBub3QgYmUgcmV1c2VkIGJ5IHBhc3NpbmcgZHVtbXkgdm0gYXJn
+dW1lbnQsIHRoZSBnZW5lcmF0ZWQgcHJvZ3JhbSBhYm9ydHMgbWlkd2F5IHRocm91Z2ggaXRzIGV4
+ZWN1dGlvbi4KIAl9CiAJCisJLy8gaHR0cHM6Ly9idWdzLmVjbGlwc2Uub3JnL2J1Z3Mvc2hvd19i
+dWcuY2dpP2lkPTQyODY0MgorCXB1YmxpYyB2b2lkIHRlc3Q0Mjg2NDIoKSB0aHJvd3MgRXhjZXB0
+aW9uIHsKKwkJdGhpcy5ydW5Db25mb3JtVGVzdCgKKwkJCQluZXcgU3RyaW5nW117CisJCQkJCSJR
+dWlja1NlcmlhbGl6ZWRMYW1iZGFUZXN0LmphdmEiLAorCQkJCQkiaW1wb3J0IGphdmEuaW8uKjtc
+biIrCisJCQkJCSJpbXBvcnQgamF2YS51dGlsLmZ1bmN0aW9uLkludENvbnN1bWVyO1xuIisKKwkJ
+CQkJIlxuIisKKwkJCQkJInB1YmxpYyBjbGFzcyBRdWlja1NlcmlhbGl6ZWRMYW1iZGFUZXN0IHtc
+biIrCisJCQkJCSIJaW50ZXJmYWNlIFggZXh0ZW5kcyBJbnRDb25zdW1lcixTZXJpYWxpemFibGV7
+fVxuIisKKwkJCQkJIglwdWJsaWMgc3RhdGljIHZvaWQgbWFpbihTdHJpbmdbXSBhcmdzKSB0aHJv
+d3MgSU9FeGNlcHRpb24sIENsYXNzTm90Rm91bmRFeGNlcHRpb24ge1xuIisKKwkJCQkJIgkJWCB4
+MiA9IFN5c3RlbTo6ZXhpdDsgLy8gbWV0aG9kIHJlZmVyZW5jZVxuIisKKwkJCQkJIgkJQnl0ZUFy
+cmF5T3V0cHV0U3RyZWFtIGRlYnVnPW5ldyBCeXRlQXJyYXlPdXRwdXRTdHJlYW0oKTtcbiIrCisJ
+CQkJCSIJCXRyeShPYmplY3RPdXRwdXRTdHJlYW0gb289bmV3IE9iamVjdE91dHB1dFN0cmVhbShk
+ZWJ1ZykpXG4iKworCQkJCQkiCQl7XG4iKworCQkJCQkiCQkJb28ud3JpdGVPYmplY3QoeDIpO1xu
+IisKKwkJCQkJIgkJfVxuIisKKwkJCQkJIgkJdHJ5KE9iamVjdElucHV0U3RyZWFtIG9pPW5ldyBP
+YmplY3RJbnB1dFN0cmVhbShuZXcgQnl0ZUFycmF5SW5wdXRTdHJlYW0oZGVidWcudG9CeXRlQXJy
+YXkoKSkpKVxuIisKKwkJCQkJIgkJe1xuIisKKwkJCQkJIgkJCVggeD0oWClvaS5yZWFkT2JqZWN0
+KCk7XG4iKworCQkJCQkiCQkJeC5hY2NlcHQoMCk7Ly8gc2hhbGwgZXhpdFxuIisKKwkJCQkJIgkJ
+fVxuIisKKwkJCQkJIgkJdGhyb3cgbmV3IEFzc2VydGlvbkVycm9yKFwic2hvdWxkIG5vdCByZWFj
+aCB0aGlzIHBvaW50XCIpO1xuIisKKwkJCQkJIgl9XG4iKworCQkJCQkifVxuIiwKKwkJCQkJIkhl
+bHBlci5qYXZhIiwKKwkJCQkJInB1YmxpYyBjbGFzcyBIZWxwZXIge1xuIisKKwkJCQkJIiAgcHVi
+bGljIHN0YXRpYyBTdHJpbmcgdG9zdHJpbmcoamF2YS5sYW5nLmludm9rZS5TZXJpYWxpemVkTGFt
+YmRhIHNsKSB7XG4iKworCQkJCQkiICAgIHJldHVybiBzbC50b1N0cmluZygpO1xuIisKKwkJCQkJ
+IiAgfVxuIisKKwkJCQkJIn0iCisJCQkJfSwKKwkJCQkiIiwKKwkJCQludWxsLHRydWUsCisJCQkJ
+bmV3IFN0cmluZ1tdeyItRGR1bW15In0pOyAvLyBOb3Qgc3VyZSwgdW5sZXNzIHdlIGZvcmNlIHRo
+ZSBWTSB0byBub3QgYmUgcmV1c2VkIGJ5IHBhc3NpbmcgZHVtbXkgdm0gYXJndW1lbnQsIHRoZSBn
+ZW5lcmF0ZWQgcHJvZ3JhbSBhYm9ydHMgbWlkd2F5IHRocm91Z2ggaXRzIGV4ZWN1dGlvbi4KKwl9
+CisJCisJcHVibGljIHZvaWQgdGVzdDQyODY0Ml8yKCkgdGhyb3dzIEV4Y2VwdGlvbiB7CisJCXRo
+aXMucnVuQ29uZm9ybVRlc3QoCisJCQkJbmV3IFN0cmluZ1tdeworCQkJCQkiSGVscGVyLmphdmEi
+LAorCQkJCQkicHVibGljIGNsYXNzIEhlbHBlciB7XG4iKworCQkJCQkiICBwdWJsaWMgc3RhdGlj
+IFN0cmluZyB0b3N0cmluZyhqYXZhLmxhbmcuaW52b2tlLlNlcmlhbGl6ZWRMYW1iZGEgc2wpIHtc
+biIrCisJCQkJCSIgICAgcmV0dXJuIHNsLnRvU3RyaW5nKCk7XG4iKworCQkJCQkiICB9XG4iKwor
+CQkJCQkiICBwdWJsaWMgc3RhdGljIHZvaWQgbWFpbihTdHJpbmdbXWFyZ3YpIHRocm93cyBFeGNl
+cHRpb24ge1xuIisKKwkJCQkJIiAgICBmb28uUXVpY2tTZXJpYWxpemVkTGFtYmRhVGVzdC5tYWlu
+KGFyZ3YpO1xuIisKKwkJCQkJIiAgfVxuIisKKwkJCQkJIn0iLAorCQkJCQkiUXVpY2tTZXJpYWxp
+emVkTGFtYmRhVGVzdC5qYXZhIiwKKwkJCQkJInBhY2thZ2UgZm9vO1xuIisKKwkJCQkJImltcG9y
+dCBqYXZhLmlvLio7XG4iKworCQkJCQkiaW1wb3J0IGphdmEudXRpbC5mdW5jdGlvbi5JbnRDb25z
+dW1lcjtcbiIrCisJCQkJCSJcbiIrCisJCQkJCSJwdWJsaWMgY2xhc3MgUXVpY2tTZXJpYWxpemVk
+TGFtYmRhVGVzdCB7XG4iKworCQkJCQkiCWludGVyZmFjZSBYIGV4dGVuZHMgSW50Q29uc3VtZXIs
+U2VyaWFsaXphYmxle31cbiIrCisJCQkJCSIJcHVibGljIHN0YXRpYyB2b2lkIG1haW4oU3RyaW5n
+W10gYXJncykgdGhyb3dzIElPRXhjZXB0aW9uLCBDbGFzc05vdEZvdW5kRXhjZXB0aW9uIHtcbiIr
+CisJCQkJCSIJCVggeDEgPSBpIC0+IFN5c3RlbS5vdXQucHJpbnRsbihpKTsvLyBsYW1iZGEgZXhw
+cmVzc2lvblxuIisKKwkJCQkJIgkJWCB4MiA9IFN5c3RlbTo6ZXhpdDsgLy8gbWV0aG9kIHJlZmVy
+ZW5jZVxuIisKKwkJCQkJIgkJQnl0ZUFycmF5T3V0cHV0U3RyZWFtIGRlYnVnPW5ldyBCeXRlQXJy
+YXlPdXRwdXRTdHJlYW0oKTtcbiIrCisJCQkJCSIJCXRyeShPYmplY3RPdXRwdXRTdHJlYW0gb289
+bmV3IE9iamVjdE91dHB1dFN0cmVhbShkZWJ1ZykpXG4iKworCQkJCQkiCQl7XG4iKworCQkJCQki
+CQkJb28ud3JpdGVPYmplY3QoeDEpO1xuIisKKwkJCQkJIgkJCW9vLndyaXRlT2JqZWN0KHgyKTtc
+biIrCisJCQkJCSIJCX1cbiIrCisJCQkJCSIJCXRyeShPYmplY3RJbnB1dFN0cmVhbSBvaT1uZXcg
+T2JqZWN0SW5wdXRTdHJlYW0obmV3IEJ5dGVBcnJheUlucHV0U3RyZWFtKGRlYnVnLnRvQnl0ZUFy
+cmF5KCkpKSlcbiIrCisJCQkJCSIJCXtcbiIrCisJCQkJCSIJCQlYIHg9KFgpb2kucmVhZE9iamVj
+dCgpO1xuIisKKwkJCQkJIgkJCXguYWNjZXB0KDQyKTsvLyBzaGFsbCBwcmludCBcIjQyXCJcbiIr
+CisJCQkJCSIJCQl4PShYKW9pLnJlYWRPYmplY3QoKTtcbiIrCisJCQkJCSIJCQl4LmFjY2VwdCgw
+KTsvLyBzaGFsbCBleGl0XG4iKworCQkJCQkiCQl9XG4iKworCQkJCQkiCQl0aHJvdyBuZXcgQXNz
+ZXJ0aW9uRXJyb3IoXCJzaG91bGQgbm90IHJlYWNoIHRoaXMgcG9pbnRcIik7XG4iKworCQkJCQki
+CX1cbiIrCisJCQkJCSJ9XG4iCisJCQkJfSwKKwkJCQkiNDIiLAorCQkJCW51bGwsdHJ1ZSwKKwkJ
+CQluZXcgU3RyaW5nW117Ii1EZHVtbXkifSk7IC8vIE5vdCBzdXJlLCB1bmxlc3Mgd2UgZm9yY2Ug
+dGhlIFZNIHRvIG5vdCBiZSByZXVzZWQgYnkgcGFzc2luZyBkdW1teSB2bSBhcmd1bWVudCwgdGhl
+IGdlbmVyYXRlZCBwcm9ncmFtIGFib3J0cyBtaWR3YXkgdGhyb3VnaCBpdHMgZXhlY3V0aW9uLgor
+CX0KKwkKIAkKIAkvLyAtLS0KIAkKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2Nv
+bXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9jb2RlZ2VuL0NvZGVTdHJl
+YW0uamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9p
+bnRlcm5hbC9jb21waWxlci9jb2RlZ2VuL0NvZGVTdHJlYW0uamF2YQppbmRleCA0MDJkODRkLi4w
+YjM3N2JkIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNs
+aXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvY29kZWdlbi9Db2RlU3RyZWFtLmphdmEKKysrIGIv
+b3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2Nv
+bXBpbGVyL2NvZGVnZW4vQ29kZVN0cmVhbS5qYXZhCkBAIC0yNTI2LDcgKzI1MjYsNyBAQCBwdWJs
+aWMgdm9pZCBnZW5lcmF0ZVN5bnRoZXRpY0JvZHlGb3JFbnVtVmFsdWVPZihTeW50aGV0aWNNZXRo
+b2RCaW5kaW5nIG1ldGhvZEJpbgogICovCiBwdWJsaWMgdm9pZCBnZW5lcmF0ZVN5bnRoZXRpY0Jv
+ZHlGb3JEZXNlcmlhbGl6ZUxhbWJkYShTeW50aGV0aWNNZXRob2RCaW5kaW5nIG1ldGhvZEJpbmRp
+bmcsU3ludGhldGljTWV0aG9kQmluZGluZ1tdIHN5bnRoZXRpY01ldGhvZEJpbmRpbmdzKSB7CiAJ
+aW5pdGlhbGl6ZU1heExvY2FscyhtZXRob2RCaW5kaW5nKTsKLQkKKwogCS8vIENvbXB1dGUgdGhl
+IGxpc3Qgb2YgdGhlIHNlcmlhbGl6YWJsZSBsYW1iZGFzIGZyb20gdGhlIGZ1bGwgc2V0IG9mIHN5
+bnRoZXRpYyBtZXRob2QgYmluZGluZ3MKIAkvLyBBbHNvIGNvbXB1dGUgYSBtYXAgb2YgaGFzaGNv
+ZGVzIHRvIGEgbGlzdCBvZiBzZXJpYWxpemFibGUgbGFtYmRhcyB3aG9zZSBuYW1lcyBzaGFyZSBh
+IGhhc2hjb2RlIAogCUxpc3Qgc3ludGhldGljc0ZvclNlcmlhbGl6YWJsZUxhbWJkYXMgPSBuZXcg
+QXJyYXlMaXN0KCk7CQpAQCAtMjY1Myw3ICsyNjUzLDEzIEBAIHB1YmxpYyB2b2lkIGdlbmVyYXRl
+U3ludGhldGljQm9keUZvckRlc2VyaWFsaXplTGFtYmRhKFN5bnRoZXRpY01ldGhvZEJpbmRpbmcg
+bWV0CiAJCWFsb2FkXzAoKTsKIAkJaW52b2tlKE9wY29kZXMuT1BDX2ludm9rZXZpcnR1YWwsIDEs
+IDEsIENvbnN0YW50UG9vbC5KYXZhTGFuZ0ludm9rZVNlcmlhbGl6ZWRMYW1iZGFDb25zdGFudFBv
+b2xOYW1lLCAKIAkJCQlDb25zdGFudFBvb2wuR2V0RnVuY3Rpb25hbEludGVyZmFjZUNsYXNzLCBD
+b25zdGFudFBvb2wuR2V0RnVuY3Rpb25hbEludGVyZmFjZUNsYXNzU2lnbmF0dXJlKTsKLQkJbGRj
+KG5ldyBTdHJpbmcoQ2hhck9wZXJhdGlvbi5jb25jYXRXaXRoKGxhbWJkYUV4LmRlc2NyaXB0b3Iu
+ZGVjbGFyaW5nQ2xhc3MuY29tcG91bmROYW1lLCcvJykpKTsgLy8gZS5nLiAiY29tL2Zvby9YJEZv
+byIKKwkJU3RyaW5nIGZ1bmN0aW9uYWxJbnRlcmZhY2UgPSBudWxsOworCQlpZiAobGFtYmRhRXgu
+ZXhwZWN0ZWRUeXBlKCkgaW5zdGFuY2VvZiBJbnRlcnNlY3Rpb25DYXN0VHlwZUJpbmRpbmcpIHsK
+KwkJCWZ1bmN0aW9uYWxJbnRlcmZhY2UgPSBuZXcgU3RyaW5nKCgoSW50ZXJzZWN0aW9uQ2FzdFR5
+cGVCaW5kaW5nKWxhbWJkYUV4LmV4cGVjdGVkVHlwZSgpKS5nZXRTQU1UeXBlKHNjb3BlKS5jb25z
+dGFudFBvb2xOYW1lKCkpOworCQl9IGVsc2UgeworCQkJZnVuY3Rpb25hbEludGVyZmFjZSA9IG5l
+dyBTdHJpbmcobGFtYmRhRXguZXhwZWN0ZWRUeXBlKCkuY29uc3RhbnRQb29sTmFtZSgpKTsKKwkJ
+fQorCQlsZGMoZnVuY3Rpb25hbEludGVyZmFjZSk7Ly8gZS5nLiAiY29tL2Zvby9YJEZvbyIKIAkJ
+aW52b2tlT2JqZWN0RXF1YWxzKCk7CiAJCWlmZXEoZXJyb3JMYWJlbCk7CiAJCQotLSAKMS43LjEx
+LjIKCg==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

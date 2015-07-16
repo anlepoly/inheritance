@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>424205</bug_id>
+          
+          <creation_ts>2013-12-17 01:31:00 -0500</creation_ts>
+          <short_desc>[1.8] Cannot infer type for diamond type with lambda on method invocation</short_desc>
+          <delta_ts>2014-01-11 17:18:28 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>424053</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jay Arthanareeswaran">jarthana</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2342594</commentid>
+    <comment_count>0</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-12-17 01:31:05 -0500</bug_when>
+    <thetext>This example produces compilation errors while it shouldn&apos;t:
+
+interface I {
+	void bar(String t);
+}
+class X&lt;T&gt; implements I {
+	public void bar(String t) {}
+	X(String x) {}
+	X(T x) {}
+	public void one(X&lt;I&gt; c){}
+	public void two() {
+		one(new X&lt;&gt;((String s) -&gt; { })); // 1. Three errors
+		X&lt;I&gt; i = new X&lt;&gt;((String s) -&gt; { }); // 2. Error - Comment out the previous line to see this error go away.
+		one (i);
+	}
+}
+
+Interestingly, when the first statement is commented out, the second one compiles alright.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342753</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-17 07:18:25 -0500</bug_when>
+    <thetext>We are reporting the error at (1) twice, because the diamond is resolved twice: first as the argument to the containing message send *before* we have a candidate binding for &apos;one&apos;, second after the binding for &apos;one&apos; has been determined, which gives the target type for the diamond. =&gt; Should we put the first resolve into silent mode similar to ReferenceExpression??
+
+The difference in the second line seems to stem from details inside Scope.mostSpecificMethodBinding(). In both cases I see two candidate methods for the diamond invocation:
+  &lt;init&gt;(I)
+  &lt;init&gt;(String)
+
+In one situation &lt;init&gt;(I) is picked as the result, in the other situation we end up with (count == 0) and return a ProblemMethodBinding. I have no clue what produces this difference. Let me know if hints point towards anything related to inference. Otherwise I&apos;ll pass this one ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342756</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-17 07:20:17 -0500</bug_when>
+    <thetext>FWIW, I was working from my workspace version which gives these errors:
+
+---------- 
+1. ERROR in X.java (at line 10) 
+   one(new X&lt;&gt;((String s) -&gt; { })); // 1. Three errors 
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+The constructor X(String) is ambiguous 
+---------- 
+2. ERROR in X.java (at line 10) 
+   one(new X&lt;&gt;((String s) -&gt; { })); // 1. Three errors 
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+The constructor X&lt;I&gt;(String) is ambiguous 
+---------- 
+3. ERROR in X.java (at line 11) 
+   X&lt;I&gt; i = new X&lt;&gt;((String s) -&gt; { }); // 2. Error - Comment out the previous line to see this error go away. 
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+The constructor X&lt;I&gt;(String) is ambiguous 
+----------\n&quot;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2346901</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-01-08 08:25:46 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #2)
+&gt; FWIW, I was working from my workspace version which gives these errors:
+
+Stephan, did you mean your TI branch? On BETA_J8&apos;s head, this is what I see:
+
+Multiple markers at this line
+	- The constructor X((String s) -&gt; { }) is undefined
+	- The target type of this expression must be a functional interface
+	- The method one(X&lt;I&gt;) in the type X&lt;T&gt; is not applicable for the 
+	 arguments (X)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2347217</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-08 18:43:44 -0500</bug_when>
+    <thetext>It seems the status of this bug has changed back-and-forth a bit.
+
+Here&apos;s what I observe today:
+
+The influence between lines 10 and 11 is via the call enclosingScopesHaveErrors() at LambdaExpression.java:674
+
+The error in line 10 sets ignoreFurtherInverstigation on the enclosing MethodDeclaration.
+
+This causes the call LambdaExpression.isCompatibleWith() on an unrelated lambda to answer false.
+
+Srikanth, I stumbled over this particular line before. Can you think of a less drastic way of checking whatever needs to be checked here?
+
+I&apos;ll continue investigating why line 10 is flagged in the first place, but from here-on both issues are independent.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2347271</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-01-09 02:51:47 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+
+&gt; Srikanth, I stumbled over this particular line before. Can you think of a
+&gt; less drastic way of checking whatever needs to be checked here?
+
+I have in mind to tackle this via https://bugs.eclipse.org/bugs/show_bug.cgi?id=424290 - I am considering a full pass like analyzeCode() that will work
+safely even when there are resolve errors. This will come a bit late though
+I don&apos;t expect to be able to start work on it in the next 10 days, perhaps
+even later.
+
+
+&gt; I&apos;ll continue investigating why line 10 is flagged in the first place, but
+&gt; from here-on both issues are independent.
+
+Sounds good.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2347420</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-09 08:01:58 -0500</bug_when>
+    <thetext>Released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=243454d9ddff3b98b1fa12e536cfddbd176702ef :
+
+- tests (one simplified &amp; passing; one disabled)
+
+- code to improve resilience by reusing existing inference results, rather than relying on FE.isCompatibleWith(). 
+This avoids the secondary errors.
+Srikanth: to analyse the issue around enclosingScopesHaveErrors() using the given test, the added lines in AllocationExpression.inferElidedTypes() may need to be disabled.
+
+(In reply to Srikanth Sankaran from comment #5)
+&gt; (In reply to Stephan Herrmann from comment #4)
+&gt; 
+&gt; &gt; Srikanth, I stumbled over this particular line before. Can you think of a
+&gt; &gt; less drastic way of checking whatever needs to be checked here?
+&gt; 
+&gt; I have in mind to tackle this via
+&gt; https://bugs.eclipse.org/bugs/show_bug.cgi?id=424290 - I am considering a
+&gt; full pass like analyzeCode() that will work
+&gt; safely even when there are resolve errors. This will come a bit late though
+&gt; I don&apos;t expect to be able to start work on it in the next 10 days, perhaps
+&gt; even later.
+
+Should we remove the call to enclosingScopesHaveErrors() for now? I think the interdependence between unrelated errors is worse than failing to respect a runaway error during shape analysis?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2347786</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-01-10 00:13:59 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #6)
+
+&gt; Should we remove the call to enclosingScopesHaveErrors() for now? I think
+&gt; the interdependence between unrelated errors is worse than failing to
+&gt; respect a runaway error during shape analysis?
+
+Actually, that piece was put in place to avoid NPE/CCE/whatever. I think it
+will come back to bite us if we remove the call. For the time being it is OK
+to have secondary spurious errors I think.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2348560</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-11 17:16:48 -0500</bug_when>
+    <thetext>Phew, a significant piece was still missing to type check this:
+
+    one(new X&lt;&gt;((String s) -&gt; { }));
+
+Reason: the diamond couldn&apos;t be inferred/resolved while resolved as an argument of MessageSend &quot;one&quot;, because at that point it had neither target type (from outside), nor a useful argument type (from inside). Subsequently &quot;one&quot; couldn&apos;t be resolved without a proper argument type :(  -- and this one doesn&apos;t involve inference so resolving must succeed immediately.
+
+Solution: just like with other poly expressions (LE, RE) also a diamond must be resolved in several steps, realized by ripping apart AE.resolveType. Between these parts some state is stored as LE.suspendedResolutionState.
+
+Released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=efe1773a267b3bdb803164d9b413b69c3685878f
+
+This also changed state in two other tests: more errors:
+  &quot;The constructor X&lt;String&gt;(String) is ambiguous&quot;. 
+In bug 401850 we kind of expected this, to be revisited when finalizing More Specific Method Inference.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

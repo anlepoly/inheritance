@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>415269</bug_id>
+          
+          <creation_ts>2013-08-16 19:13:00 -0400</creation_ts>
+          <short_desc>[compiler][null] NonNullByDefault is not always inherited to nested classes</short_desc>
+          <delta_ts>2014-02-17 18:13:57 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>4.4 M2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Till Brychcy">register.eclipse</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>anchakrk</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>marc-andre.laperle</cc>
+    
+    <cc>mfucci</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2295868</commentid>
+    <comment_count>0</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-16 19:13:40 -0400</bug_when>
+    <thetext>REPRODUCING THE PROBLEM:
+1) Create a workspace with one java project. In the Java-Compiler &quot;Errors/Warning&quot; -settings turn on &quot;enabled annotation-based null-analysis&quot;.
+
+2) Add the following two classes:
+
+--- ClassA.java:
+import org.eclipse.jdt.annotation.NonNullByDefault;
+
+@NonNullByDefault
+public class ClassA {
+	public interface InterfaceA {
+		public void method(Object arg);
+	}
+}
+--- ClassB.java:
+import org.eclipse.jdt.annotation.NonNull;
+
+public class ClassB {
+	public static class ImplA implements ClassA.InterfaceA {
+		@Override
+		public void method(@NonNull Object arg) {
+		}
+	}
+}
+
+3) Now close all Editor windows.
+4) Chose Project &gt; Clean ... &gt; Clean all projects:
+
+THE PROBLEM:
+The following error appears in the problems view:
+&quot;Illegal redefinition of parameter arg, inherited method from ClassA.InterfaceA does not constrain this parameter&quot;, ClassB.java, line 6
+
+ANALYSIS:
+In SourceTypeBinding.java, the field defaultNullness is accessed in the method hasNonNullDefault(), but was not initialized for some of the involved classed.
+(There is another reference to it in checkRedundantNullnessDefaultOne, which is not resposible for the bug in the example, but looks suspicous too)
+Invoking initializeNullDefault() before accessing defaultNullness fixes the problem.
+I will attach a patch which does that in both locations.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295871</commentid>
+    <comment_count>1</comment_count>
+      <attachid>234505</attachid>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-16 19:19:50 -0400</bug_when>
+    <thetext>Created attachment 234505
+proposed patch</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295872</commentid>
+    <comment_count>2</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-16 19:21:08 -0400</bug_when>
+    <thetext>This contribution complies with http://www.eclipse.org/legal/CoO.php</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295875</commentid>
+    <comment_count>3</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-16 19:27:21 -0400</bug_when>
+    <thetext>I forgot: obviously you have to configure the build path so it contains the null-annotations before step 4)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295876</commentid>
+    <comment_count>4</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-16 19:28:45 -0400</bug_when>
+    <thetext>this bug should probably be assigned to stephan herrmann</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295917</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-17 05:31:46 -0400</bug_when>
+    <thetext>How is Juno coping with this scenario? Is this a regression in Kepler?
+
+I see that the initialization can be incomplete in specific situations.
+However, changing order of processing steps always bears the risk of 
+side-effects in unexpected locations, so I&apos;m targeting this for Luna,
+not Kepler SR1.
+
+OTOH, initializeNullDefault() is already designed to support lazy 
+initialization, so inserting a few more calls *may* be the natural, 
+good thing to do. Maybe the real solution will be to make the dependency
+outer-inner explicit also via the stages of nullnessDefaultInitialized.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295956</commentid>
+    <comment_count>6</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-17 17:01:38 -0400</bug_when>
+    <thetext>I just tried it, it is already broken in Juno.
+
+I tried to make a minimal patch that fixes the bug.
+
+For a cleaner solution, the field defaultNullness should either be final and set in the constructor, or it should only be accessed via a getter that handles the lazy initialization or at least has an assert-check that checks that nullnessDefaultInitialized has the right state.
+
+
+Also, there is workaround:
+I add &quot;@SuppressWarnings(&quot;null&quot;) @NonNull&quot; to all params of interfaces declared as part of classes, and the compiler is set to ignore &quot;Unused &apos;@SuppressWarnings&apos; token&quot;:
+@NonNullByDefault
+public class ClassA {
+	public interface InterfaceA {
+		public void method(@SuppressWarnings(&quot;null&quot;) @NonNull Object arg);
+	}
+}
+
+So once a eclipse which fixes this bug is released, i can search for &quot;@SuppressWarnings(&quot;null&quot;) @NonNull&quot; and remove it.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298142</commentid>
+    <comment_count>7</comment_count>
+      <attachid>234679</attachid>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-22 17:36:24 -0400</bug_when>
+    <thetext>Created attachment 234679
+test case
+
+fails without patch, works with proposed patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2303284</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-09-05 11:47:56 -0400</bug_when>
+    <thetext>Test and fix are good.
+
+The fix renders a few existing calls to initializeNullDefault() redundant, but I 
+decided to keep redundant calls for the sake of comprehensibility. If a call is indeed
+redundant it only consists of an empty switch, so it shouldn&apos;t cause any harm.
+
+
+Released for 4.4 M2 via commit 87621a357241c8de8ae7bf1f07316036b31e3bf8
+
+Thanks, Till!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2303334</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-09-05 13:44:52 -0400</bug_when>
+    <thetext>(In reply to Till Brychcy from comment #6)
+&gt; For a cleaner solution, the field defaultNullness should either be final and
+&gt; set in the constructor,
+
+We are not ready for computing the defaultNullness when the constructor is executed.
+
+&gt; ... or it should only be accessed via a getter that
+&gt; handles the lazy initialization or at least has an assert-check that checks
+&gt; that nullnessDefaultInitialized has the right state.
+
+Rereading this and thinking about redundant calls I came up with a combined improvement:
+- removed one call to initializeNullDefault() before hasNonNullDefault(), because
+  the latter now already ensures initialization
+- changed initializeNullDefault to getNonNullDefault and adjusted clients accordingly
+
+This now looks a clean solution to me.
+
+Released via commit 1538facbe020906d8e9620bcca922106c178a710</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2307746</commentid>
+    <comment_count>10</comment_count>
+    <who name="ANIRBAN CHAKRABORTY">anchakrk</who>
+    <bug_when>2013-09-17 06:37:08 -0400</bug_when>
+    <thetext>Verified for SDK-I20130916-2330</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2308236</commentid>
+    <comment_count>11</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-09-18 05:17:40 -0400</bug_when>
+    <thetext>Verified for 4.4. M2 with build I20130916-2330.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2314794</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-10-06 13:33:03 -0400</bug_when>
+    <thetext>*** Bug 418233 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2364605</commentid>
+    <comment_count>13</comment_count>
+    <who name="Marc-Andre Laperle">marc-andre.laperle</who>
+    <bug_when>2014-02-17 18:05:28 -0500</bug_when>
+    <thetext>Could the fix be applied to Kepler SR2 or is it still considered too risky?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2364609</commentid>
+    <comment_count>14</comment_count>
+    <who name="Marc-Andre Laperle">marc-andre.laperle</who>
+    <bug_when>2014-02-17 18:13:57 -0500</bug_when>
+    <thetext>(In reply to Marc-Andre Laperle from comment #13)
+&gt; Could the fix be applied to Kepler SR2 or is it still considered too risky?
+
+Ignore my comment, it is much too late for SR2.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>234505</attachid>
+            <date>2013-08-16 19:19:00 -0400</date>
+            <delta_ts>2013-08-16 19:19:50 -0400</delta_ts>
+            <desc>proposed patch</desc>
+            <filename>415269.patch</filename>
+            <type>text/plain</type>
+            <size>1715</size>
+            <attacher name="Till Brychcy">register.eclipse</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvU291cmNlVHlwZUJpbmRpbmcuamF2YSBiL29yZy5l
+Y2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxl
+ci9sb29rdXAvU291cmNlVHlwZUJpbmRpbmcuamF2YQppbmRleCAzYmE0MzcwLi41ZDUxMTE2IDEw
+MDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQv
+aW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1NvdXJjZVR5cGVCaW5kaW5nLmphdmEKKysrIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2xvb2t1cC9Tb3VyY2VUeXBlQmluZGluZy5qYXZhCkBAIC0yMSw2ICsyMSw4IEBACiAgKgkJ
+CQkJCQkJYnVnIDM4ODI4MSAtIFtjb21waWxlcl1bbnVsbF0gaW5oZXJpdGFuY2Ugb2YgbnVsbCBh
+bm5vdGF0aW9ucyBhcyBhbiBvcHRpb24KICAqCQkJCQkJCQlidWcgMzMxNjQ5IC0gW2NvbXBpbGVy
+XVtudWxsXSBjb25zaWRlciBudWxsIGFubm90YXRpb25zIGZvciBmaWVsZHMKICAqCQkJCQkJCQli
+dWcgMzgwODk2IC0gW2NvbXBpbGVyXVtudWxsXSBFbnVtIGNvbnN0YW50cyBub3QgcmVjb2duaXNl
+ZCBhcyBiZWluZyBOb25OdWxsLgorICogICAgIFRpbGwgQnJ5Y2hjeSAtIENvbnRyaWJ1dGlvbnMg
+Zm9yCisgKiAgICAgCQkJCQkJCWJ1ZyA0MTUyNjkgLSBOb25OdWxsQnlEZWZhdWx0IGlzIG5vdCBh
+bHdheXMgaW5oZXJpdGVkIHRvIGVtYmVkZGVkIGNsYXNzZXMKICAqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqLwogcGFja2FnZSBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwOwog
+CkBAIC0xNzI2LDYgKzE3MjgsNyBAQAogCiAvLyByZXR1cm46IHNob3VsZCBjYWxsZXIgY29udGlu
+dWUgc2VhcmNoaW5nPwogcHJvdGVjdGVkIGJvb2xlYW4gY2hlY2tSZWR1bmRhbnROdWxsbmVzc0Rl
+ZmF1bHRPbmUoQVNUTm9kZSBsb2NhdGlvbiwgQW5ub3RhdGlvbltdIGFubm90YXRpb25zLCBsb25n
+IGFubm90YXRpb25UYWdCaXRzKSB7CisJaW5pdGlhbGl6ZU51bGxEZWZhdWx0KCk7CiAJaW50IHRo
+aXNEZWZhdWx0ID0gdGhpcy5kZWZhdWx0TnVsbG5lc3M7CiAJaWYgKHRoaXNEZWZhdWx0ID09IE5P
+Tk5VTExfQllfREVGQVVMVCkgewogCQlpZiAoKGFubm90YXRpb25UYWdCaXRzICYgVGFnQml0cy5B
+bm5vdGF0aW9uTm9uTnVsbEJ5RGVmYXVsdCkgIT0gMCkgewpAQCAtMTc1Niw2ICsxNzU5LDcgQEAK
+IAkJCWNhc2UgU2NvcGUuQ0xBU1NfU0NPUEU6CiAJCQkJY3VycmVudFR5cGUgPSAoKENsYXNzU2Nv
+cGUpY3VycmVudFNjb3BlKS5yZWZlcmVuY2VDb250ZXh0LmJpbmRpbmc7CiAJCQkJaWYgKGN1cnJl
+bnRUeXBlICE9IG51bGwpIHsKKwkJCQkJY3VycmVudFR5cGUuaW5pdGlhbGl6ZU51bGxEZWZhdWx0
+KCk7CiAJCQkJCWludCBmb3VuZERlZmF1bHROdWxsbmVzcyA9IGN1cnJlbnRUeXBlLmRlZmF1bHRO
+dWxsbmVzczsKIAkJCQkJaWYgKGZvdW5kRGVmYXVsdE51bGxuZXNzICE9IE5PX05VTExfREVGQVVM
+VCkgewogCQkJCQkJcmV0dXJuIGZvdW5kRGVmYXVsdE51bGxuZXNzID09IE5PTk5VTExfQllfREVG
+QVVMVDs=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>234679</attachid>
+            <date>2013-08-22 17:36:00 -0400</date>
+            <delta_ts>2013-08-22 17:36:24 -0400</delta_ts>
+            <desc>test case</desc>
+            <filename>test-for-415269.patch</filename>
+            <type>text/plain</type>
+            <size>1248</size>
+            <attacher name="Till Brychcy">register.eclipse</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxBbm5vdGF0aW9u
+VGVzdC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9l
+Y2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbEFubm90YXRpb25U
+ZXN0LmphdmEKaW5kZXggODkwNzExZi4uYTNhYzNkNyAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2Uu
+amR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Nv
+bXBpbGVyL3JlZ3Jlc3Npb24vTnVsbEFubm90YXRpb25UZXN0LmphdmEKKysrIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbEFubm90YXRpb25UZXN0LmphdmEKQEAgLTYyODksNCAr
+NjI4OSwyOSBAQAogCQkiTnVsbCB0eXBlIG1pc21hdGNoOiByZXF1aXJlZCBcJ0BOb25OdWxsIFN0
+cmluZ1wnIGJ1dCB0aGUgcHJvdmlkZWQgdmFsdWUgaXMgbnVsbFxuIiArIAogCQkiLS0tLS0tLS0t
+LVxuIik7CiB9CisKK3B1YmxpYyB2b2lkIHRlc3RCdWdfNDE1MjY5KCkgeworCU1hcCBvcHRpb25z
+ID0gZ2V0Q29tcGlsZXJPcHRpb25zKCk7CisJcnVuQ29uZm9ybVRlc3RXaXRoTGlicygKKwkJbmV3
+IFN0cmluZ1tdeworCQkJIlkuamF2YSIsCisJCQkiaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5hbm5v
+dGF0aW9uLk5vbk51bGw7XG4iKworCQkJInB1YmxpYyBjbGFzcyBZIHtcbiIrCisJCQkiICBwdWJs
+aWMgc3RhdGljIGNsYXNzIEMgaW1wbGVtZW50cyBYLkkge1xuIisKKwkJCSIgICAgcHVibGljIHZv
+aWQgbWV0aG9kKEBOb25OdWxsIE9iamVjdCBhcmcpIHtcbiIrCisJCQkiICAgIH1cbiIrCisJCQki
+ICB9XG4iKworCQkJIn1cbiIsCisJCQkiWC5qYXZhIiwKKwkJCSJpbXBvcnQgb3JnLmVjbGlwc2Uu
+amR0LmFubm90YXRpb24uTm9uTnVsbEJ5RGVmYXVsdDtcbiIrCisJCQkiQE5vbk51bGxCeURlZmF1
+bHRcbiIrCisJCQkicHVibGljIGNsYXNzIFgge1xuIisKKwkJCSIgIHB1YmxpYyBpbnRlcmZhY2Ug
+SSB7XG4iKworCQkJIiAgICBwdWJsaWMgdm9pZCBtZXRob2QoT2JqZWN0IGFyZyk7XG4iKworCQkJ
+IiAgfVxuIisKKwkJCSJ9XG4iCisJCX0sIAorCQlvcHRpb25zLAorCQkiIik7Cit9CiB9
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>415850</bug_id>
+          
+          <creation_ts>2013-08-26 05:01:00 -0400</creation_ts>
+          <short_desc>[1.8] Ensure RunJDTCoreTests can cope with null annotations enabled</short_desc>
+          <delta_ts>2013-08-26 17:19:41 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2298866</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-26 05:01:35 -0400</bug_when>
+    <thetext>As a big test to catch potential regressions caused by null analysis using type annotations, I ran all JDT/Core tests at 1.8 with null annotations enabled.
+
+Currently this produces 124 errors and 37 failures.
+
+I&apos;m going to work through these regressions and provide patches via this bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298962</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-26 09:27:17 -0400</bug_when>
+    <thetext>First causes identified:
+
+ - running IncrementalTests with -Dcompliance=1.8 complains:
+   &quot;This test requires a 1.5 JRE&quot;
+   Unrelated to the study in this bug.
+
+
+ - NPE in STB#resolveTypesFor(..)
+   method.returnType can be null even for non-constructors, simple check to fix
+   
+   added NullTypeAnnotationTest#testBug415850_01() 
+   which also detects an unrelated NPE in Annotation#isTypeUseCompatible() - fixed
+
+
+ - NPE in QAE#resolveType(..)
+   this.binding can be null, simple check to fix
+
+   added NullAnnotationTest#testBug415850_a()
+
+
+ - AIOOBE in ReferenceExpression#resolveType(..)
+   happened when implicitly mapping 1. arg to method receiver.
+
+   fixed using a paramOffset, test added as NullTypeAnnotationTest#testBug415850_03()
+
+
+ - NPE in ImplicitNullAnnotationVerifier.collectOverriddenMethods(..)
+   reveals that we can be called before connectTypeHierarchy()
+   fixed by calling connectTypeHierarchy() on-demand from checkImplicitNullAnnotations
+
+   added NullTypeAnnotationTest.testBug415850_04()
+
+
+ - reported bogus type mismatch against enum constants
+   - Enum constants are implicitly @NonNull
+   - in several tests we have an enum as inner of a raw type
+   - PTB#isAnnotatedTypeWithoutArguments() didn&apos;t correctly handle raw types
+   fixed
+
+   added NullTypeAnnotationTest#testBug415850_02()
+
+
+
+Released via commit 37207b2312332e7eb9b138e12e2db23f9f9da53e
+
+Down to 4 errors and 13 failures in tweaked tests,
+of which I estimate 50% issues to be irrelevant.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2299078</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-26 12:20:21 -0400</bug_when>
+    <thetext>More:
+
+ - NPE in BinaryTypeBinding#getField() for EnumTest#test180() f. revealed:
+   certain recursive structures could trick the compiler into bad processing order:
+   - creating a BinaryTypeBinding for an enum we are asking for null defaults in the
+     current package
+   - the package has a package-info with an annotation
+   - the annotation references the enum in a member value pair
+   This requires to read a FieldBinding from a half-initialized BinaryTypeBinding
+
+   Solution is to further fine tune processing order:
+   - scan the type for default null annotations 
+     - after fields and methods have been created
+     - before fields and methods are scanned for null annotations
+       (which wants to fill in the default, if no explicit annotations are found)
+
+   Added NullAnnotationTest#testBug415850_b()
+
+ 
+ - Bogus compatibility errors in NegativeTypeAnnotationTest.testBug399453() et al
+   show that ArrayBinding#isCompatibleWith(..) must use unannotated(), too.
+   Also LookupEnvironment.createArrayType(TypeBinding,int,long[]) had a bug, fixed.
+
+   Added NullTypeAnnotationTest.testBug415850_05()
+
+
+Irrelevant:
+
+ - EnumTest.test001() complains:
+   	BLEU = null;
+	       ^^^^
+   Null type mismatch: required &apos;@NonNull X&apos; but the provided value is null
+   This error is good if null annotations are enabled, since we regard enum constants
+   as @NonNull
+
+ - BatchCompilerTest.test013() correctly detects the tweaked option default
+
+
+ - ASTConverter15Test.test0230(): with null annotations enabled we actually get
+   the desired result (which we don&apos;t get normally, as documented in the test).
+   (3 compliance levels)
+
+
+Next bunch released via commit 1829731a70d63f049379e6ceb23edadc61e7b589
+
+
+At this point I&apos;m down to 3 bogus warnings (unchecked conversions) in
+ASTConverter18Test.test0011() ff. Which should be easily fixable similar to
+testBug415850_05() above.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2299239</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-26 17:19:41 -0400</bug_when>
+    <thetext>Final issue was:
+ - TypeReference#resolveAnnotations() created tagBitsPerDimension even if all elements
+   where 0 =&gt; bogus warning re unchecked conversion.
+
+   Test added as NullTypeAnnotationTest.testBug415850_06()
+
+Release via commit 365e7f87646ce6e1751b8c49284326393484178c</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

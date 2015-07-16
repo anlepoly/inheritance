@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>441797</bug_id>
+          
+          <creation_ts>2014-08-14 09:45:00 -0400</creation_ts>
+          <short_desc>[1.8] synchronize type annotations on capture and its wildcard</short_desc>
+          <delta_ts>2014-10-29 08:49:34 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>shankhba</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2439085</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-14 09:45:26 -0400</bug_when>
+    <thetext>While debugging variations of bug 441693 I saw weird types of the shape
+
+  @NonNull capture#of @Nullable ? extends Foo
+
+Since captures have no syntax this can only happen internally during resolving. Rather than waiting for downstream analysis to flag this as contradictory annotations (in the case of null type annotations), we should try hard to avoid such types.
+
+I believe the rule should be that a capture and its wildcard should always have the same (immediate - not speaking about bounds) type annotations.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2439102</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-14 10:07:39 -0400</bug_when>
+    <thetext>To demonstrate the user visible effect of this bug:
+
+//---
+import org.eclipse.jdt.annotation.*;
+import java.util.*;
+
+@NonNullByDefault({})
+public abstract class Foo {
+    
+    abstract &lt;T&gt; @NonNull T requireNonNull(@Nullable T obj);
+
+    @NonNull Foo testWild2(@Nullable List&lt;@Nullable ? extends List&lt;@NonNull Foo&gt;&gt; foos) {
+        return requireNonNull(foos.get(0)).get(0);
+    }
+}
+//---
+
+
+produces (with null type annotations enabled):
+
+1. ERROR in /tmp/Foo.java (at line 10)
+        return requireNonNull(foos.get(0)).get(0);
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Contradictory null annotations: method was inferred as &apos;@NonNull @Nullable capture#of @Nullable ? extends List&lt;@NonNull Foo&gt; requireNonNull(@Nullable capture#of @Nullable ? extends List&lt;@NonNull Foo&gt;)&apos;, but only one of &apos;@NonNull&apos; and &apos;@Nullable&apos; can be effective at any location
+
+
+Not only does this message look horrible, I think it&apos;s actually wrong:
+
+We are invoking requireNonNull with an argument, that has an unknown subtype of List&lt;@NonNull Foo&gt;, but we know that the type is @Nullable. Fine.
+
+Whatever we infer for &lt;T&gt; we want the return type of requireNonNull to be the @NonNull variant of it.
+
+So before applying @NonNull to the substitution for T, we need to remove any top level null annotations (leaving the inner &lt;@NonNull Foo&gt; intact, see bug 441693).
+
+Our implementation fails mainly because the capture binding doesn&apos;t even have a naked type without the annotation on the wildcard, so the best we could construct is: @NonNull capture#of @Nullable ? ..., not useful.
+
+This issue appears to be a variant of bug 440143 comment 1
+
+
+Additionally, if we keep type annotations on capture and wildcard in sync, we can omit one of them in error messages, instead of:
+   @NonNull capture#of @NonNull ?
+we should simply say:
+   @NonNull capture#of ?
+
+In other words: any null annotation directly on a wildcard should not be affected by capturing, the capture shares these properties with its wildcard. Variance can only occur regarding the bounds, like:
+   @NonNull capture#of ? extends @Nullable Foo
+This is a perfectly legal type.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2439152</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-14 11:58:41 -0400</bug_when>
+    <thetext>Released for 4.5 M2 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=1a3b48d65ad279de125b447111e271aa71010c38
+
+With this change type annotations on a capture should always be equal to those on its wildcard. Error messages will only print the outer (null) annotations.
+
+Additionally, one test changed from reporting &quot;Contradictory null annotations&quot; to a plain &quot;Null type mismatch (type annotations)&quot;, which I believe is good / easier to understand.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2452844</commentid>
+    <comment_count>3</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-09-17 00:02:04 -0400</bug_when>
+    <thetext>Verified for Mars 4.5M2 using I20140916-2000 build.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2473510</commentid>
+    <comment_count>4</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-10-29 08:49:34 -0400</bug_when>
+    <thetext>Srikanth/Stephan, how important is this for 4.4.2? I am afraid this can&apos;t be back ported without including fixes to bug 438458 and possibly others.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

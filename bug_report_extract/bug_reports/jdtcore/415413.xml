@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>415413</bug_id>
+          
+          <creation_ts>2013-08-20 03:40:00 -0400</creation_ts>
+          <short_desc>[compiler][null] NullpointerException in Null Analysis caused by interaction of LoopingFlowContext and FinallyFlowContext</short_desc>
+          <delta_ts>2013-09-18 05:18:09 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Till Brychcy">register.eclipse</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>anchakrk</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2296567</commentid>
+    <comment_count>0</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-20 03:40:23 -0400</bug_when>
+    <thetext>REPRODUCING THE BUG:
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
+
+public class ClassF {
+	public interface X {
+		@Nullable
+		Object provideNullable();
+	}
+
+	public static void needNonNull(@NonNull Object o) {
+		o.hashCode();
+	}
+
+	public void method(X x) {
+		for (int j = 0; j &lt; 1; j++) {
+			try {
+				this.hashCode();
+			} finally {
+				for (int i = 0; i &lt; 1; i++) {
+					Object o = x.provideNullable();
+					needNonNull(o);
+				}
+			}
+		}
+	}
+}
+THE BUG:
+The compiler throws a NullPointerException in FinallyFlowContext.java:108, inside the &quot;if&quot;-statement:
+ case ASSIGN_TO_NONNULL:
+	int nullStatus = flowInfo.nullStatus(this.nullLocals[i]);
+	if (nullStatus != FlowInfo.NON_NULL) {
+		this.parent.recordNullityMismatch(scope, (Expression) location,
+		this.providedExpectedTypes[i][0], this.providedExpectedTypes[i][1], nullStatus);
+	}
+	break;
+
+ANALYSIS:
+It is assumed, that whenever the value ASSIGN_TO_NULL is used, then this.providedExpectedTypes is initalized. 
+This is wrong in one case:
+The value ASSIGN_TO_NULL may be passed from LoopingFlowContext, Line 290:
+ if (!(this.nullCheckTypes[i] == MAY_NULL &amp;&amp;  upstreamCopy.isDefinitelyNonNull(local))) {
+	this.parent.recordUsingNullReference(scope, local, location,
+ 			this.nullCheckTypes[i], flowInfo);
+ }
+to the implementation of recordUsingNullReference in FinallyFlowContext, at the end which in line 420, it invokes 
+recordNullReference(local, location, checkType);
+without invoking 
+ recordProvidedExpectedTypes(providedType, expectedType, this.nullCount);
+
+POSSIBLE FIX:
+diff --git a/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/flow/LoopingFlowContext.java b/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/flow/LoopingFlowContext.java
+index 2befb45..7afdf13 100644
+--- a/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/flow/LoopingFlowContext.java
++++ b/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/flow/LoopingFlowContext.java
+@@ -287,8 +287,10 @@
+ 			// https://bugs.eclipse.org/376263: avoid further deferring if the upstream info
+ 			// already has definite information (which might get lost for deferred checking).
+ 			if (!(this.nullCheckTypes[i] == MAY_NULL &amp;&amp; upstreamCopy.isDefinitelyNonNull(local))) {
+-				this.parent.recordUsingNullReference(scope, local, location,
+-						this.nullCheckTypes[i], flowInfo);
++				if((this.nullCheckTypes[i] &amp; ~HIDE_NULL_COMPARISON_WARNING_MASK) != ASSIGN_TO_NONNULL) {
++					this.parent.recordUsingNullReference(scope, local, location,
++							this.nullCheckTypes[i], flowInfo);
++				}
+ 			}
+ 		}
+ 	}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2296569</commentid>
+    <comment_count>1</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-20 03:46:44 -0400</bug_when>
+    <thetext>This bug already exists in Juno.
+If you think the patch is correct, I will upload it as attachment.
+If will also try to make a test case out of it.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2296591</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-20 04:21:55 -0400</bug_when>
+    <thetext>Thanks, Till!
+
+I&apos;ll take a look soonish.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297060</commentid>
+    <comment_count>3</comment_count>
+      <attachid>234594</attachid>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-20 16:37:49 -0400</bug_when>
+    <thetext>Created attachment 234594
+testcase
+
+testcase: fails without my suggested patch; works with my suggested patch and the expected error message appears exactly once.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297063</commentid>
+    <comment_count>4</comment_count>
+      <attachid>234595</attachid>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-20 16:53:20 -0400</bug_when>
+    <thetext>Created attachment 234595
+proposed fix
+
+patch with a little comment added.
+
+btw., i added a nested extra &quot;if&quot; rather than add it with &quot;&amp;&amp;&quot; to the existing &quot;if&quot; for bug 376263 so the history stays clear in git.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297064</commentid>
+    <comment_count>5</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-20 16:55:33 -0400</bug_when>
+    <thetext>This contribution complies with http://www.eclipse.org/legal/CoO.php</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2303245</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-09-05 11:00:10 -0400</bug_when>
+    <thetext>I finally found the time to look into this.
+
+Yes, your test reproduces the NPE and the patch fixes this test.
+
+I&apos;m accepting your test as-is, this is very valuable.
+
+For the fix, however, I&apos;ll probably prefer a slightly different variant.
+The general idea of the patch is good, but I have a slight unease at
+what you commented like this:
+
+  &quot;and recordNullityMismatch has been invoked above already&quot;
+
+This assertion is necessary to see we are not swallowing a problem.
+Unfortunately at the point of your change it is difficult to see that the
+other method call actually happened. From the conditions for this assertion,
+verifying the part regarding ASSIGN_TO_NONNULL is OK, but what do we know about
+&quot;nullStatus != FlowInfo.NON_NULL&quot;?
+
+All this could be argued leading to a good conclusion, but its a bit hard to 
+grasp when we come back to this code location in a year or two.
+
+It seems we get away more easily by changing that earlier block to
+
+	case ASSIGN_TO_NONNULL:
+		int nullStatus = flowInfo.nullStatus(local);
+		if (nullStatus != FlowInfo.NON_NULL) {
+			this.parent.recordNullityMismatch(scope, (Expression)location, this.providedExpectedTypes[i][0], this.providedExpectedTypes[i][1], nullStatus);
+		}
+		continue; // no more delegation to parent
+
+Only change: replace &quot;break&quot; by (commented) &quot;continue&quot;.
+
+Next I&apos;ll take a look at bug 415269, then I&apos;ll run all tests and release both fixes
+in one go.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2303283</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-09-05 11:47:28 -0400</bug_when>
+    <thetext>I&apos;ve released 
+ Till&apos;s patch (commit 304ba7bf40d9b68d948dea0408ba4f460748c3d4)
+ and my fix (commit 37a1b5aeed13a52bbdce79c9fa01b824ad2aa7f5)
+
+for 4.4 M2
+
+Thanks, Till!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2307750</commentid>
+    <comment_count>8</comment_count>
+    <who name="ANIRBAN CHAKRABORTY">anchakrk</who>
+    <bug_when>2013-09-17 06:51:01 -0400</bug_when>
+    <thetext>Verified for SDK-I20130916-2330</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2308237</commentid>
+    <comment_count>9</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-09-18 05:18:09 -0400</bug_when>
+    <thetext>Verified for 4.4. M2 with build I20130916-2330.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>234594</attachid>
+            <date>2013-08-20 16:37:00 -0400</date>
+            <delta_ts>2013-08-20 16:37:49 -0400</delta_ts>
+            <desc>testcase</desc>
+            <filename>test-for-415413.patch</filename>
+            <type>text/plain</type>
+            <size>1667</size>
+            <attacher name="Till Brychcy">register.eclipse</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxBbm5vdGF0aW9u
+VGVzdC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9l
+Y2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbEFubm90YXRpb25U
+ZXN0LmphdmEKaW5kZXggZDBmMDIwYy4uODUwOWFmNyAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2Uu
+amR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Nv
+bXBpbGVyL3JlZ3Jlc3Npb24vTnVsbEFubm90YXRpb25UZXN0LmphdmEKKysrIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbEFubm90YXRpb25UZXN0LmphdmEKQEAgLTYyMjksNCAr
+NjIyOSwzOSBAQAogCQlvcHRpb25zLAogCQkiIik7CQogfQorCisvLyBCdWcgNDE1NDEzIC0gW2Nv
+bXBpbGVyXVtudWxsXSBOdWxscG9pbnRlckV4Y2VwdGlvbiBpbiBOdWxsIEFuYWx5c2lzIGNhdXNl
+ZCBieSBpbnRlcmFjdGlvbiBvZiBMb29waW5nRmxvd0NvbnRleHQgYW5kIEZpbmFsbHlGbG93Q29u
+dGV4dAorcHVibGljIHZvaWQgdGVzdEJ1ZzQxNTQxMygpIHsKKwlNYXAgb3B0aW9ucyA9IGdldENv
+bXBpbGVyT3B0aW9ucygpOworCXJ1bk5lZ2F0aXZlVGVzdFdpdGhMaWJzKAorCQluZXcgU3RyaW5n
+W117CisJCQkiQ2xhc3NGLmphdmEiLAkJCisJCQkiaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5hbm5v
+dGF0aW9uLk5vbk51bGw7XG4iICsgCisJCQkicHVibGljIGNsYXNzIENsYXNzRiB7XG4iICsgCisJ
+CQkiICBwdWJsaWMgc3RhdGljIHZvaWQgbmVlZE5vbk51bGwoQE5vbk51bGwgT2JqZWN0IG8pIHtc
+biIgKyAKKwkJCSIgICAgby5oYXNoQ29kZSgpO1xuIiArIAorCQkJIiAgfVxuIiArIAorCQkJIiAg
+cHVibGljIHZvaWQgbWV0aG9kKCkge1xuIiArIAorCQkJIiAgICBmb3IgKGludCBqID0gMDsgaiA8
+IDE7IGorKykge1xuIiArIAorCQkJIiAgICAgIHRyeSB7XG4iICsgCisJCQkiICAgICAgICB0aGlz
+Lmhhc2hDb2RlKCk7XG4iICsgCisJCQkiICAgICAgfSBmaW5hbGx5IHtcbiIgKyAKKwkJCSIgICAg
+ICAgIGZvciAoaW50IGkgPSAwOyBpIDwgMTsgaSsrKSB7XG4iICsgCisJCQkiICAgICAgICAgIE9i
+amVjdCBvID0gbnVsbDtcbiIgKyAKKwkJCSIgICAgICAgICAgbmVlZE5vbk51bGwobyk7XG4iICsg
+CisJCQkiICAgICAgICB9XG4iICsgCisJCQkiICAgICAgfVxuIiArIAorCQkJIiAgICB9XG4iICsg
+CisJCQkiICB9XG4iICsgCisJCQkifVxuIgorCQl9LCAKKwkJb3B0aW9ucywKKwkJIi0tLS0tLS0t
+LS1cbiIgKyAKKwkJIjEuIEVSUk9SIGluIENsYXNzRi5qYXZhIChhdCBsaW5lIDEzKVxuIiArIAor
+CQkiCW5lZWROb25OdWxsKG8pO1xuIiArIAorCQkiCSAgICAgICAgICAgIF5cbiIgKyAKKwkJIk51
+bGwgdHlwZSBtaXNtYXRjaDogcmVxdWlyZWQgXCdATm9uTnVsbCBPYmplY3RcJyBidXQgdGhlIHBy
+b3ZpZGVkIHZhbHVlIGlzIGluZmVycmVkIGFzIEBOdWxsYWJsZVxuIiArIAorCQkiLS0tLS0tLS0t
+LVxuIik7Cit9CisKIH0=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>234595</attachid>
+            <date>2013-08-20 16:53:00 -0400</date>
+            <delta_ts>2013-08-20 16:53:20 -0400</delta_ts>
+            <desc>proposed fix</desc>
+            <filename>fix-for-415413.patch</filename>
+            <type>text/plain</type>
+            <size>1807</size>
+            <attacher name="Till Brychcy">register.eclipse</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9mbG93L0xvb3BpbmdGbG93Q29udGV4dC5qYXZhIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L2Zsb3cvTG9vcGluZ0Zsb3dDb250ZXh0LmphdmEKaW5kZXggMmJlZmI0NS4uNzQ5NmJkNiAxMDA2
+NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2lu
+dGVybmFsL2NvbXBpbGVyL2Zsb3cvTG9vcGluZ0Zsb3dDb250ZXh0LmphdmEKKysrIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L2Zsb3cvTG9vcGluZ0Zsb3dDb250ZXh0LmphdmEKQEAgLTE4LDYgKzE4LDggQEAKICAqCQkJCQkJ
+CQlidWcgMzc2MjYzIC0gQm9ndXMgIlBvdGVudGlhbCBudWxsIHBvaW50ZXIgYWNjZXNzIiB3YXJu
+aW5nCiAgKgkJCQkJCQkJYnVnIDQwMzE0NyAtIFtjb21waWxlcl1bbnVsbF0gRlVQIG9mIGJ1ZyA0
+MDA3NjE6IGNvbnNvbGlkYXRlIGludGVyYWN0aW9uIGJldHdlZW4gdW5ib3hpbmcsIE5QRSwgYW5k
+IGRlZmVycmVkIGNoZWNraW5nCiAgKgkJCQkJCQkJYnVnIDQwNjM4NCAtIEludGVybmFsIGVycm9y
+IHdpdGggSTIwMTMwNDEzCisgKiAgICAgIFRpbGwgQnJ5Y2hjeSAtIGNvbnRyaWJ1dGlvbnMgZm9y
+CisgKiAgICAgIAkJCQkJCWJ1ZyA0MTU0MTMgLSBbY29tcGlsZXJdW251bGxdIE51bGxwb2ludGVy
+RXhjZXB0aW9uIGluIE51bGwgQW5hbHlzaXMgY2F1c2VkIGJ5IGludGVyYWN0aW9uIG9mIExvb3Bp
+bmdGbG93Q29udGV4dCBhbmQgRmluYWxseUZsb3dDb250ZXh0CiAgKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKi8KIHBhY2thZ2Ugb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmZsb3c7CiAK
+QEAgLTI4Nyw4ICsyODksMTIgQEAKIAkJCS8vIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy8zNzYy
+NjM6IGF2b2lkIGZ1cnRoZXIgZGVmZXJyaW5nIGlmIHRoZSB1cHN0cmVhbSBpbmZvCiAJCQkvLyBh
+bHJlYWR5IGhhcyBkZWZpbml0ZSBpbmZvcm1hdGlvbiAod2hpY2ggbWlnaHQgZ2V0IGxvc3QgZm9y
+IGRlZmVycmVkIGNoZWNraW5nKS4KIAkJCWlmICghKHRoaXMubnVsbENoZWNrVHlwZXNbaV0gPT0g
+TUFZX05VTEwgJiYgdXBzdHJlYW1Db3B5LmlzRGVmaW5pdGVseU5vbk51bGwobG9jYWwpKSkgewot
+CQkJCXRoaXMucGFyZW50LnJlY29yZFVzaW5nTnVsbFJlZmVyZW5jZShzY29wZSwgbG9jYWwsIGxv
+Y2F0aW9uLAotCQkJCQkJdGhpcy5udWxsQ2hlY2tUeXBlc1tpXSwgZmxvd0luZm8pOworCQkJCS8v
+IGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy80MTU0MTM6IGZvciBBU1NJR05fVE9fTk9OTlVMTCwg
+YXZvaWQgTnVsbFBvaW50ZXJFeGNlcHRpb24gbGF0ZXIKKwkJCQkvLyAoYW5kIHJlY29yZE51bGxp
+dHlNaXNtYXRjaCBoYXMgYmVlbiBpbnZva2VkIGFib3ZlIGFscmVhZHkpCisJCQkJaWYoKHRoaXMu
+bnVsbENoZWNrVHlwZXNbaV0gJiB+SElERV9OVUxMX0NPTVBBUklTT05fV0FSTklOR19NQVNLKSAh
+PSBBU1NJR05fVE9fTk9OTlVMTCkgeworCQkJCQl0aGlzLnBhcmVudC5yZWNvcmRVc2luZ051bGxS
+ZWZlcmVuY2Uoc2NvcGUsIGxvY2FsLCBsb2NhdGlvbiwKKwkJCQkJCQl0aGlzLm51bGxDaGVja1R5
+cGVzW2ldLCBmbG93SW5mbyk7CisJCQkJfQogCQkJfQogCQl9CiAJfQ==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

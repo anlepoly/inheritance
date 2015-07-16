@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>428307</bug_id>
+          
+          <creation_ts>2014-02-16 16:41:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler] Compiler fails to compile AnnotatedElement</short_desc>
+          <delta_ts>2014-02-21 02:38:53 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>427787</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>noopur_gupta</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2364066</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-16 16:41:45 -0500</bug_when>
+    <thetext>We get an error: 
+
+The method getDirectlyAndIndirectlyPresent(Map&lt;Class&lt;? extends Annotation&gt;,Annotation&gt;, Class&lt;A&gt;) in the type AnnotationSupport is not applicable for the arguments (Map&lt;Class&lt;capture#9-of ? extends Annotation&gt;,Annotation&gt;, Class&lt;T&gt;)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2364067</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-16 16:43:16 -0500</bug_when>
+    <thetext>Thanks for taking a look, I&apos;ll tackle https://bugs.eclipse.org/bugs/show_bug.cgi?id=428261 and once these are taken care of, Jay can devise some ways to package
+and test.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2364619</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-17 20:04:20 -0500</bug_when>
+    <thetext>First thing tomorrow :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2364685</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-18 04:48:38 -0500</bug_when>
+    <thetext>Minimal repro:
+
+//----
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.*;
+
+interface Bar {
+	Class&lt;? extends Bar&gt; type();
+}
+public class X {
+ 
+    &lt;T extends Bar&gt; T[] test(Class&lt;T&gt; barClass, Stream&lt;Bar&gt; bars) {
+        return get(bars.
+                    collect(Collectors.toMap(Bar::type,
+                                             Function.identity(),
+                                             ((first,second) -&gt; first),
+                                             HashMap::new)),
+                            barClass);
+    }
+    
+    &lt;A extends Bar&gt; A[] get(Map&lt;Class&lt;? extends Bar&gt;,Bar&gt; m, Class&lt;A&gt; c) {
+    	return null;
+    }
+}
+//----</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2364761</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-18 07:05:53 -0500</bug_when>
+    <thetext>This is an interesting case: trouble occurred at this constraint:
+
+bars.collect(Collectors.toMap(..))  java.util.Map&lt;java.lang.Class&lt;? extends Bar&gt;,Bar&gt;
+
+Here the spec (18.2.1) clearly says:
+
+&quot;A constraint formula of the form Expression  T is reduced as follows:
+If T is a proper type, the constraint reduces to true if the expression is compatible in a loose invocation context with T (5), and false otherwise.&quot;
+
+Problem was: after applicability inference the inner (&quot;toMap&quot;) has type
+   Map&lt;Class&lt;capture#3-of ? extends Bar&gt;,Bar&gt;
+which is *not* compatible with its non-captured variant. Bummer!
+
+First guess: maybe compatibility should be checked after finishing inner inference. This indeed fixes the immediate issue, but then we ended up comparing an unsubstituted type variable (U, declared by toMap) with its inference solution Bar and again incompatibility was detected.
+
+The solution is to include inner inference into the current inference. Interestingly, a few bullets down in 18.2.1 we have &quot;the constraint reduces to the bound set B3 ...&quot;, which exactly solves the problem.
+
+Even more interestingly, the initial &quot;If T is a proper type&quot; is separated from the other bullet by a chain of &quot;Otherwise, if .., Otherwise&quot;. I conclude that javac is interpreting this &quot;Otherwise&quot; in a non-exclusive way. Which is extremely interesting, as also the case reported in [1] can be explained using a non-exclusive interpretation of &quot;Otherwise&quot;.
+
+Test &amp; fix released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=b0e8687830f97b9ddeb50b010730e5d2fdfd5916
+
+
+[1] http://mail.openjdk.java.net/pipermail/lambda-spec-experts/2014-February/000507.html</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366512</commentid>
+    <comment_count>5</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2014-02-21 02:38:53 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC1 using Kepler SR2(RC4) +   
+Eclipse Java Development Tools Patch for Java 8 Support (BETA)	
+1.0.0.v20140220-2054</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

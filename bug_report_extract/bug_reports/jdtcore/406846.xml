@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>406846</bug_id>
+          
+          <creation_ts>2013-04-29 17:17:00 -0400</creation_ts>
+          <short_desc>[1.8] compiler NPE for method reference/lambda code compiled with &lt; 1.8 compliance</short_desc>
+          <delta_ts>2013-04-30 01:14:58 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>380188</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andrew Clement">aclement</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2250112</commentid>
+    <comment_count>0</comment_count>
+    <who name="Andrew Clement">aclement</who>
+    <bug_when>2013-04-29 17:17:32 -0400</bug_when>
+    <thetext>I was adding this lambda testcase as it didn&apos;t appear to be working for me when built with ECJ (I was adding it into LambdaExpressionsTest). It is *not* a finished test yet as the expected output is not right.  However, I accidentally ran it without 1.8 compliance and crashed ECJ.
+
+public void test045() {
+	this.runConformTest(
+			new String[] {
+					&quot;C.java&quot;,
+					&quot;import java.util.*;\n&quot; +
+					&quot;public class C {\n&quot; +
+					&quot;  public static &lt;E&gt; void printItem(E value, int index) {\n&quot; +
+					&quot;    String output = String.format(\&quot;%d -&gt; %s\&quot;, index, value);\n&quot; +
+					&quot;    System.out.println(output);\n&quot; +
+					&quot;  }\n&quot; +
+					&quot;  public static void main(String[] argv) {\n&quot; +
+					&quot;    List&lt;String&gt; list = Arrays.asList(\&quot;A\&quot;,\&quot;B\&quot;,\&quot;C\&quot;);\n&quot; +
+					&quot;    eachWithIndex(list,C::printItem);\n&quot; +
+					&quot;  }\n&quot; +
+					&quot;  interface ItemWithIndexVisitor&lt;E&gt; {\n&quot; +
+					&quot;    public void visit(E item, int index);\n&quot; +
+					&quot;  }\n&quot; +
+					&quot;  public static &lt;E&gt; void eachWithIndex(List&lt;E&gt; list, ItemWithIndexVisitor&lt;E&gt; visitor) {\n&quot; +
+					&quot;    for (int i = 0; i &lt; list.size(); i++) {\n&quot; +
+					&quot;         visitor.visit(list.get(i), i);\n&quot; +
+					&quot;    }\n&quot; +
+					&quot;  }\n&quot; +
+					&quot;}\n&quot;
+			},&quot;XXX&quot;);
+}
+
+During compilation of that:
+
+java.lang.NullPointerException
+	at org.eclipse.jdt.internal.compiler.lookup.MethodBinding.redeclaresPublicObjectMethod(MethodBinding.java:1211)
+	at org.eclipse.jdt.internal.compiler.lookup.ReferenceBinding.getInterfaceAbstractContracts(ReferenceBinding.java:1681)
+	at org.eclipse.jdt.internal.compiler.lookup.ReferenceBinding.getSingleAbstractMethod(ReferenceBinding.java:1733)
+	at org.eclipse.jdt.internal.compiler.ast.ReferenceExpression.isCompatibleWith(ReferenceExpression.java:494)
+	at org.eclipse.jdt.internal.compiler.lookup.PolyTypeBinding.isCompatibleWith(PolyTypeBinding.java:37)
+	at org.eclipse.jdt.internal.compiler.lookup.TypeBinding.isCompatibleWith(TypeBinding.java:483)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.parameterCompatibilityLevel(Scope.java:4151)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.computeCompatibleMethod(Scope.java:638)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.computeCompatibleMethod(Scope.java:580)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.findMethod(Scope.java:1456)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.findMethod(Scope.java:1366)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.getImplicitMethod(Scope.java:2155)
+	at org.eclipse.jdt.internal.compiler.ast.MessageSend.resolveType(MessageSend.java:666)
+	at org.eclipse.jdt.internal.compiler.ast.Expression.resolve(Expression.java:1001)
+	at org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration.resolveStatements(AbstractMethodDeclaration.java:594)
+	at org.eclipse.jdt.internal.compiler.ast.MethodDeclaration.resolveStatements(MethodDeclaration.java:297)
+	at org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration.resolve(AbstractMethodDeclaration.java:505)
+...
+
+I fixed it by changing: 
+Scope.parameterCompatibilityLevel
+
+this bit (line 4151):
+
+if (arg != param &amp;&amp; !arg.isCompatibleWith(param.erasure()))
+					return NOT_COMPATIBLE;
+
+change that call to include the scope:
+
+if (arg != param &amp;&amp; !arg.isCompatibleWith(param.erasure(),this))
+					return NOT_COMPATIBLE;
+
+and then the correct errors will come out:
+
+		&quot;1. ERROR in C.java (at line 3)\n&quot; + 
+		&quot;	public static &lt;E&gt; void printItem(E value, int index) {\n&quot; + 
+		&quot;	               ^\n&quot; + 
+		&quot;Syntax error, type parameters are only available if source level is 1.5 or greater\n&quot; + 
+		&quot;----------\n&quot;
+
+etc/etc. I will likely raise a separate issue for the lambda behaviour not working.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250143</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-04-29 18:31:01 -0400</bug_when>
+    <thetext>Wow, that interesting. The overload of isCompatibleWith has been added only
+recently (bug 395002) and for what I thought to be just a rare corner case.
+
+Could you share how passing the scope makes a difference for this case?
+Could this be a hint that we should investigate if more calls to 
+isCompatibleWith should be augmented like this?
+Would this be relevant for Kepler, too?
+
+Also: do you think, method redeclaresPublicObjectMethod() is safe against
+more NPE with your fix?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250175</commentid>
+    <comment_count>2</comment_count>
+    <who name="Andrew Clement">aclement</who>
+    <bug_when>2013-04-29 20:41:50 -0400</bug_when>
+    <thetext>I&apos;m afraid I didn&apos;t spend too much time digging. I wanted to get to beyond this to the real lambda problem I had...
+
+I just observed that the NPE was caused by trying to ask the scope for &apos;java.lang.Object&apos; (so not looking up anything tricky) - I just had to ensure a scope was being passed along.
+
+You could check all isCompatibleWith calls that use the one-arg variant but there are more than 100... any path that could lead to reclaresPublicObjectMethod needs to supply a scope.  Is the SingleAbstractMethod related code (also on the stack in this situation) all new for BETA_JAVA8? If it is then maybe this is only a BETA_JAVA8 issue (not kepler).
+
+With a scope I think redeclaresPublicObjectMethod is safe from NPEs if java.lang.Object can be found in that scope. I presume if jlO couldn&apos;t be found earlier errors will have been reported.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250202</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-04-30 01:14:58 -0400</bug_when>
+    <thetext>Fix and tests released here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=df478a11d242a23641848b8038dcae3f18d689bc.
+
+I chose to fix it slightly differently.
+
+However Andy&apos;s fix is good, so also included that here:
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=0e5c916a8985aba45f4aa81ad58da32fcf7a7ec2
+
+redeclaresPublicObjectMethod  and SingleAbstractMethod  are
+Java 8 specific - they locate the functional interface method.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

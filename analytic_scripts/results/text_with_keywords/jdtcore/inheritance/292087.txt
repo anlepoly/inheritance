@@ -1,0 +1,162 @@
+BUG REPORT COMMENTS:
+User-Agent:       Mozilla/5.0 (compatible; Konqueror/4.3; Linux) KHTML/4.3.1 (like Gecko) SUSE
+Build Identifier: I20080617-2000
+
+One (commented) example is worth a thousand words:
+
+public class Test extends Thread {
+	private class Nested extends LinkedList<String> {
+		// here content assist works correctly
+		private Runnable member[] = { new Runnable() {
+			public void run() {};
+		}
+		// here it thinks you're not in the array initializer anymore
+		};
+		// here it thinks you're not in Nested anymore
+	}
+	// here it thinks you're not in Test anymore
+}
+
+
+Reproducible: Always
+Looks like a JDT Core issue.
+Ayush, please investigate -- Thanks.
+Created an attachment (id=163070)
+Patch under consideration.
+
+This patch fixes the current problem and also passes
+RunAllCompletionTests.
+
+Patch does not include automated tests - these need
+to be created. As well, more testing is needed in the
+area of content assist in the presence of anonymous
+types.
+
+See that with or without patch, there is a bogus
+proposal with this example:
+
+import java.util.LinkedList;
+
+public class Test extends Thread {
+    private class Nested extends LinkedList<String> {
+    	int field;
+        // here content assist works correctly
+        private Test member[] = { new Test(){
+        	void abc() {}
+        	Nest|  // completion here proposes the default ctor for Nested
+        	       // which makes no sense.
+            }
+        };
+    }
+}
+
+Ayush, can you take over from here ? Please raise separate defects for any
+new issues you uncover unless it is very pertinent to the current subject
+at hand -- Thanks.
+(In reply to comment #3)
+
+> See that with or without patch, there is a bogus
+> proposal with this example:
+
+FYI -- I have raised bug#307337 to track this.
+(In reply to comment #3)
+> Created an attachment (id=163070) [details]
+> Patch under consideration.
+
+Patch looks good.
+Created an attachment (id=163490)
+Final patch with tests
+
+Ayush, Thanks for the review and the unit test.
+Released in HEAD for 3.6M7
+There is no completion proposal inside the array initializer.
+On line "// here it thinks you're not in the array initializer anymore".
+Is this expected ?
+(In reply to comment #8)
+> There is no completion proposal inside the array initializer.
+> On line "// here it thinks you're not in the array initializer anymore".
+> Is this expected ?
+
+Don't quite know what is expected here.
+
+(1) If you attempt completion at the point below, which is
+logically the same point as the one you have used, I get 
+several proposals, none of which makes sense though:
+
+import java.util.LinkedList;
+public class Test extends Thread {
+    private class Nested extends LinkedList<String> { 	
+        private Runnable member[] = { 	
+        // completion here brings up dubious proposals
+        new Runnable() {
+            public void run() {};
+        },
+        // completion here brings up no proposals.
+       };
+        
+    }
+    
+}
+
+
+(2) Also try the following:
+
+public class Test {
+	private Runnable member[] = {
+	    // completion here brings up useless proposals
+
+	};	
+}
+
+In this case, if we are truly completing inside the initializer,
+we should perhaps be using Runnable as the expected type
+and filter out the rest as there is no point in proposing the
+methods of java.lang.Object as we do now.
+Should I reopen? I believe the patch did improve the initial test case, but maybe not enough.
+(In reply to comment #10)
+> Should I reopen? I believe the patch did improve the initial test case, but
+> maybe not enough.
+
+I have raised bug# 310747 to cover the case (2) in comment# 9.
+I have reopened the current defect to look into the anomaly
+around case (1) in comment# 9 -- Thanks.
+No need to fix it for M7. Targetting RC1.
+import java.util.LinkedList;
+
+public class Test extends Thread {
+    private class Nested extends LinkedList<String> {
+        // here content assist works correctly
+        private Runnable member[] = { 
+        
+        // completion works before and after the null
+        // more or less the same way.
+        // if null were to be replaced by an anonymous type,
+        // completion works before it, not after it.
+        		
+        null,
+        
+        };   
+    }
+}
+
+Ayush, please see why and how this case differs from
+the original, that should offer a clue about the fix.
+This is a bit more complicated than anticipated and
+needs a bit more time for fuller analysis.
+Retargetting to 3.6.1
+Created an attachment (id=167879)
+proposed fix
+
+The above fix fixes the case at hand and passes all tests, but I'm not sure if it does fix the root cause of the problem. I'm also not sure whether its a good idea to use goForBlockStatements in this case, since its usually used for parsing inside method bodies during recovery.
+
+Also, Srikanth and I, after some analysis of the recovery mechanism in code assist, have observed that the parser doesnt seem to take a coherent path while trying to parse an anonymous class in an array initializer. In the case given below:
+
+private X[] field = {
+      new X(){},
+      | // Completion asked here
+}
+Normally, we would expect the parser to first figure out new X(){} as an anonymous class declaration (which it does) and then figure out the whole thing as a variable initializer (which it currently fails to do). This has no problems if in place of anonymous class we simply had new X().
+
+David, what do you think about the above issues?
+David, it'll be really helpful if you could look at the patch and comment. Thanks!
+

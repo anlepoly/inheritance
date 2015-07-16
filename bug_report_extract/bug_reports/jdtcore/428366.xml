@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>428366</bug_id>
+          
+          <creation_ts>2014-02-17 10:43:00 -0500</creation_ts>
+          <short_desc>[1.8] [compiler] The method valueAt(ObservableList&lt;Object&gt;, int) is ambiguous for the type Bindings</short_desc>
+          <delta_ts>2014-02-21 05:03:50 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Steve Northover">snorthov</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>noopur_gupta</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2364445</commentid>
+    <comment_count>0</comment_count>
+    <who name="Steve Northover">snorthov</who>
+    <bug_when>2014-02-17 10:43:09 -0500</bug_when>
+    <thetext>This bug is impacting openJFX project builds.
+
+The following code fragment compiles under JDK8 but not the Eclipse IDE:
+
+package junk;
+
+import javafx.beans.binding.Bindings;
+import javafx.beans.property.ListProperty;
+
+public class Junk6 {
+    private ListProperty&lt;Object&gt; property;
+    public void testValueAt_Variable_NullIndex() {
+        Bindings.valueAt(property, null);
+    }
+}
+
+NOTE:  I am using the update site here:
+
+http://build.eclipse.org/eclipse/builds/4P/siteDir/eclipse/downloads/drops4/P20140216-1600/java8patch-P20140216-1600-repository.zip</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2364488</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-17 12:04:55 -0500</bug_when>
+    <thetext>OK, thanks, reproduced, know the problem. There was a safety switch which
+we deliberately pulled to see if that would expose any issues - this is
+something we wanted to catch sooner than later - Apparently it has exposed
+the problem - that is good (we can fix) and bad (caused inconvenience to you).
+
+See https://bugs.eclipse.org/bugs/show_bug.cgi?id=427628#c8
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=427628#c9
+
+I&apos;ll restore the filtering of inapplicable methods and Stephan can investigate
+to see what is peculiar about this scenario that we would enter with inapplicable
+methods.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2364496</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-17 12:40:33 -0500</bug_when>
+    <thetext>I reinstated the safety net back via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=5493b2d6bd60226b33b413713fa212914e52abb0.
+
+The code in comment#0 now compiles.
+
+I&apos;ll leave the defect open until
+
+    - It is verified as fixed by Steve.
+    - The root cause is addressed - basically we enter the &quot;most specific
+method selection&quot; algorithm of the JLS with certain patently inapplicable
+methods that make the call appear ambiguous.
+
+I think a strategy for the safety net&apos;s &quot;future prospects&quot; could simply
+be to issue an informational message:
+
+&quot;Warning: (Recovered) Internal inconsistency while resolving invocation
+(argument expressions)&quot;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2364825</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-18 09:05:58 -0500</bug_when>
+    <thetext>Original problem can be reproduced like this:
+
+public class X {
+        &lt;T&gt; void m(String s, int i) {}
+        &lt;T&gt; void m(String s1, String s2) {}
+        void test() {
+                m(&quot;1&quot;, null);
+        }
+}
+
+Without the safety net we report ambiguity.
+
+Next I installed the suggested reporting to say:
+
+1. WARNING in /tmp/X.java (at line 5)
+        m(&quot;1&quot;, null);
+        ^^^^^^^^^^^^
+Problem detected during type inference: (Recovered) Internal inconsistency while checking invocation ambiguity
+
+(Using my catch-all IProblem.GenericInferenceError)
+
+
+Root cause for the  current issue: inference thought that 
+  null -&gt; int
+because null can be converted to Integer, and Integer unboxed to int :)
+While both steps in isolation are OK, the combination seems to be unsupported. 
+
+Adding one more check in ConstraintFormula.isCompatibleWithInLooseInvocationContext() resolves the problem: following some examples inside class Scope, I avoid checks for boxing when both types are base types (incl. null-type vs. primitive type).
+
+Also the case from comment 0 compiles fine - without raising the warning of requiring the safety net.
+
+Test &amp; fix released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=1643e643ece66b71720f5806c3958b961c2d479e</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2364831</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-18 09:16:28 -0500</bug_when>
+    <thetext>Eclipse Releng/Integration team has taken over the job of publishing beta
+builds and the Spring source site will soon be retired. Henceforth this is
+the site for downloads: 
+
+http://build.eclipse.org/eclipse/builds/4P/siteDir/updates/4.3-P-builds 
+
+Steve, Thanks for checking this out and confirming the fix here.
+
+Do you have a tally of how many remaining build issues are there for 
+openJFX ? 
+
+We just resolved our top priority item for QA: https://bugs.eclipse.org/bugs/show_bug.cgi?id=427787.
+
+We are happy to make the error free build of your project the next big 
+milestone. Thanks for continuing to engage with us.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2364849</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-18 09:44:09 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #3)
+
+&gt; Also the case from comment 0 compiles fine - without raising the warning of
+&gt; requiring the safety net.
+
+Sounds good, Thanks.
+
+I followed up a minor commit to relocate the test to GRT. I think for better
+coverage across different modes, let us use GRT as the home of tests that
+don&apos;t requite 1.7+ constructs, GRT1_7 as the home for tests that don&apos;t require
+1.8+ constructs etc.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366616</commentid>
+    <comment_count>6</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2014-02-21 05:03:50 -0500</bug_when>
+    <thetext>Verified based on example in comment #3, as working for Eclipse + Java 8 RC1 using Kepler SR2(RC4) + Eclipse Java Development Tools Patch for Java 8 Support (BETA) 1.0.0.v20140220-2054.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

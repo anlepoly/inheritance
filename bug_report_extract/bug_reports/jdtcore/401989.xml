@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>401989</bug_id>
+          
+          <creation_ts>2013-02-28 05:46:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler] hook lambda expressions into &quot;can be static&quot; analysis</short_desc>
+          <delta_ts>2013-04-28 02:03:07 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>380188</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2223726</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-28 05:46:54 -0500</bug_when>
+    <thetext>I was alerted by code in LocalDeclaration.analyzeCode() which relies on methodScope.referenceMethod() to perform &quot;can be static&quot; analysis, the latter method returning null within lambda expressions.
+While that particular piece of code might actually be OK, I noticed a problem with the following program:
+
+interface I {
+	void make();
+}
+public class Nesting {
+	int val;
+	private I test() {
+		return () -&gt; System.out.print(val);
+	}
+	public void call() { test().make(); }
+}
+
+When enabled, the following bogus warning is issued:
+  The method test() from the type Nesting can be declared as static
+
+We should check what exactly is missing to let lambda expressions participate in this analysis.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2234782</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-21 06:21:10 -0400</bug_when>
+    <thetext>(In reply to comment #0)
+&gt; We should check what exactly is missing to let lambda expressions participate in
+&gt; this analysis.
+
+The interest in this is really two-fold:
+  (1) When the lambda uses anything non-static, we must to turn off the &apos;This method can be static&apos;-diagnosis for any potentially enclosing methods, same as was the task in bug 378674. This may have been fixed already, or can be fixed easily by extending the current resetXxx-calls in MethodScope.
+  (2) We need to know it the lambda method itself can be static, i.e. if it requires a this in its MethodHandle, basically if any non-static references escape. If I&apos;m not mistaken, this may happen even if the lambda uses type parameters from it&apos;s enclosing context, like this:
+
+class Calculator&lt;T extends Number&gt; {
+  public Supplier&lt;List&lt;T&gt;&gt; dummySupplier() = {
+    return () -&gt;Collections.emptyList();
+  }
+}
+
+The lambda can be static due to type erasure -- in fact it could be entirely stateless (3) (but is there an optimization for that?) Right?
+
+I&apos;ll start fixing (1), but (2) and (3) requires a separate flag. Or should (2) and (3) be checked at code-generation time from looking at the bindings in the MethodScope for the lambda instead?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2234823</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-21 07:34:07 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+
+&gt;   (2) We need to know it the lambda method itself can be static, 
+
+A lambda method provides an implementation of an interface method and as
+such can only be an instance method.
+
+Please note that your original fix released into master is not cherry picked
+into BETA_JAVA8 yet - will be done shortly though.
+
+I think the piece that needs special handling is MethodScope&apos;s ReferenceContext
+not being AbstractMethodDeclaration but instead a LambdaExpression.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2234824</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-21 07:41:17 -0400</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; (In reply to comment #1)
+&gt; 
+&gt; &gt;   (2) We need to know it the lambda method itself can be static, 
+&gt; 
+&gt; A lambda method provides an implementation of an interface method and as
+&gt; such can only be an instance method.
+
+Right -- but creating that particular method is the job of the LambdaMetafactory [1]. I&apos;m talking about the &apos;lambda implementation method&apos;, i.e. the one that gets wrapped in the MethodHandle, e.g. lambda$1, as referenced in the constant pool. That particular method can be static or not.
+
+[1] http://download.java.net/jdk8/docs/api/java/lang/invoke/LambdaMetafactory.html</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2240498</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-04-06 05:31:22 -0400</bug_when>
+    <thetext>(In reply to comment #2)
+
+&gt; Please note that your original fix released into master is not cherry picked
+&gt; into BETA_JAVA8 yet - will be done shortly though.
+
+This is done.
+
+(In reply to comment #3)
+
+&gt; Right -- but creating that particular method is the job of the
+&gt; LambdaMetafactory [1]. I&apos;m talking about the &apos;lambda implementation method&apos;,
+&gt; i.e. the one that gets wrapped in the MethodHandle, e.g. lambda$1, as
+&gt; referenced in the constant pool. That particular method can be static or not.
+
+OK, I understand now what you meant. I&apos;ll take care of this part.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2249474</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-04-27 23:45:11 -0400</bug_when>
+    <thetext>This is fixed along with bug 406319. Test released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=b15d555969226382f7ca55d85fc45725a266fc8b.
+
+Other concerns in comment#1 are either already addressed or will be
+through bug 406392.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2249476</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-04-28 02:03:07 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+
+&gt;   (2) We need to know it the lambda method itself can be static, i.e. if it
+&gt; requires a this in its MethodHandle, basically if any non-static references
+&gt; escape. If I&apos;m not mistaken, this may happen even if the lambda uses type
+&gt; parameters from it&apos;s enclosing context, like this:
+&gt; 
+&gt; class Calculator&lt;T extends Number&gt; {
+&gt;   public Supplier&lt;List&lt;T&gt;&gt; dummySupplier() = {
+&gt;     return () -&gt;Collections.emptyList();
+&gt;   }
+&gt; }
+
+Jesper, can you post the full code for this test case please ? TIA.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

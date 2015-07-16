@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>457079</bug_id>
+          
+          <creation_ts>2015-01-08 16:13:00 -0500</creation_ts>
+          <short_desc>Regression: type inference</short_desc>
+          <delta_ts>2015-01-28 00:44:45 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows NT</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Clovis Seragiotto">clovis.seragiotto</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>saammana</cc>
+    
+    <cc>shankhba</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2503558</commentid>
+    <comment_count>0</comment_count>
+    <who name="Clovis Seragiotto">clovis.seragiotto</who>
+    <bug_when>2015-01-08 16:13:03 -0500</bug_when>
+    <thetext>The progream below could be compiled with 4.4.1 but cannot be compiled with 4.5.0(M4): I must write Collections.&lt;String&gt;emptySet() to compile it now.
+
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+
+class Foo {
+	static &lt;K, V&gt; Map&lt;K, V&gt; foo(K value, Function&lt;? super K, V&gt; function) {
+		return null;
+	}
+	
+	static void bar(Set&lt;String&gt; set) {
+		Map&lt;String, Set&lt;String&gt;&gt; map = foo(&quot;&quot;, e -&gt; Collections.emptySet());
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2503635</commentid>
+    <comment_count>1</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2015-01-09 00:27:53 -0500</bug_when>
+    <thetext>It is a regression.
+The code compiles fine with 4.5 M2. 
+It fails to compile with 4.5 M3. 
+
+1. ERROR in C:\tmp\Foo.java (at line 12)
+        Map&lt;String, Set&lt;String&gt;&gt; map = foo(&quot;&quot;, e -&gt; Collections.emptySet());
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Type mismatch: cannot convert from Map&lt;String,Object&gt; to Map&lt;String,Set&lt;String&gt;&gt;
+
+Need to check with the fix in Bug 437444.
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2504067</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-09 17:59:23 -0500</bug_when>
+    <thetext>Thanks for the example.
+
+Here&apos;s my current understanding about this:
+
+Commit b0ee678b65f48d1cfab35972dd53d6bd85389446 on behalf of Bug 437444 introduced a kind of short-cut:
+when during CExprF.reduce() we are requesting constraints from an inner inference context, and when the inner context is marked as TYPE_INFERRED, we assume that all relevant constraints have already been transferred into the current outer context during C set construction.
+This assumption is not plain wrong, but it causes grief, if an inner ivar was sub-optimally resolved to j.l.Object although a relation to an outer ivar would create a better result, once the outer ivar is resolved.
+In this example the type bound in question is
+  V#1 :&gt; Set&lt;T#2&gt;
+where V#1 is from inferring the outer foo(...)
+and T#2 is from inferring the inner Collections.emptySet()
+
+During inner inference this type bound buys us nothing for T#2, so we instantiate T#2 to j.l.O.
+But later we have a conflict between:
+- V#1 :&gt; Set&lt;String&gt;
+- V#1 :&gt; Set&lt;Object&gt;
+  
+The former being derived from the outer&apos;s target type (I believe), and the latter derived from the following constraint (the one that&apos;s driving the CExprF.reduce() in question):
+  (&lt;no type&gt; e) -&gt; Collections.emptySet()  java.util.function.Function&lt;? super K#0,V#1&gt;
+With premature resolution of Collections.emptySet() to Set&lt;Object&gt; this creates the conflicting type bound.
+
+
+I see two options for fixing this:
+
+(a) revert the short-cut. Result: this current issue would be fixed, GenericsRegressionTest_1_8.test433852() reports one fewer errors (line 14) (javac shows all three errors), everything else is unchanged.
+
+(b) introduce some smarts to detect that the inner solution is sub-optimal. I have a two step draft:
+- set a flag in TypeBound if this.right mentions an ivar from a different site that this.left&apos;s site, call this &quot;relatesToAlienIVar&quot;
+- when resolving an ivar to j.o.O. where the ivar has relatesToAlienIVar set, mark the IC18 as &quot;couldImproveWithOuter&quot;
+Now this flag on IC18 can be used in CExprF.reduce() in addition to checking the stepCompleted.
+
+I still need to understand what&apos;s causing the difference in test433852.
+Also performance issues could make a difference:
+- the short cut may reduce efforts of re-inferring an already resolved inference.
+- the added smarts requires traversing all type bindings of created type bounds (tiny effort per se, but happens *many* times).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2504079</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-09 20:19:20 -0500</bug_when>
+    <thetext>Some background regarding the &quot;short-cut&quot;
+- originally proposed in bug 432682 comment 10
+- reverted later
+- modified variant re-introduced via bug 444891, which was then absorbed in bug 437444 with more modifications, as part of commit b0ee678b65f48d1cfab35972dd53d6bd85389446.
+
+Still after all this, I have a hunch that some cheating is involved as called out in bug 432682 comment 25:
+Pulling &apos;exprType&apos; into the outer inference means to use the full inner inference, where we should only use the previous-to-final bound set B3.
+As can be seen in the current bug, including more information may well cause inference to fail, because we get the preliminary j.l.O where outer inference could improve the answer.
+
+As for test433852: The issue arises around this method:
+
+   static Object test2(Stream&lt;Stream&lt;String&gt;&gt; s3) {
+       return s3.map(s2 -&gt; s2.map(s1 -&gt; Integer.parseInt(s1))).flatMap(Function.identity()).findAny().orElse(
+         X.class);
+   }
+
+Without the &quot;short-cut&quot; we infer a sub-optimal solution (involving &quot;? extends Object&quot; where one might expect &quot;Integer&quot;), that OTOH *might* be valid (and program executes fine).
+With the short-cut we answer:
+  The method orElse(Integer) in the type Optional&lt;Integer&gt; is not applicable for the arguments (Class&lt;X&gt;)
+This is the result of more precise inference for s3.map() and hence (..).flatMap() &amp; .findAny().
+
+
+Another suspect: without the short-cut I see these bounds:
+  R#0 :&gt; java.util.stream.Stream&lt;R#0&gt;
+  R#0 :&gt; java.util.stream.Stream&lt;R#1&gt; 
+Where the ivars R#0 and R#1 on the RHS represent the same type parameter of the same invocation s2.map(..). (The R#0 on the LHS is different, ivar naming should still be improved).
+Different paths to creating these ivars are:
+- from resolving the lambda, creating ivar into the inner ctx.
+- from addConstraintsToC, creating ivar into outer ctx.
+Bounds from both ctx;s are then merged in CExprF.reduce().
+
+Assuming that this indicates the root bug, the behavior from current HEAD can be achieved also by
+- removing the short-cut
+- synthesizing another type bound &quot;R#0 = R#1&quot;
+
+This could indicate we should actually perform some interning of ivars. In HEAD the lack of this interning would just be masked by the short-cut. If that train of reasoning can be validated, then test433852 no longer serves as a motivation for the short-cut (and option (b) above is no longer needed).
+
+NB: when speaking about an ivar&apos;s &apos;site&apos; this alludes to WIP in bug 455945.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2504174</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-10 15:36:02 -0500</bug_when>
+    <thetext>I have a solution under test consisting of
+- removing the short-cut
+- add simple interning mechanism for inference variables
+
+I chose to use LookupEnvironment to store/find the outermost current IC18. That outermost IC18 is then responsible for ivar interning (no need to maintain a global cache of all ivars, when the outermost IC18 completes all ivars can be discarded). As a side effect, this strategy also ensures unique IDs for ivars :) (good for debugging).
+
+(In reply to comment #3)
+&gt; NB: when speaking about an ivar&apos;s &apos;site&apos; this alludes to WIP in bug 455945.
+
+Fortunately this was wrong, the patch does *not* depend on such WIP.
+
+-&gt; https://git.eclipse.org/r/39347</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2504176</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-10 15:55:39 -0500</bug_when>
+    <thetext>Sasi,
+
+In my solution in comment 4 and https://git.eclipse.org/r/39347 I&apos;m adding a new little interning infrastructure for inference variables (in IC18).
+Since you recently worked on optimizing TypeBinding interning, do you want to make a quick check if similar optimization is mandated also here?
+My assumption is that number of inference variables will always be low, I think highest number seen in GenericsRegressionTest_1_8 was 13. But that&apos;s not a strong proof of anything, yet.
+I briefly considered using a hash map but with a three-part key I didn&apos;t see a fully convincing/low footprint solution.
+
+thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2504747</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-12 17:30:24 -0500</bug_when>
+    <thetext>Released for 4.5 M5 via commit 92554e04c2e222921db725ed0779cc4ef54e89f9
+
+(I did a few performance measurements, but given a small set of data any differences observed were well within the range of statistic deviation - so no immediate need for optimization).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511108</commentid>
+    <comment_count>7</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-28 00:44:45 -0500</bug_when>
+    <thetext>Verified for 4.5 M5 with build I20150127-0900</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

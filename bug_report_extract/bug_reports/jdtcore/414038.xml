@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>414038</bug_id>
+          
+          <creation_ts>2013-07-30 12:41:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler] CCE in resolveAnnotations</short_desc>
+          <delta_ts>2013-11-28 12:06:04 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Manoj Palat Away Until May 11 2015">manpalat</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2289794</commentid>
+    <comment_count>0</comment_count>
+      <attachid>233952</attachid>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2013-07-30 12:41:52 -0400</bug_when>
+    <thetext>Created attachment 233952
+Test case to reproduce the issue
+
+Stack Trace:
+
+java.lang.ClassCastException: org.eclipse.jdt.internal.compiler.ast.Annotation$TypeUseBinding cannot be cast to org.eclipse.jdt.internal.compiler.lookup.FieldBinding
+	at org.eclipse.jdt.internal.compiler.ast.ASTNode.resolveAnnotations(ASTNode.java:713)
+	at org.eclipse.jdt.internal.compiler.lookup.FieldBinding.getAnnotationTagBits(FieldBinding.java:281)
+	at org.eclipse.jdt.internal.compiler.lookup.SourceTypeBinding.resolveTypeFor(SourceTypeBinding.java:1474)
+	at org.eclipse.jdt.internal.compiler.lookup.SourceTypeBinding.fields(SourceTypeBinding.java:775)
+	at org.eclipse.jdt.internal.compiler.lookup.SourceTypeBinding.faultInTypesForFieldsAndMethods(SourceTypeBinding.java:753)
+	at org.eclipse.jdt.internal.compiler.lookup.SourceTypeBinding.faultInTypesForFieldsAndMethods(SourceTypeBinding.java:757)
+	at org.eclipse.jdt.internal.compiler.lookup.CompilationUnitScope.faultInTypes(CompilationUnitScope.java:424)
+	at org.eclipse.jdt.core.dom.CompilationUnitResolver.resolve(CompilationUnitResolver.java:1200)
+	at org.eclipse.jdt.core.dom.CompilationUnitResolver.resolve(CompilationUnitResolver.java:692)
+	at org.eclipse.jdt.core.dom.ASTParser.internalCreateAST(ASTParser.java:1186)
+	at org.eclipse.jdt.core.dom.ASTParser.createAST(ASTParser.java:812)
+	at org.eclipse.jdt.internal.ui.javaeditor.ASTProvider$1.run(ASTProvider.java:544)
+	at org.eclipse.core.runtime.SafeRunner.run(SafeRunner.java:42)
+	at org.eclipse.jdt.internal.ui.javaeditor.ASTProvider.createAST(ASTProvider.java:537)
+	at org.eclipse.jdt.internal.ui.javaeditor.ASTProvider.getAST(ASTProvider.java:480)
+	at org.eclipse.jdt.ui.SharedASTProvider.getAST(SharedASTProvider.java:128)
+	at org.eclipse.jdt.internal.ui.viewsupport.SelectionListenerWithASTManager$PartListenerGroup.calculateASTandInform(SelectionListenerWithASTManager.java:170)
+	at org.eclipse.jdt.internal.ui.viewsupport.SelectionListenerWithASTManager$PartListenerGroup$3.run(SelectionListenerWithASTManager.java:155)
+	at org.eclipse.core.internal.jobs.Worker.run(Worker.java:53)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2290421</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-07-31 17:45:03 -0400</bug_when>
+    <thetext>Looking at the AST after parsing reveals a bit of what&apos;s going on here:
+
+import java.lang.annotation.*;
+@Target(ElementType.TYPE_USE) @interface NonNull {
+  class value {
+    value() {
+      super();
+    }
+  }
+  public class X extends @NonNull() Object {
+    public static @NonNull() int i = 0;
+    public X() {
+      super();
+    }
+    &lt;clinit&gt;() {
+    }
+  }
+}
+
+This happens partly due to the syntax error at int[].class, but it&apos;s strange why we 
+end up with duplicate @NonNull()?
+
+Actually, that directly leads to the root cause: the AST is not well-formed,
+two type references (the type&apos;s superclass and the field&apos;s type) share the same
+instance of NormalAnnotation!!
+
+From here it&apos;s easy to see that the recipient of the annotation is a field
+and is not a field at the same time, depending on how you look at the AST.
+
+My guess: during error recovery someone is not properly consuming the type
+annotation from its stack.
+
+I vaguely remember we already had a similar situation.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2290429</commentid>
+    <comment_count>2</comment_count>
+      <attachid>233998</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-07-31 18:16:57 -0400</bug_when>
+    <thetext>Created attachment 233998
+sketch of a possible fix
+
+No, not the parser&apos;s stack is corrupt, but the reference to the annotation
+is replicated via
+- RecoveredType#pendingAnnotations
+- SingleTypeReference#annotations
+
+At the point we regularly consume the annotation into the superclass reference
+we forgot that we previously stashed it into the RecoveredType.
+
+Resetting that stash at the real consumption resolves the immediate problem,
+but raises these questions:
+- should this fix apply to other currentElements besides RecoveredType?
+- do more locations in the parser exist that need a similar fix?
+
+Looking for Recovered*#pendingAnnotations gives 5 matches.
+
+Just within Parser I see 8 locations decrementing #typeAnnotationPtr, which all
+are candidates for creating illegal sharing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2291317</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-04 06:35:48 -0400</bug_when>
+    <thetext>This looks similar:
+
+Given a CU with syntax errors and this method:
+
+public Object[] @NonNull [] foo() {
+  return null;
+}
+
+The MarkerAnnotation &quot;@NonNull&quot; will end up both 
+- as a declaration annotation in MethodDeclaration#annotations
+- as a type annotation of the method&apos;s return type 
+  (ArrayTypeReference#annotationsOnDimensions)
+
+In my workspace I added inside ASTNode#resolveAnnotations()
+(FYI, these lines are needed for bug 392384):
+
+	final Binding annotationRecipient = annotation.recipient;
+	if (annotationRecipient != null &amp;&amp; recipient != null) {
+		switch (recipient.kind()) {
+// ...
+// this section is new:
+		case Binding.TYPE_USE :
+			TypeUseBinding typeUse = (TypeUseBinding) recipient;
+			typeUse.tagBits = ((TypeUseBinding) annotationRecipient).tagBits;
+//
+
+With the above input I get CCE because the receiver of a TYPE_USE annotation is not
+a TypeUseBinding but a MethodBinding.
+
+This illegal sharing of AST nodes only happens during syntax recovery.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2292110</commentid>
+    <comment_count>4</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-08-07 00:47:10 -0400</bug_when>
+    <thetext>Manoj, would you like to take this up?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2301498</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-31 08:02:31 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #3)
+&gt; // ...
+&gt; // this section is new:
+&gt; 		case Binding.TYPE_USE :
+&gt; 			TypeUseBinding typeUse = (TypeUseBinding) recipient;
+&gt; 			typeUse.tagBits = ((TypeUseBinding) annotationRecipient).tagBits;
+&gt; //
+
+This addition was released via commit 427a01e331e57852efc472cca3a8360bd121fda9
+but reverted in commit 8a1621e802c664e59aba36b8a87f59ae57902e37.
+
+This means that the mentioned strategy for triggering CCE no longer works,
+but I still believe that syntax recovery creates malformed structures.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2309436</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-09-20 20:12:48 -0400</bug_when>
+    <thetext>*** Bug 417662 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2316040</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-09 05:19:30 -0400</bug_when>
+    <thetext>I released a temporary fix here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=70293ebfba1aa3d3dce9544e23e757d77487db91
+
+Will leave this open for continued analysis and eventual
+proper resolution.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2316159</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-10-09 08:44:00 -0400</bug_when>
+    <thetext>BTW, did you see my sketch in comment 2?
+I&apos;m afraid malformed AST will hit us in more situations than just this CCE...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2316302</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-09 11:55:25 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #8)
+&gt; BTW, did you see my sketch in comment 2?
+&gt; I&apos;m afraid malformed AST will hit us in more situations than just this CCE...
+
+Agreed, that is why this is still left open. ATM, I don&apos;t have the time for
+due diligence on this task - hence the first aid.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2334108</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-11-25 12:21:16 -0500</bug_when>
+    <thetext>Cumulative fix for bug 414038 and bug 420320 delivered via: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=1821b3dbff03a19f0410029f03844aad56801cc1.
+
+Fix was to simply make sure type annotations are mixed up with the
+recovery machinery.
+
+If type annotation recovery is necessary, it will have to dealt with
+as a separate problem. I don&apos;t think it is as important as SE5 annotations
+discovery.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2334112</commentid>
+    <comment_count>11</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-11-25 12:22:55 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #10)
+
+&gt; Fix was to simply make sure type annotations are mixed up with the
+                                               are NOT mixed up with the</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2335633</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-11-28 12:06:04 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #10)
+&gt; If type annotation recovery is necessary, it will have to dealt with
+&gt; as a separate problem. [...]
+
+I&apos;ve filed bug 422784 with a reference to the tentative fix in comment 2.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>233952</attachid>
+            <date>2013-07-30 12:41:00 -0400</date>
+            <delta_ts>2013-07-30 12:41:52 -0400</delta_ts>
+            <desc>Test case to reproduce the issue</desc>
+            <filename>file_414038.txt</filename>
+            <type>text/plain</type>
+            <size>201</size>
+            <attacher name="Manoj Palat Away Until May 11 2015">manpalat</attacher>
+            
+              <data encoding="base64">aW1wb3J0IGphdmEubGFuZy5hbm5vdGF0aW9uLio7DQoNCkBUYXJnZXQoRWxlbWVudFR5cGUuVFlQ
+RV9VU0UpDQpAaW50ZXJmYWNlIE5vbk51bGwgeyBpbnRbXS5jbGFzcyB2YWx1ZSgpIGRlZmF1bHQg
+MDt9DQoNCnB1YmxpYyBjbGFzcyBYIGV4dGVuZHMgQE5vbk51bGwoKSBPYmplY3QgeyAgICANCiAg
+ICBwdWJsaWMgc3RhdGljIGludCBpID0gMDsgDQp9
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>233998</attachid>
+            <date>2013-07-31 18:16:00 -0400</date>
+            <delta_ts>2013-07-31 18:16:57 -0400</delta_ts>
+            <desc>sketch of a possible fix</desc>
+            <filename>Bug414038.patch</filename>
+            <type>text/plain</type>
+            <size>648</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvUGFyc2VyLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL1Bh
+cnNlci5qYXZhCmluZGV4IDgyYmE2ZmEuLmY2N2UzNWMgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNl
+LmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wYXJz
+ZXIvUGFyc2VyLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2Vj
+bGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3BhcnNlci9QYXJzZXIuamF2YQpAQCAtMTAxMTcs
+NiArMTAxMTcsOCBAQAogCQkJCXJlZi5zb3VyY2VTdGFydCA9IHJlZi5hbm5vdGF0aW9uc1swXVsw
+XS5zb3VyY2VTdGFydDsKIAkJCX0KIAkJCXJlZi5iaXRzIHw9IEFTVE5vZGUuSGFzVHlwZUFubm90
+YXRpb25zOworCQkJaWYgKHRoaXMuY3VycmVudEVsZW1lbnQgaW5zdGFuY2VvZiBSZWNvdmVyZWRU
+eXBlKQorCQkJCXRoaXMuY3VycmVudEVsZW1lbnQucmVzZXRQZW5kaW5nTW9kaWZpZXJzKCk7CiAJ
+CX0KIAl9CiAJcmV0dXJuIHJlZjsK
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

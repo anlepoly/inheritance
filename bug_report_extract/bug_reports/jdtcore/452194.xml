@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>452194</bug_id>
+          
+          <creation_ts>2014-11-18 22:29:00 -0500</creation_ts>
+          <short_desc>Code no longer compiles in 4.4.1, but with confusing error</short_desc>
+          <delta_ts>2014-12-09 03:53:32 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M4</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Randy Hudson">hudsonr</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2485299</commentid>
+    <comment_count>0</comment_count>
+    <who name="Randy Hudson">hudsonr</who>
+    <bug_when>2014-11-18 22:29:21 -0500</bug_when>
+    <thetext>The following java file (all Types in a single file, just for convenience) compiles fine in eclipse 4.3.x (defaults set to JRE 6), but no longer compiles in 4.4.1-ish (JRE 6).
+
+package test;
+
+import java.util.Map.Entry;
+
+public class Main {
+	public static void main(String[] args) {
+		EcoreEMap map = new EcoreEMap();
+		map.addUnique(new Object()); //Error here ONLY in 4.4
+	}
+}
+
+interface InternalEList&lt;E&gt; {
+	public void addUnique(E object);
+}
+
+class EcoreEMap&lt;K, V&gt; implements InternalEList&lt;Entry&lt;K, V&gt;&gt; {
+	public void addUnique(Entry&lt;K, V&gt; object) {
+	}
+}
+
+The error is:
+The method addUnique(java.lang.Object) in the type InternalEList is not applicable for the arguments (java.lang.Object)
+
+To me, the 4.3 behavior never made any sense to me. However, the error that occurs in 4.4 is not right.  It should say:
+The method addUnique(java.util.Map.Entry) in the type InternalEList is not applicable for the arguments (java.lang.Object)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2486795</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-11-20 23:42:34 -0500</bug_when>
+    <thetext>(In reply to Randy Hudson from comment #0)
+&gt; To me, the 4.3 behavior never made any sense to me. However, the error that
+&gt; occurs in 4.4 is not right.  It should say:
+&gt; The method addUnique(java.util.Map.Entry) in the type InternalEList is not
+&gt; applicable for the arguments (java.lang.Object)
+
+I see this behavior on master too.
+
+Stephan, do you think this is the expected behavior?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487102</commentid>
+    <comment_count>2</comment_count>
+    <who name="Randy Hudson">hudsonr</who>
+    <bug_when>2014-11-21 11:00:17 -0500</bug_when>
+    <thetext>I tested this at the command line and javac agrees with 4.4, but with a better error.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487149</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-21 12:03:07 -0500</bug_when>
+    <thetext>I agree this error is not helpful at all.
+
+Investigating.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487157</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-21 12:27:22 -0500</bug_when>
+    <thetext>The reason for bad error reporting is in Scope.findMethod0:
+
+The loop searching for a compatibleMethod finds nothing.
+
+Later the loop labeled nextMethod: does find some approximate matches
+1. EcoreEMap#RAW.addUnique(Map.Entry#RAW)
+2. InternalEList#RAW.addUnique(Object)
+
+The second candidate seems to be &quot;better&quot; since more arguments match (i.e. all), and hence we use this method in our error message. This is, however, wrong, because candidate (2) is actually overridden by (1) and hence is not a real candidate to begin with.
+
+I have a patch that prevents overridden methods from spoiling our error messages, to yield this better error message:
+
+The method addUnique(Map.Entry) in the type EcoreEMap is not applicable for the arguments (Object)
+
+Tests are running as we speak.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487158</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-21 12:31:27 -0500</bug_when>
+    <thetext>First batch of testing was successful, hudson will do the full test run via https://git.eclipse.org/r/36858</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487193</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-21 13:56:26 -0500</bug_when>
+    <thetext>Released for 4.5 M4 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=7eeea60289161cbc82181c2049d38d6375b340c4</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494315</commentid>
+    <comment_count>7</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-12-09 03:53:32 -0500</bug_when>
+    <thetext>Verified for 4.5M4 using build I20141208-2000.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>370424</bug_id>
+          
+          <creation_ts>2012-02-02 06:31:00 -0500</creation_ts>
+          <short_desc>[compiler][null] throw-catch analysis for null flow could be more precise</short_desc>
+          <delta_ts>2014-11-30 17:17:09 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          <resolution></resolution>
+          
+          <see_also>https://bugs.eclipse.org/bugs/show_bug.cgi?id=453483</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>daniel_megert</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2059897</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-02 06:31:16 -0500</bug_when>
+    <thetext>void fooNull(LineNumberReader lineReader) throws IOException, MyException {
+	Object o = null;
+	try {
+	    while (lineReader.readLine() != null) {
+		o = new Object();
+		callSome();  // only this can throw MyException
+	    }
+	} catch (MyException e) {
+		o.toString(); // bogus Pot. NPE warning
+	}
+}
+private void callSome() throws MyException {}
+
+Here we report a pot. NPE although that specific catch block can only be reached with o != null.
+
+I&apos;m not sure if the throw-catch analysis has enough information to improve here, but we should have a look.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2059908</commentid>
+    <comment_count>1</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-02-02 07:08:49 -0500</bug_when>
+    <thetext>For a checked exception this should work fine, but seems like the loop introduces some complexity. See that this already works
+
+void fooNull(LineNumberReader lineReader) throws IOException, MyException {
+    Object o = null;
+    try {
+        o = new Object();
+        callSome();  // only this can throw MyException
+    } catch (MyException e) {
+        o.toString(); // bogus Pot. NPE warning
+    }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2061045</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-04 10:40:47 -0500</bug_when>
+    <thetext>Here&apos;s another fishy example:
+
+	void experiment1(boolean b) {
+		Object o = null;
+		try {
+			System.out.println(&quot;read&quot;);
+		} finally {
+			o = new Object();
+		}
+		if (o == null) // (A)
+			System.out.println(&quot;null&quot;);
+		try {
+			if (b) throw new IOException();
+			try {
+			} finally {
+				if (b) throw new IOException();
+			}
+		} catch (IOException re) {
+		}
+		if (o == null) // (B)
+			System.out.println(&quot;null&quot;);
+	}
+
+At (A) we know that o cannot be null so we warn and next line is flagged dead.
+
+At (B) we no longer have this knowledge, despite that fact that o hasn&apos;t been touched between the two locations.
+
+If I change IOException to RuntimeException I see the same problems at (A) and (B).
+
+Currently, this forces me to ignore POTENTIALLY_NONNULL during resource analysis, because ResourceLeakTest#test056n() would give a false positive. Inversely, test064() must currently remain silent, although a pot.leak warning would be correct.
+
+Code-ref: In TryStatement#analyseCode() we have two blocks checking for isUncheckedCatchBlock(i). The difference between these two blocks doesn&apos;t seem 100% kosher.
+
+Related to the above?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2061046</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-04 10:53:00 -0500</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; Inversely, test064() must currently remain silent, although a pot.leak warning
+&gt; would be correct.
+
+Delete that part. This test (which I haven&apos;t even published yet..) incorrectly produced POTENTIALLY_NONNULL, which meanwhile I could fix to producing POTENTIALLY_NULL and all is well on that side. The main issue of comment 2 remains, though.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2141953</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-25 18:16:18 -0400</bug_when>
+    <thetext>x-ref: in bug 345305 I started experiments which *might* be related to this issue.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2490478</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-29 11:11:18 -0500</bug_when>
+    <thetext>See bug 453483 comment 5, to be handled here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2490710</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-30 17:17:09 -0500</bug_when>
+    <thetext>Another candidate: bug 195638 comment 10.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,518 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>386181</bug_id>
+          
+          <creation_ts>2012-07-28 04:18:00 -0400</creation_ts>
+          <short_desc>[compiler][null] wrong transition in UnconditionalFlowInfo.mergedWith()</short_desc>
+          <delta_ts>2012-09-18 21:32:37 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M2</target_milestone>
+          <dependson>345305</dependson>
+          <blocked>386665</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2142868</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-28 04:18:17 -0400</bug_when>
+    <thetext>Work on bug 345305 and bug 385415 revealed that method mergedWith() gives a wrong result when combining states 1010 (def nn) and 1001 (def un): currently 1001 (def un) is answered, i.e., the non-null on one branch is silently swallowed.
+
+Looking at org.eclipse.jdt.core.tests.compiler.regression.NullReferenceImplTransformations.mergedWith, the corresponding line is:
+	{0x24,0x28,0x24},
+but should be
+	{0x24,0x28,0x0C},
+where 0x0C corresponds to 0011 (pot.nn &amp; pot.un)
+
+At a closer look org.eclipse.jdt.core.tests.compiler.regression.NullReferenceImplTests is disabled due to UnconditionalFlowInfo.COVERAGE_TEST_FLAG being false.
+
+When enabling this test it answers a number of failures, which should be investigated...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2142873</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-28 05:46:40 -0400</bug_when>
+    <thetext>Patch Set 2 in https://git.eclipse.org/r/#/c/6991/ demonstrates how this bug can be triggered. Temporary workaround exists inside UFI.mergedWith() - disable those changes to observe the bug in NullReferenceTest.test0525_try_finally_unchecked_exception() ff.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2143993</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-08-01 12:20:30 -0400</bug_when>
+    <thetext>Regarding the tests I can distinguish two issues:
+1) some matrices in NullReferenceImplTransformations need updating
+2) coverage tests are broken
+
+ad 1): the (old) special treatment for state 0111 within mergedWith() is not covered by impl. tests. Likewise the change from bug 345305 needs to be adopted (see comment 0). Maybe more changes to class UnconditionalFlowInfo call for updates in impl. tests.
+
+ad 2): while directly running NullReferenceImplTests signals green, doing so with COVERAGE_TEST_FLAG = true yields a failure in test2998_coverage(). Depending on the value of CoverageTestId a specific bug is injected into the computation. While each injected bug correctly triggers a failure, coverage points &gt;= 40 are not triggered.
+
+
+Why are these tests disabled?
+- I read that COVERAGE_TEST_FLAG must be false in production builds. Apparently no trick was found how the coverage tests can still be run during a full build. This still doesn&apos;t justify the conditional inside TestAll, the impl. tests could still be run even if not testing coverage.
+
+Why are points &gt;= 40 not triggered?
+- those points were blindly added during bug 292478 without ensuring test coverage, my bad :-/</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2144002</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-08-01 12:55:01 -0400</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; Why are points &gt;= 40 not triggered?
+&gt; - those points were blindly added during bug 292478 without ensuring test
+&gt; coverage, my bad :-/
+
+This can be remedied by adding the following tests to test2998_coverage():
+- 40: testBug292478()
+- 41: testBug292478c()
+- 42: test0331_if_else_nested()
+- 43: testBug325755b()
+- 44: testBug292478g()
+- 45: testBug325755b()
+plus adjusting the inserted bug to ensure it has an effect on the outcome.
+
+(for the above list I have renumbered coverage points, because 44 and 45 where skipped for no good reasons).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2144239</commentid>
+    <comment_count>4</comment_count>
+      <attachid>219472</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-08-02 05:17:20 -0400</bug_when>
+    <thetext>Created attachment 219472
+proposed fix
+
+This patch fixes both the wrong transition and the test issues.
+
+Regarding the tests I understand that the impl tests should be run manually everytime one of the bit operations in class UFI is modified. They&apos;re not integrated in the main test suite because the compiler should have a chance to optimize out the instrumentation code for production builds.
+
+With updates of coverage tests the impl tests are now green again.
+
+Regarding the bitset-formulae in class UFI I learned the following method:
+
+Update the expected result in the corresponding matrix like org.eclipse.jdt.core.tests.compiler.regression.NullReferenceImplTransformations.mergedWith. The current patch contains the updates for this bug and cleaned up version of the tweaks we applied in bug 325755.
+
+Run org.eclipse.jdt.core.tests.compiler.regression.Generator --printTruthTables. For each method this creates one file for each of nullBit1 .. nullBit4. 
+
+The print-out is actually a Karnaugh map from which formulae can be manually derived as a disjunction of maximal contiguous areas.
+
+For &quot;mergedWith&quot; the matrix is complete except for state 1000, which isn&apos;t even documented in class UFI. This implies that the implementation tests can be considered complete for this method. Once a set of forumlae passes these tests the implementation should be safe.
+
+I constructed new formulae for mergedWith and mixed these with the old ones to obtain minimal number of long-operations:
+
+nullBit1: old: 26 ops, new: 18 ops, OK
+nullBit2: old: 14 ops, new: 23 ops, old formula passes all tests, keep it.
+nullBit3: old: 22 ops, new: 10 ops, OK.
+nullBit4: old: 49 ops, new: 75 ops. NOK
+  tweaked old formula to pass new tests: 55 ops, OK
+
+Old tweaks used 22 ops always + 4 + 4 ops if a specific pattern was detected. These are obsolete now.
+
+Total: old: 133..141, new 97, OK!
+
+Before releasing I will again fold the assignments of locals a1/na1..nb4 into the formulae, assuming this was done to reduce store/load operations.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2144240</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-08-02 05:18:10 -0400</bug_when>
+    <thetext>The patch has been created on top of bug 325755, thus marking dependency.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2152413</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-08-25 14:51:46 -0400</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; The patch has been created on top of bug 325755, thus marking dependency.
+
+Bug number was wrong, dependency is on bug 345305, but  bug 325755 is related, too:
+In that bug we introduced a workaround in this exact area that can be removed as of this patch, furthermore: this patch also updates the NullReferenceImplTests to cover that old fix, too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2152419</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-08-25 16:06:52 -0400</bug_when>
+    <thetext>Released for 4.3 M2 via commit efda37ea63aaae2702e0632a2741dbca996da3f0.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161134</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-09-18 05:00:09 -0400</bug_when>
+    <thetext>Hello Stephan, I am going to need some massive help to verify this.
+Treating all the bit fiddling as a black box, could you give me a small
+snippet where I can observe the outcome/effect of &quot; the non-null on one 
+branch is silently swallowed.&quot; with out the fix ? i.e can I see a suspect
+diagnosis without the fix and observe that it goes away with the fix ? TIA</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161318</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-09-18 11:03:59 -0400</bug_when>
+    <thetext>(In reply to comment #8)
+&gt; Treating all the bit fiddling as a black box, could you give me a small
+&gt; snippet where I can observe the outcome/effect of &quot; the non-null on one 
+&gt; branch is silently swallowed.&quot; with out the fix ? i.e can I see a suspect
+&gt; diagnosis without the fix and observe that it goes away with the fix ? TIA
+
+For completely black-box observation look at NullReferenceTest.test0525_try_finally_unchecked_exception() ff.
+
+To see the bug you need to revert the fix in this bug AND delete 14 lines starting with:
+// workaround for Bug 386181
+
+You will observe a regression in those tests.
+
+Here, the questionable merge happens within FlowContext.mergeFinallyNullInfo():
+- initsOnFinally reflects from the assignment &quot;o = p&quot; that o is def.unknown
+- flowInfo reflects that after the try block o is def.nonnull
+Merging these two bits of information is what&apos;s broken prior to this fix.
+Answering def. unknown drops information that nonnull was seen on one branch.
+
+The same can be observed in a simple snippet like
+	void foo(boolean b1, Object p) {
+		Object o;
+		if (b1) {
+			o = p;			// def. unknown
+		} else {
+			o = new Object();	// def. nonnull
+		}
+		// state of &apos;o&apos; here?
+	}
+We want &quot;pot.nn. pot.un&quot;.
+
+Concurring on these observations should be enough to verify this patch from a black-box p.o.v.
+
+
+Now comes a part that&apos;s more difficult to see: why would it harm if a &quot;pot.nn. pot.un&quot; is replaced by a &quot;def. unknown&quot;? 
+
+In bug 345305 a change in implementation strategy caused the mentioned tests to fail and the change in this bug cured that regression.
+
+Investigating those test cases I only see one situation where this patch makes a difference: it&apos;s when using FlowInfo.addInfoFrom(). I&apos;ll look deeper to find a simpler example that shows bad consequences of &quot;def. unknown&quot; instead of &quot;pot.nn. pot.un.&quot;. I have a slight feeling that there are more bugs involved here that partly mask each other. Stay tuned.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161594</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-09-18 21:32:37 -0400</bug_when>
+    <thetext>Thanks Stephan, sorry I failed to notice that this is already
+documented in comment#1.
+
+Verified for 4.3 M2 via code inspection.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>219472</attachid>
+            <date>2012-08-02 05:17:00 -0400</date>
+            <delta_ts>2012-08-02 05:17:20 -0400</delta_ts>
+            <desc>proposed fix</desc>
+            <filename>Bug386181.patch</filename>
+            <type>text/plain</type>
+            <size>14655</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxSZWZlcmVuY2VJ
+bXBsVGVzdHMuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxSZWZlcmVu
+Y2VJbXBsVGVzdHMuamF2YQppbmRleCAxMThmMzA0Li44NjY2NGI1IDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsUmVmZXJlbmNlSW1wbFRlc3RzLmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbFJlZmVyZW5jZUltcGxUZXN0cy5q
+YXZhCkBAIC04NDgsNyArODQ4LDcgQEAKIC8vIE5vdGU6IGNvdmVyYWdlIHRlc3RzIHRlbmQgdG8g
+ZmlsbCB0aGUgY29uc29sZSB3aXRoIG1lc3NhZ2VzLCBhbmQgdGhlCiAvLyAgICAgICBpbnN0cnVt
+ZW50ZWQgY29kZSBpcyBzbG93ZXIsIHNvIG5ldmVyIHJlbGVhc2UgY29kZSB3aXRoIGFjdGl2ZQog
+Ly8gICAgICAgY292ZXJhZ2UgdGVzdHMuCi1wcml2YXRlIHN0YXRpYyBpbnQgY292ZXJhZ2VQb2lu
+dHNOYiA9IDQxOworcHJpdmF0ZSBzdGF0aWMgaW50IGNvdmVyYWdlUG9pbnRzTmIgPSA0NTsKIAog
+Ly8gUFJFTUFUVVJFIHJlYWN0aXZhdGUgY292ZXJhZ2UgdGVzdHMKIC8vIENvdmVyYWdlIGJ5IHN0
+YXRlIHRyYW5zaXRpb24gdGFibGVzIG1ldGhvZHMuCkBAIC04NjcsNiArODY3LDExIEBACiAJCXRl
+c3QyMDYwX2FkZEluaXRpYWxpemF0aW9uc0Zyb20oKTsKIAkJdGVzdDIwNjFfYWRkUG90ZW50aWFs
+SW5pdGlhbGl6YXRpb25zRnJvbSgpOwogCQl0ZXN0MjA2Ml9tZXJnZWRXaXRoKCk7CisJCXRlc3RC
+dWcyOTI0NzgoKTsKKwkJdGVzdEJ1ZzI5MjQ3OGMoKTsKKwkJdGVzdDAzMzFfaWZfZWxzZV9uZXN0
+ZWQoKTsKKwkJdGVzdEJ1ZzMyNTc1NWIoKTsKKwkJdGVzdEJ1ZzI5MjQ3OGcoKTsKIAkJLy8gY292
+ZXJhZ2UgY2hlY2sKIAkJaW50IGZhaWx1cmVzTmIgPSAwOwogCQlmb3IgKGludCBpID0gMTsgaSA8
+PSBjb3ZlcmFnZVBvaW50c05iOyBpKyspIHsKQEAgLTg4OCw2ICs4OTMsMTEgQEAKIAkJCQl0ZXN0
+MjA2MF9hZGRJbml0aWFsaXphdGlvbnNGcm9tKCk7CiAJCQkJdGVzdDIwNjFfYWRkUG90ZW50aWFs
+SW5pdGlhbGl6YXRpb25zRnJvbSgpOwogCQkJCXRlc3QyMDYyX21lcmdlZFdpdGgoKTsKKwkJCQl0
+ZXN0QnVnMjkyNDc4KCk7CisJCQkJdGVzdEJ1ZzI5MjQ3OGMoKTsKKwkJCQl0ZXN0MDMzMV9pZl9l
+bHNlX25lc3RlZCgpOworCQkJCXRlc3RCdWczMjU3NTViKCk7CisJCQkJdGVzdEJ1ZzI5MjQ3OGco
+KTsKIAkJCX0KIAkJCWNhdGNoIChBc3NlcnRpb25GYWlsZWRFcnJvciBlKSB7CiAJCQkJY29udGlu
+dWU7CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMv
+b3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsUmVmZXJl
+bmNlSW1wbFRyYW5zZm9ybWF0aW9ucy5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMu
+Y29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Np
+b24vTnVsbFJlZmVyZW5jZUltcGxUcmFuc2Zvcm1hdGlvbnMuamF2YQppbmRleCAyNTRiOTgwLi41
+NTM2ZDk5IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9z
+cmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsUmVm
+ZXJlbmNlSW1wbFRyYW5zZm9ybWF0aW9ucy5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+LnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9y
+ZWdyZXNzaW9uL051bGxSZWZlcmVuY2VJbXBsVHJhbnNmb3JtYXRpb25zLmphdmEKQEAgLTExNzIs
+NiArMTE3Miw3IEBACiAJCQkJezB4MDAsMHgxMCwweDEwfSwKIAkJCQl7MHgwMCwweDE0LDB4MTR9
+LAogCQkJCXsweDAwLDB4MTgsMHgxOH0sCisJCQkJezB4MDAsMHgxQywweDFDfSwKIAkJCQl7MHgw
+MCwweDI0LDB4MDR9LAogCQkJCXsweDAwLDB4MjgsMHgwOH0sCiAJCQkJezB4MDAsMHgyQywweDA4
+fSwKQEAgLTExODUsNiArMTE4Niw3IEBACiAJCQkJezB4MDQsMHgxMCwweDE0fSwKIAkJCQl7MHgw
+NCwweDE0LDB4MTR9LAogCQkJCXsweDA0LDB4MTgsMHgxOH0sCisJCQkJezB4MDQsMHgxQywweDFD
+fSwKIAkJCQl7MHgwNCwweDI0LDB4MDR9LAogCQkJCXsweDA0LDB4MjgsMHgwQ30sCiAJCQkJezB4
+MDQsMHgyQywweDBDfSwKQEAgLTExOTUsNiArMTE5Nyw3IEBACiAJCQkJezB4MDgsMHgxMCwweDE4
+fSwKIAkJCQl7MHgwOCwweDE0LDB4MTh9LAogCQkJCXsweDA4LDB4MTgsMHgxOH0sCisJCQkJezB4
+MDgsMHgxQywweDFDfSwKIAkJCQl7MHgwOCwweDI0LDB4MEN9LAogCQkJCXsweDA4LDB4MjgsMHgw
+OH0sCiAJCQkJezB4MDgsMHgyQywweDA4fSwKQEAgLTEyMDQsNiArMTIwNyw3IEBACiAJCQkJezB4
+MEMsMHgxMCwweDE4fSwKIAkJCQl7MHgwQywweDE0LDB4MTh9LAogCQkJCXsweDBDLDB4MTgsMHgx
+OH0sCisJCQkJezB4MEMsMHgxQywweDFDfSwKIAkJCQl7MHgwQywweDI0LDB4MEN9LAogCQkJCXsw
+eDBDLDB4MjgsMHgwQ30sCiAJCQkJezB4MEMsMHgzMCwweDE4fSwKQEAgLTEyMTEsMjEgKzEyMTUs
+MzMgQEAKIAkJCQl7MHgxMCwweDEwLDB4MTB9LAogCQkJCXsweDEwLDB4MTQsMHgxNH0sCiAJCQkJ
+ezB4MTAsMHgxOCwweDE4fSwKKwkJCQl7MHgxMCwweDFDLDB4MUN9LAogCQkJCXsweDEwLDB4MjQs
+MHgxNH0sCiAJCQkJezB4MTAsMHgyOCwweDE4fSwKIAkJCQl7MHgxMCwweDMwLDB4MTB9LAogCQkJ
+CXsweDEwLDB4MzQsMHgxMH0sCiAJCQkJezB4MTQsMHgxNCwweDE0fSwKIAkJCQl7MHgxNCwweDE4
+LDB4MTh9LAorCQkJCXsweDE0LDB4MUMsMHgxQ30sCiAJCQkJezB4MTQsMHgyNCwweDE0fSwKIAkJ
+CQl7MHgxNCwweDI4LDB4MTh9LAogCQkJCXsweDE0LDB4MzAsMHgxNH0sCiAJCQkJezB4MTgsMHgx
+OCwweDE4fSwKKwkJCQl7MHgxOCwweDFDLDB4MUN9LAogCQkJCXsweDE4LDB4MjQsMHgxOH0sCiAJ
+CQkJezB4MTgsMHgyOCwweDE4fSwKIAkJCQl7MHgxOCwweDMwLDB4MTh9LAorCQkJCXsweDFDLDB4
+MUMsMHgxQ30sCisJCQkJezB4MUMsMHgyMCwweDFDfSwKKwkJCQl7MHgxQywweDI0LDB4MUN9LAor
+CQkJCXsweDFDLDB4MjgsMHgxQ30sCisJCQkJezB4MUMsMHgyQywweDFDfSwKKwkJCQl7MHgxQyww
+eDMwLDB4MUN9LAorCQkJCXsweDFDLDB4MzQsMHgxQ30sCisJCQkJezB4MUMsMHgzOCwweDFDfSwK
+KwkJCQl7MHgxQywweDNDLDB4MUN9LAogCQkJCXsweDI0LDB4MjQsMHgyNH0sCi0JCQkJezB4MjQs
+MHgyOCwweDI0fSwKKwkJCQl7MHgyNCwweDI4LDB4MEN9LAogCQkJCXsweDI0LDB4MzAsMHgxNH0s
+CiAJCQkJezB4MjgsMHgyOCwweDI4fSwKIAkJCQl7MHgyOCwweDMwLDB4MTh9LApkaWZmIC0tZ2l0
+IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFs
+L2NvbXBpbGVyL2Zsb3cvVW5jb25kaXRpb25hbEZsb3dJbmZvLmphdmEgYi9vcmcuZWNsaXBzZS5q
+ZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvZmxvdy9V
+bmNvbmRpdGlvbmFsRmxvd0luZm8uamF2YQppbmRleCBhMmNlMWE5Li5kYWMwYmJhIDEwMDY0NAot
+LS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvZmxvdy9VbmNvbmRpdGlvbmFsRmxvd0luZm8uamF2YQorKysgYi9vcmcuZWNs
+aXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIv
+Zmxvdy9VbmNvbmRpdGlvbmFsRmxvd0luZm8uamF2YQpAQCAtMTQ1NCw4ICsxNDU0LDggQEAKICAg
+ICAgICAgCWlzVHJ1ZSgodGhpcy5udWxsQml0MSAmIG1hc2spID09IDAsICJBZGRpbmcgJ3Vua25v
+d24nIG1hcmsgaW4gdW5leHBlY3RlZCBzdGF0ZSIpOyAvLyROT04tTkxTLTEkCiAgICAgICAgICAg
+ICB0aGlzLm51bGxCaXQ0IHw9IG1hc2s7CiAgICAgICAgICAgICBpZiAoQ09WRVJBR0VfVEVTVF9G
+TEFHKSB7Ci0JCQkJaWYoQ292ZXJhZ2VUZXN0SWQgPT0gNDYpIHsKLQkJCQkgIAl0aGlzLm51bGxC
+aXQ0ID0gfjA7CisJCQkJaWYoQ292ZXJhZ2VUZXN0SWQgPT0gNDQpIHsKKwkJCQkgIAl0aGlzLm51
+bGxCaXQ0ID0gMDsKIAkJCQl9CiAJCQl9CiAgICAgICAgIH0gZWxzZSB7CkBAIC0xNDgyLDggKzE0
+ODIsMTEgQEAKICAgICAJCWlzVHJ1ZSgodGhpcy5leHRyYVsyXVt2ZWN0b3JJbmRleF0gJiBtYXNr
+KSA9PSAwLCAiQWRkaW5nICd1bmtub3duJyBtYXJrIGluIHVuZXhwZWN0ZWQgc3RhdGUiKTsgLy8k
+Tk9OLU5MUy0xJAogICAgIAkJdGhpcy5leHRyYVs1XVt2ZWN0b3JJbmRleF0gfD0gbWFzazsKICAg
+ICAJCWlmIChDT1ZFUkFHRV9URVNUX0ZMQUcpIHsKLQkJCQlpZihDb3ZlcmFnZVRlc3RJZCA9PSA0
+NykgewotCQkJCQl0aGlzLmV4dHJhWzVdW3ZlY3RvckluZGV4XSA9IH4wOworCQkJCWlmKENvdmVy
+YWdlVGVzdElkID09IDQ1KSB7CisJCQkJCXRoaXMuZXh0cmFbMl1bdmVjdG9ySW5kZXhdID0gfjA7
+CisJCQkJCXRoaXMuZXh0cmFbM11bdmVjdG9ySW5kZXhdID0gfjA7CisJCQkJCXRoaXMuZXh0cmFb
+NF1bdmVjdG9ySW5kZXhdID0gMDsKKwkJCQkJdGhpcy5leHRyYVs1XVt2ZWN0b3JJbmRleF0gPSAw
+OwogCQkJCX0KIAkJCX0KICAgICAJfQpAQCAtMTUwMiw3ICsxNTA1LDcgQEAKICAgICAgICAgICAg
+IHRoaXMubnVsbEJpdDIgfD0gbWFzazsKICAgICAgICAgICAgIGlmIChDT1ZFUkFHRV9URVNUX0ZM
+QUcpIHsKIAkJCQlpZihDb3ZlcmFnZVRlc3RJZCA9PSA0MCkgewotCQkJCSAgCXRoaXMubnVsbEJp
+dDQgPSB+MDsKKwkJCQkgIAl0aGlzLm51bGxCaXQyID0gMDsKIAkJCQl9CiAJCQl9CiAgICAgICAg
+IH0gZWxzZSB7CkBAIC0xNTMwLDcgKzE1MzMsNyBAQAogICAgIAkJaXNUcnVlKCh0aGlzLmV4dHJh
+WzJdW3ZlY3RvckluZGV4XSAmIG1hc2spID09IDAsICJBZGRpbmcgJ3BvdGVudGlhbGx5IG51bGwn
+IG1hcmsgaW4gdW5leHBlY3RlZCBzdGF0ZSIpOyAvLyROT04tTkxTLTEkCiAgICAgCQlpZiAoQ09W
+RVJBR0VfVEVTVF9GTEFHKSB7CiAJCQkJaWYoQ292ZXJhZ2VUZXN0SWQgPT0gNDEpIHsKLQkJCQkJ
+dGhpcy5leHRyYVs1XVt2ZWN0b3JJbmRleF0gPSB+MDsKKwkJCQkJdGhpcy5leHRyYVszXVt2ZWN0
+b3JJbmRleF0gPSAwOwogCQkJCX0KIAkJCX0KICAgICAJfQpAQCAtMTU0OSw3ICsxNTUyLDEwIEBA
+CiAgICAgICAgICAgICB0aGlzLm51bGxCaXQzIHw9IG1hc2s7CiAgICAgICAgICAgICBpZiAoQ09W
+RVJBR0VfVEVTVF9GTEFHKSB7CiAJCQkJaWYoQ292ZXJhZ2VUZXN0SWQgPT0gNDIpIHsKLQkJCQkg
+IAl0aGlzLm51bGxCaXQ0ID0gfjA7CisJCQkJICAJdGhpcy5udWxsQml0MSA9IH4wOworCQkJCSAg
+CXRoaXMubnVsbEJpdDIgPSAwOworCQkJCSAgCXRoaXMubnVsbEJpdDMgPSB+MDsKKwkJCQkgIAl0
+aGlzLm51bGxCaXQ0ID0gMDsKIAkJCQl9CiAJCQl9CiAgICAgICAgIH0gZWxzZSB7CkBAIC0xNTc3
+LDcgKzE1ODMsMTAgQEAKICAgICAJCXRoaXMuZXh0cmFbNF1bdmVjdG9ySW5kZXhdIHw9IG1hc2s7
+CiAgICAgCQlpZiAoQ09WRVJBR0VfVEVTVF9GTEFHKSB7CiAJCQkJaWYoQ292ZXJhZ2VUZXN0SWQg
+PT0gNDMpIHsKLQkJCQkJdGhpcy5leHRyYVs1XVt2ZWN0b3JJbmRleF0gPSB+MDsKKwkJCQkJdGhp
+cy5leHRyYVsyXVt2ZWN0b3JJbmRleF0gPSB+MDsKKwkJCQkJdGhpcy5leHRyYVszXVt2ZWN0b3JJ
+bmRleF0gPSAwOworCQkJCQl0aGlzLmV4dHJhWzRdW3ZlY3RvckluZGV4XSA9IH4wOworCQkJCQl0
+aGlzLmV4dHJhWzVdW3ZlY3RvckluZGV4XSA9IDA7CiAJCQkJfQogCQkJfQogICAgIAl9CkBAIC0x
+NjI5LDU3ICsxNjM4LDU1IEBACiAJCXRoaXMudGFnQml0cyA9IG90aGVySW5pdHMudGFnQml0czsK
+IAl9IGVsc2UgaWYgKHRoaXNIYWROdWxscykgewogICAgIAlpZiAob3RoZXJIYXNOdWxscykgewot
+ICAgIAkJdGhpcy5udWxsQml0MSA9IChhMiA9IHRoaXMubnVsbEJpdDIpICYgKGEzID0gdGhpcy5u
+dWxsQml0MykKLSAgICAJCQkJCQkJJiAoYTQgPSB0aGlzLm51bGxCaXQ0KSAmIChiMSA9IG90aGVy
+SW5pdHMubnVsbEJpdDEpCi0gICAgCQkJCQkJCSYgKG5iMiA9IH4oYjIgPSBvdGhlckluaXRzLm51
+bGxCaXQyKSkKLSAgICAgICAgICAgICAgICAgIAkJCXwgKGExID0gdGhpcy5udWxsQml0MSkgJiAo
+YjEgJiAoYTMgJiBhNCAmIChiMyA9IG90aGVySW5pdHMubnVsbEJpdDMpCi0gICAgICAgICAgICAg
+ICAgICAJCQkJCQkJCQkJCQkJJiAoYjQgPSBvdGhlckluaXRzLm51bGxCaXQ0KQotICAgICAgICAg
+ICAgICAgICAgCQkJCQkJCQkJCQkJfCAobmEyID0gfmEyKSAmIG5iMgotICAgICAgICAgICAgICAg
+ICAgCQkJCQkJCQkJCQkJCSYgKChuYjQgPSB+YjQpIHwgKG5hNCA9IH5hNCkKLSAgICAgICAgICAg
+ICAgICAgIAkJCQkJCQkJCQkJCQkJCXwgKG5hMyA9IH5hMykgJiAobmIzID0gfmIzKSkKLSAgICAg
+ICAgICAgICAgICAgIAkJCQkJCQkJCQkJCXwgYTIgJiBiMiAmICgobmE0IHwgbmEzKSAmIChuYjQJ
+fCBuYjMpKSkKLSAgICAgICAgICAgICAgICAgIAkJCQkJCQkJCQkJfCBuYTIgJiBiMiAmIGIzICYg
+YjQpOworICAgIAkJbmExID0gfihhMSA9IHRoaXMubnVsbEJpdDEpOworICAgIAkJbmEyID0gfihh
+MiA9IHRoaXMubnVsbEJpdDIpOworICAgIAkJbmEzID0gfihhMyA9IHRoaXMubnVsbEJpdDMpOwor
+ICAgIAkJbmE0ID0gfihhNCA9IHRoaXMubnVsbEJpdDQpOworICAgIAkJbmIxID0gfihiMSA9IG90
+aGVySW5pdHMubnVsbEJpdDEpOworICAgIAkJbmIyID0gfihiMiA9IG90aGVySW5pdHMubnVsbEJp
+dDIpOworICAgIAkJbmIzID0gfihiMyA9IG90aGVySW5pdHMubnVsbEJpdDMpOworICAgIAkJbmI0
+ID0gfihiNCA9IG90aGVySW5pdHMubnVsbEJpdDQpOworICAgIAkJdGhpcy5udWxsQml0MSA9IGEx
+ICYgYjEgJiAoCisgICAgCQkJCShhMiAmICgoYjIgJiB+KChhMyAmIGE0KSBeIChiMyAmIGI0KSkp
+CisgICAgCQkJCQkJfChhMyAmIGE0ICYgbmIyKSkpCisgICAgCQkJCXwobmEyICYgKChiMiAmIGIz
+ICYgYjQpCisgICAgCQkJCQkJfChuYjIgJiAobmEzIF4gYjMpKSkpKTsKICAgICAJCXRoaXMubnVs
+bEJpdDIgPSBiMiAmIChuYjMgfCAobmIxID0gfmIxKSB8IGEzICYgKGE0IHwgKG5hMSA9IH5hMSkp
+ICYgbmI0KQogICAgICAgICAJCQl8IGEyICYgKGIyIHwgbmE0ICYgYjMgJiAoYjQgfCBuYjEpIHwg
+bmEzIHwgbmExKTsKLSAgICAJCXRoaXMubnVsbEJpdDMgPSBiMyAmIChuYjIgJiBiNCB8IG5iMSB8
+IGEzICYgKG5hNCAmIG5iNCB8IGE0ICYgYjQpKQotICAgICAgICAJCQl8IGEzICYgKG5hMiAmIGE0
+IHwgbmExKQotICAgICAgICAJCQl8IChhMiB8IG5hMSkgJiBiMSAmIG5iMiAmIG5iNAotICAgICAg
+ICAJCQl8IGExICYgbmEyICYgbmE0ICYgKGIyIHwgbmIxKTsKKy8vIG5ldyBidXQgbG9uZ2VyCisv
+LyAgICAJCXRoaXMubnVsbEJpdDIgPSBhMiAmICgobmExIHwgbmEzKQorLy8gICAgCQkJCQkJICAg
+ICB8KGExICYgKChhMyAmIG5hNCAmIGIzICYgKG5iMSB8IGIxICYgbmIyICYgYjQpKQorLy8gICAg
+CQkJCQkJCQkgICAgfChiMSAmIGIyKSkpKQorLy8gICAgCQkJCQkgIHwgYjIgJiAoKGEzICYgYjEg
+JiBiMyAmIG5iNCAmIChuYTEgfCBhMSAmIG5hMiAmIGE0KSkKKy8vICAgIAkJCQkJCSAgICAgfG5i
+MSAKKy8vICAgIAkJCQkJCSAgICAgfG5iMyk7CisgICAgCQl0aGlzLm51bGxCaXQzID0gICBhMyAm
+IChuYTEgfCBhMSAmIG5hMiB8IGIzICYgKG5hNCBeIGI0KSkKKyAgICAJCQkJCQl8IGIzICYgKG5i
+MSB8IGIxICYgbmIyKTsKKy8vIG9sZCBpbmNyZW1lbnRhbGx5IGFkanVzdGVkOgogICAgIAkJdGhp
+cy5udWxsQml0NCA9IG5hMyAmIChuYjEgJiBuYjMgJiBiNAogICAgICAgICAgICAgICAJCQl8IGIx
+ICYgKG5iMiAmIG5iMyB8IGE0ICYgYjIgJiBuYjQpCiAgICAgICAgICAgICAgIAkJCXwgbmExICYg
+YTQgJiAobmIzIHwgYjEgJiBiMikpCi0gICAgICAgIAkJCXwgYTMgJiBhNCAmIChiMyAmIGI0IHwg
+YjEgJiBuYjIpCisgICAgICAgIAkJCXwgYTMgJiBhNCAmIChiMyAmIGI0IHwgYjEgJiBuYjIgfCBu
+YTEgJiBhMikKICAgICAgICAgCQkJfCBuYTIgJiAobmIxICYgYjQgfCBiMSAmIG5iMyB8IG5hMSAm
+IGE0KSAmIG5iMgogICAgICAgICAJCQl8IGExICYgKG5hMyAmIChuYjMgJiBiNAogICAgICAgICAg
+ICAgICAgICAgICAgICAgCQkJfCBiMSAmIGIyICYgYjMgJiBuYjQKICAgICAgICAgICAgICAgICAg
+ICAgICAgIAkJCXwgbmEyICYgKG5iMyB8IG5iMikpCiAgICAgICAgICAgICAgICAgCQkJfCBuYTIg
+JiBiMyAmIGI0Ci0gICAgICAgICAgICAgICAgCQkJfCBhMiAmIChuYjEgJiBiNCB8IGEzICYgbmE0
+ICYgYjEpICYgbmIzKTsKLSAgICAJCS8vIHRoZSBhYm92ZSBmb3JtdWxhZSBkbyBub3QgaGFuZGxl
+IHRoZSBzdGF0ZSAwMTExLCBkbyBpdCBub3cgZXhwbGljaXRseToKLSAgICAJCWxvbmcgYXggPSB+
+YTEgJiBhMiAmIGEzICYgYTQ7Ci0gICAgCQlsb25nIGJ4ID0gfmIxICYgYjIgJiBiMyAmIGI0Owot
+ICAgIAkJbG9uZyB4ID0gYXh8Yng7Ci0gICAgCQlpZiAoeCAhPSAwKSB7Ci0gICAgCQkJLy8gcmVz
+dG9yZSBzdGF0ZSAwMTExIGZvciBhbGwgdmFyaWFibGUgaWRzIGluIHg6Ci0gICAgCQkJdGhpcy5u
+dWxsQml0MSAmPSB+eDsKLSAgICAJCQl0aGlzLm51bGxCaXQyIHw9IHg7Ci0gICAgCQkJdGhpcy5u
+dWxsQml0MyB8PSB4OwotICAgIAkJCXRoaXMubnVsbEJpdDQgfD0geDsKLSAgICAJCX0KLSAgICAJ
+CS8vIHdvcmthcm91bmQgZm9yIEJ1ZyAzODYxODEgLSBbY29tcGlsZXJdW251bGxdIHdyb25nIHRy
+YW5zaXRpb24gaW4gVW5jb25kaXRpb25hbEZsb3dJbmZvLm1lcmdlZFdpdGgoKQotICAgIAkJYXgg
+PSBhMSAmIH5hMiAmIGEzICYgfmE0OwotICAgIAkJYnggPSBiMSAmIH5iMiAmIH5iMyAmIGI0Owot
+ICAgIAkJeCA9IGF4JmJ4OwotICAgIAkJYXggPSBhMSAmIH5hMiAmIH5hMyAmIGE0OwotICAgIAkJ
+YnggPSBiMSAmIH5iMiAmIGIzICYgfmI0OwotICAgIAkJeCB8PSAoYXgmYngpOwotICAgIAkJaWYg
+KHggIT0gMCkgewotICAgIAkJCS8vIGVzdGFibGlzaCBzdGF0ZSAwMDExIGZvciBhbGwgdmFyaWFi
+bGUgaWRzIGluIHg6Ci0gICAgCQkJdGhpcy5udWxsQml0MSAmPSB+eDsKLSAgICAJCQl0aGlzLm51
+bGxCaXQyICY9IH54OwotICAgIAkJCXRoaXMubnVsbEJpdDMgfD0geDsKLSAgICAJCQl0aGlzLm51
+bGxCaXQ0IHw9IHg7Ci0gICAgCQl9CisgICAgICAgICAgICAgICAgCQkJfCBhMiAmIChuYjEgJiBi
+NCB8IGEzICYgbmE0ICYgYjEpICYgbmIzKQorICAgICAgICAgICAgICAgIAl8bmIxICYgYjIgJiBi
+MyAmIGI0OworLy8gbmV3IGJ1dCBsb25nZXIKKy8vICAgIAkJdGhpcy5udWxsQml0NCA9IAorLy8g
+ICAgCQkJCSAgbmExICYgYTQgJiAoYTIgJiAoYTMgfCBuYTMgJiAoIG5iMyB8IGIxICYgYjIgJiBi
+MykpCisvLwkJCQkgICAgCQkJIHxuYTIgJiAobmIyIHwgbmEzICYgKGIxIHwgbmIxICYgYjIgJiBu
+YjMgJiBuYjQpKSkKKy8vICAgIAkJCQl8IGExICYgKG5hMiAmIChiMSAmIG5iMiAmIChhNCB8IGI0
+KQorLy8gICAgCQkJCQkJCSAgfG5hMyAmIChiMSB8IG5iMiB8IGIyICYgbmIzKSkKKy8vICAgIAkJ
+CQkJICAgfGEyICYgKGIxICYgYjIgJiAoKGEzIF4gYTQpICYgbmIzIHwgKGIzIF4gYjQpICYgbmEz
+KQorLy8gICAgCQkJCQkJCSB8YTMgJiBhNCAmIG5iMiAmIChiMSB8IGI0KSkpCisvLyAgICAJCQkJ
+fCBuYjEgJiBiNCAmIChiMiAmIChiMyB8IG5iMyAmICggbmEzIHwgYTEgJiBhMiAmIGEzKSkKKy8v
+ICAgIAkJCQkJCQl8IG5iMiAmIChuYTIgfCBuYjMgJiAoYTEgfCBuYTEgJiBhMiAmIG5hMyAmIG5h
+NCkpKQorLy8gICAgCQkJCXwgYjEgJiAgKG5iMiAmIG5iMyAmIChuYTIgfCBhMiAmIG5hMyB8IGEx
+KQorLy8gICAgCQkJCQkJfGIyICYgYjMgJiBiNCAmIChhMSAmIGEyICYgYTMgJiBhNCB8IG5hMiAm
+IChhNCB8IGExKSkpCisvLyAgICAJCQkJOwogCiAgICAgCQlpZiAoQ09WRVJBR0VfVEVTVF9GTEFH
+KSB7CiAgICAgCQkJaWYoQ292ZXJhZ2VUZXN0SWQgPT0gMzApIHsKQEAgLTE4MDQsNTcgKzE4MTEs
+NTUgQEAKIAkJfQogCQkvLyBjb21wb3NlIG51bGxzCiAJCWZvciAoaSA9IDA7IGkgPCBtZXJnZUxp
+bWl0OyBpKyspIHsKLSAgICAJCXRoaXMuZXh0cmFbMSArIDFdW2ldID0gKGEyID0gdGhpcy5leHRy
+YVsyICsgMV1baV0pICYgKGEzID0gdGhpcy5leHRyYVszICsgMV1baV0pCi0gICAgCQkJCQkJCSYg
+KGE0ID0gdGhpcy5leHRyYVs0ICsgMV1baV0pICYgKGIxID0gb3RoZXJJbml0cy5leHRyYVsxICsg
+MV1baV0pCi0gICAgCQkJCQkJCSYgKG5iMiA9IH4oYjIgPSBvdGhlckluaXRzLmV4dHJhWzIgKyAx
+XVtpXSkpCi0gICAgICAgICAgICAgICAgICAJCQl8IChhMSA9IHRoaXMuZXh0cmFbMSArIDFdW2ld
+KSAmIChiMSAmIChhMyAmIGE0ICYgKGIzID0gb3RoZXJJbml0cy5leHRyYVszICsgMV1baV0pCi0g
+ICAgICAgICAgICAgICAgICAJCQkJCQkJCQkJCQkJJiAoYjQgPSBvdGhlckluaXRzLmV4dHJhWzQg
+KyAxXVtpXSkKLSAgICAgICAgICAgICAgICAgIAkJCQkJCQkJCQkJCXwgKG5hMiA9IH5hMikgJiBu
+YjIKLSAgICAgICAgICAgICAgICAgIAkJCQkJCQkJCQkJCQkmICgobmI0ID0gfmI0KSB8IChuYTQg
+PSB+YTQpCi0gICAgICAgICAgICAgICAgICAJCQkJCQkJCQkJCQkJCQl8IChuYTMgPSB+YTMpICYg
+KG5iMyA9IH5iMykpCi0gICAgICAgICAgICAgICAgICAJCQkJCQkJCQkJCQl8IGEyICYgYjIgJiAo
+KG5hNCB8IG5hMykgJiAobmI0CXwgbmIzKSkpCi0gICAgICAgICAgICAgICAgICAJCQkJCQkJCQkJ
+CXwgbmEyICYgYjIgJiBiMyAmIGI0KTsKKyAgICAJCW5hMSA9IH4oYTEgPSB0aGlzLmV4dHJhWzEr
+MV1baV0pOworICAgIAkJbmEyID0gfihhMiA9IHRoaXMuZXh0cmFbMisxXVtpXSk7CisgICAgCQlu
+YTMgPSB+KGEzID0gdGhpcy5leHRyYVszKzFdW2ldKTsKKyAgICAJCW5hNCA9IH4oYTQgPSB0aGlz
+LmV4dHJhWzQrMV1baV0pOworICAgIAkJbmIxID0gfihiMSA9IG90aGVySW5pdHMuZXh0cmFbMSsx
+XVtpXSk7CisgICAgCQluYjIgPSB+KGIyID0gb3RoZXJJbml0cy5leHRyYVsyKzFdW2ldKTsKKyAg
+ICAJCW5iMyA9IH4oYjMgPSBvdGhlckluaXRzLmV4dHJhWzMrMV1baV0pOworICAgIAkJbmI0ID0g
+fihiNCA9IG90aGVySW5pdHMuZXh0cmFbNCsxXVtpXSk7CisgICAgCQl0aGlzLmV4dHJhWzEgKyAx
+XVtpXSA9IGExICYgYjEgJiAoCisgICAgCQkJCShhMiAmICgoYjIgJiB+KChhMyAmIGE0KSBeIChi
+MyAmIGI0KSkpCisgICAgCQkJCQkJfChhMyAmIGE0ICYgbmIyKSkpCisgICAgCQkJCXwobmEyICYg
+KChiMiAmIGIzICYgYjQpCisgICAgCQkJCQkJfChuYjIgJiAobmEzIF4gYjMpKSkpKTsKICAgICAJ
+CXRoaXMuZXh0cmFbMiArIDFdW2ldID0gYjIgJiAobmIzIHwgKG5iMSA9IH5iMSkgfCBhMyAmIChh
+NCB8IChuYTEgPSB+YTEpKSAmIG5iNCkKICAgICAgICAgCQkJfCBhMiAmIChiMiB8IG5hNCAmIGIz
+ICYgKGI0IHwgbmIxKSB8IG5hMyB8IG5hMSk7Ci0gICAgCQl0aGlzLmV4dHJhWzMgKyAxXVtpXSA9
+IGIzICYgKG5iMiAmIGI0IHwgbmIxIHwgYTMgJiAobmE0ICYgbmI0IHwgYTQgJiBiNCkpCi0gICAg
+ICAgIAkJCXwgYTMgJiAobmEyICYgYTQgfCBuYTEpCi0gICAgICAgIAkJCXwgKGEyIHwgbmExKSAm
+IGIxICYgbmIyICYgbmI0Ci0gICAgICAgIAkJCXwgYTEgJiBuYTIgJiBuYTQgJiAoYjIgfCBuYjEp
+OworLy8gbmV3IGJ1dCBsb25nZXIKKy8vICAgIAkJdGhpcy5leHRyYVsyICsgMV1baV0gPSAgCisv
+LyAgICAJCQkJYTIgJiAoKG5hMSB8IG5hMykKKy8vICAgIAkJCQkJIHwoYTEgJiAoKGEzICYgbmE0
+ICYgYjMgJiAobmIxIHwgYjEgJiBuYjIgJiBiNCkpCisvLwkJCQkJCQkgICAgfChiMSAmIGIyKSkp
+KQorLy8JCQkJICB8IGIyICYgKChhMyAmIGIxICYgYjMgJiBuYjQgJiAobmExIHwgYTEgJiBuYTIg
+JiBhNCkpCisvLwkJCQkJICAgICB8bmIxIAorLy8JCQkJCSAgICAgfG5iMyk7CisgICAgCQl0aGlz
+LmV4dHJhWzMgKyAxXVtpXSA9ICAgYTMgJiAobmExIHwgYTEgJiBuYTIgfCBiMyAmIChuYTQgXiBi
+NCkpCisJCQkJCQkJCSAgIHwgYjMgJiAobmIxIHwgYjEgJiBuYjIpOworICAgIAkJLy8gb2xkIGlu
+Y3JlbWVudGFsbHkgYWRqdXN0ZWQ6CiAgICAgCQl0aGlzLmV4dHJhWzQgKyAxXVtpXSA9IG5hMyAm
+IChuYjEgJiBuYjMgJiBiNAogICAgICAgICAgICAgICAJCQl8IGIxICYgKG5iMiAmIG5iMyB8IGE0
+ICYgYjIgJiBuYjQpCiAgICAgICAgICAgICAgIAkJCXwgbmExICYgYTQgJiAobmIzIHwgYjEgJiBi
+MikpCi0gICAgICAgIAkJCXwgYTMgJiBhNCAmIChiMyAmIGI0IHwgYjEgJiBuYjIpCisgICAgICAg
+IAkJCXwgYTMgJiBhNCAmIChiMyAmIGI0IHwgYjEgJiBuYjIgfCBuYTEgJiBhMikKICAgICAgICAg
+CQkJfCBuYTIgJiAobmIxICYgYjQgfCBiMSAmIG5iMyB8IG5hMSAmIGE0KSAmIG5iMgogICAgICAg
+ICAJCQl8IGExICYgKG5hMyAmIChuYjMgJiBiNAogICAgICAgICAgICAgICAgICAgICAgICAgCQkJ
+fCBiMSAmIGIyICYgYjMgJiBuYjQKICAgICAgICAgICAgICAgICAgICAgICAgIAkJCXwgbmEyICYg
+KG5iMyB8IG5iMikpCiAgICAgICAgICAgICAgICAgCQkJfCBuYTIgJiBiMyAmIGI0Ci0gICAgICAg
+ICAgICAgICAgCQkJfCBhMiAmIChuYjEgJiBiNCB8IGEzICYgbmE0ICYgYjEpICYgbmIzKTsKLSAg
+ICAJCS8vIHRoZSBhYm92ZSBmb3JtdWxhZSBkbyBub3QgaGFuZGxlIHRoZSBzdGF0ZSAwMTExLCBk
+byBpdCBub3cgZXhwbGljaXRseToKLSAgICAJCWxvbmcgYXggPSB+YTEgJiBhMiAmIGEzICYgYTQ7
+Ci0gICAgCQlsb25nIGJ4ID0gfmIxICYgYjIgJiBiMyAmIGI0OwotICAgIAkJbG9uZyB4ID0gYXh8
+Yng7Ci0gICAgCQlpZiAoeCAhPSAwKSB7Ci0gICAgCQkJLy8gcmVzdG9yZSBzdGF0ZSAwMTExIGZv
+ciBhbGwgdmFyaWFibGUgaWRzIGluIHg6Ci0gICAgCQkJdGhpcy5leHRyYVsyXVtpXSAmPSB+eDsK
+LSAgICAJCQl0aGlzLmV4dHJhWzNdW2ldIHw9IHg7Ci0gICAgCQkJdGhpcy5leHRyYVs0XVtpXSB8
+PSB4OwotICAgIAkJCXRoaXMuZXh0cmFbNV1baV0gfD0geDsKLSAgICAJCX0KLSAgICAJCS8vIHdv
+cmthcm91bmQgZm9yIEJ1ZyAzODYxODEgLSBbY29tcGlsZXJdW251bGxdIHdyb25nIHRyYW5zaXRp
+b24gaW4gVW5jb25kaXRpb25hbEZsb3dJbmZvLm1lcmdlZFdpdGgoKQotICAgIAkJYXggPSBhMSAm
+IH5hMiAmIGEzICYgfmE0OwotICAgIAkJYnggPSBiMSAmIH5iMiAmIH5iMyAmIGI0OwotICAgIAkJ
+eCA9IGF4JmJ4OwotICAgIAkJYXggPSBhMSAmIH5hMiAmIH5hMyAmIGE0OwotICAgIAkJYnggPSBi
+MSAmIH5iMiAmIGIzICYgfmI0OwotICAgIAkJeCB8PSAoYXgmYngpOwotICAgIAkJaWYgKHggIT0g
+MCkgewotICAgIAkJCS8vIGVzdGFibGlzaCBzdGF0ZSAwMDExIGZvciBhbGwgdmFyaWFibGUgaWRz
+IGluIHg6Ci0gICAgCQkJdGhpcy5leHRyYVsyXVtpXSAmPSB+eDsKLSAgICAJCQl0aGlzLmV4dHJh
+WzNdW2ldICY9IH54OwotICAgIAkJCXRoaXMuZXh0cmFbNF1baV0gfD0geDsKLSAgICAJCQl0aGlz
+LmV4dHJhWzVdW2ldIHw9IHg7Ci0gICAgCQl9CisgICAgICAgICAgICAgICAgCQkJfCBhMiAmIChu
+YjEgJiBiNCB8IGEzICYgbmE0ICYgYjEpICYgbmIzKQorICAgICAgICAgICAgICAgIAl8bmIxICYg
+YjIgJiBiMyAmIGI0OworLy8gbmV3IGJ1dCBsb25nZXIKKy8vICAgIAkJdGhpcy5leHRyYVs0ICsg
+MV1baV0gPSBuYTEgJiBhNCAmIChhMiAmIChhMyB8IG5hMyAmICggbmIzIHwgYjEgJiBiMiAmIGIz
+KSkKKy8vCQkJCSAgICAJCQkgfG5hMiAmIChuYjIgfCBuYTMgJiAoYjEgfCBuYjEgJiBiMiAmIG5i
+MyAmIG5iNCkpKQorLy8gICAgCQkJCXwgYTEgJiAobmEyICYgKGIxICYgbmIyICYgKGE0IHwgYjQp
+CisvLyAgICAJCQkJCQkJICB8bmEzICYgKGIxIHwgbmIyIHwgYjIgJiBuYjMpKQorLy8gICAgCQkJ
+CQkgICB8YTIgJiAoYjEgJiBiMiAmICgoYTMgXiBhNCkgJiBuYjMgfCAoYjMgXiBiNCkgJiBuYTMp
+CisvLyAgICAJCQkJCQkJIHxhMyAmIGE0ICYgbmIyICYgKGIxIHwgYjQpKSkKKy8vICAgIAkJCQl8
+IG5iMSAmIGI0ICYgKGIyICYgKGIzIHwgbmIzICYgKCBuYTMgfCBhMSAmIGEyICYgYTMpKQorLy8g
+ICAgCQkJCQkJCXwgbmIyICYgKG5hMiB8IG5iMyAmIChhMSB8IG5hMSAmIGEyICYgbmEzICYgbmE0
+KSkpCisvLyAgICAJCQkJfCBiMSAmICAobmIyICYgbmIzICYgKG5hMiB8IGEyICYgbmEzIHwgYTEp
+CisvLyAgICAJCQkJCQl8YjIgJiBiMyAmIGI0ICYgKGExICYgYTIgJiBhMyAmIGE0IHwgbmEyICYg
+KGE0IHwgYTEpKSkKKy8vICAgIAkJCQk7CiAJCQl0aGlzSGFzTnVsbHMgPSB0aGlzSGFzTnVsbHMg
+fHwKIAkJCQl0aGlzLmV4dHJhWzNdW2ldICE9IDAgfHwKIAkJCQl0aGlzLmV4dHJhWzRdW2ldICE9
+IDAgfHwK
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

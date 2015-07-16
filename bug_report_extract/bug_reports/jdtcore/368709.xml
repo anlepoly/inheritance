@@ -1,0 +1,316 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>368709</bug_id>
+          
+          <creation_ts>2012-01-16 08:36:00 -0500</creation_ts>
+          <short_desc>Endless loop in FakedTrackingVariable.markPassedToOutside</short_desc>
+          <delta_ts>2012-01-23 10:21:20 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>3.8 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Markus Keller">markus_keller</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>deepakazad</cc>
+    
+    <cc>satyam.kandula</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2050903</commentid>
+    <comment_count>0</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-01-16 08:36:03 -0500</bug_when>
+    <thetext>master
+
+- clone repo git://egit.eclipse.org/jgit.git
+- import org.eclipse.jgit
+
+=&gt; endless loop while compiling  org.eclipse.jgit.storage.file.LargePackedWholeObject#openStream(). I see a trackVar &quot;Object in&quot; whose innerTracker is &quot;Object &lt;unassigned Closeable value&gt;;&quot;whose innerTracker is the first trackVar again.
+
+
+&quot;Compiler Processing Task&quot; daemon prio=6 tid=0x5e1b0800 nid=0x2290 runnable [0x62d9f000]
+   java.lang.Thread.State: RUNNABLE
+        at org.eclipse.jdt.internal.compiler.ast.FakedTrackingVariable.markPassedToOutside(FakedTrackingVariable.java:573)
+        at org.eclipse.jdt.internal.compiler.ast.AllocationExpression.analyseCode(AllocationExpression.java:58)
+        at org.eclipse.jdt.internal.compiler.ast.ReturnStatement.analyseCode(ReturnStatement.java:47)
+        at org.eclipse.jdt.internal.compiler.ast.MethodDeclaration.analyseCode(MethodDeclaration.java:109)
+        at org.eclipse.jdt.internal.compiler.ast.TypeDeclaration.internalAnalyseCode(TypeDeclaration.java:710)
+        at org.eclipse.jdt.internal.compiler.ast.TypeDeclaration.analyseCode(TypeDeclaration.java:255)
+        at org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration.analyseCode(CompilationUnitDeclaration.java:111)
+        at org.eclipse.jdt.internal.compiler.Compiler.process(Compiler.java:776)
+        at org.eclipse.jdt.internal.compiler.ProcessTaskManager.run(ProcessTaskManager.java:137)
+        at java.lang.Thread.run(Thread.java:722)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2050915</commentid>
+    <comment_count>1</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-01-16 08:47:53 -0500</bug_when>
+    <thetext>This happens even if the resource leak problems are set to &quot;ignore&quot; (out-of-the-box setting).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2050916</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-16 08:52:39 -0500</bug_when>
+    <thetext>I&apos;ll take care of that.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2050949</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-16 09:47:46 -0500</bug_when>
+    <thetext>Thanks for the clear steps.
+
+Here&apos;s a minimal test case:
+
+import java.io.*;
+import java.util.zip.*;
+public class X {
+  void doit() throws IOException {
+    InputStream in = new FileInputStream(&quot;somefile&quot;);
+    in = new BufferedInputStream(new InflaterInputStream(in, inflater(), 8192), 8192); // nested self-wrapping
+    process(in);
+  }
+  Inflater inflater() { return null; }
+  void process(InputStream is) { }
+}
+
+The problem is in the nested self-wrapping.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2050958</commentid>
+    <comment_count>4</comment_count>
+      <attachid>209559</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-16 09:53:37 -0500</bug_when>
+    <thetext>Created attachment 209559
+avoiding the recursive structure
+
+This patch addresses the immediate severe issue:
+
+When connecting tracking variables with inners we already check for
+direct cycles. The patch adds a loop that includes indirect cycles
+in the check. Given that this is the only location that assigns non-null
+to FTV#innerTracker this should be safe for avoiding the endless loop.
+
+The test currently flags a warning against the inner resource,
+which isn&apos;t optimal. I&apos;ll give it a quick check if that can be fixed
+in the same patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2050969</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-16 10:12:01 -0500</bug_when>
+    <thetext>I have a patch that also fixes the non-optimal warning mentioned in comment 4. I do that by propagating the tracking variable for the LHS &apos;in&apos; deeper into the AllocationExpression (method FTV#preConnectTrackerAcrossAssignment).
+Now the nested wrapper is correctly detected as a wrapper for &apos;in&apos;, which couldn&apos;t succeed before, because the inner &quot;new InflaterInputStream(in ...)&quot; didn&apos;t know that we are going to assign to &apos;in&apos;.
+
+Interestingly, with both changes in place the fix from comment 4 is no longer triggered, because now wrappers are linked as expected.
+Anyway I&apos;ll leave both changes in as extra safety against the endless loop.
+
+I&apos;ll release the combined fix as soon as all JDT/Core tests and field experiments with Eclipse SDK and JGit signal green.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2051038</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-16 11:16:17 -0500</bug_when>
+    <thetext>Release for 3.8 M5 via commit 2dc8c8168c71292aca0a9b4cb34971871475b18a</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2051324</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-16 19:59:15 -0500</bug_when>
+    <thetext>If the major chunks of the analysis code lend themselves
+to being protected with a if option on style, we could
+consider that. Unfortunately, currently, retrieving compiler
+options can be very expensive as things stand and caching
+during construction of an abstraction may not always make
+sense as we have seen in other instance.
+
+Stephan, please take a quick look-see to if we can opt for
+defensive coding in this feature.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2051418</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-17 04:54:37 -0500</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; If the major chunks of the analysis code lend themselves
+&gt; to being protected with a if option on style, 
+
+[...]
+
+
+&gt; Stephan, please take a quick look-see to if we can opt for
+&gt; defensive coding in this feature.
+
+Ideally, all decorations, propagation of attributes, analysis
+and diagnostics should be keyed off the option to provide for
+an escape hatch. Particularly a user who hasn&apos;t turned on the
+option should see no impact. We need to devise some ways of
+ensuring that the cost of retrieving the compiler option is not
+making us resort to less defensive coding style which also has
+a performance angle to it.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2054452</commentid>
+    <comment_count>9</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-23 10:21:20 -0500</bug_when>
+    <thetext>Verified for 3.8M5 using build  I20120122-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>209559</attachid>
+            <date>2012-01-16 09:53:00 -0500</date>
+            <delta_ts>2012-01-16 09:53:37 -0500</delta_ts>
+            <desc>avoiding the recursive structure</desc>
+            <filename>Bug_368709-v0.5.patch</filename>
+            <type>text/plain</type>
+            <size>5428</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL1Jlc291cmNlTGVha1Rl
+c3RzLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2Vj
+bGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9SZXNvdXJjZUxlYWtUZXN0
+cy5qYXZhCmluZGV4IDkwNTJlNGUuLjdmYTAzY2IgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21w
+aWxlci9yZWdyZXNzaW9uL1Jlc291cmNlTGVha1Rlc3RzLmphdmEKKysrIGIvb3JnLmVjbGlwc2Uu
+amR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Nv
+bXBpbGVyL3JlZ3Jlc3Npb24vUmVzb3VyY2VMZWFrVGVzdHMuamF2YQpAQCAtMjYsNyArMjYsNyBA
+QCBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmltcGwuQ29tcGlsZXJP
+cHRpb25zOwogcHVibGljIGNsYXNzIFJlc291cmNlTGVha1Rlc3RzIGV4dGVuZHMgQWJzdHJhY3RS
+ZWdyZXNzaW9uVGVzdCB7CiAKIHN0YXRpYyB7Ci0vLwlURVNUU19OQU1FUyA9IG5ldyBTdHJpbmdb
+XSB7ICJ0ZXN0MDYxbCJ9OworCVRFU1RTX05BTUVTID0gbmV3IFN0cmluZ1tdIHsgInRlc3RCdWcz
+Njg3MDliIn07CiAvLwlURVNUU19OVU1CRVJTID0gbmV3IGludFtdIHsgNTAgfTsKIC8vCVRFU1RT
+X1JBTkdFID0gbmV3IGludFtdIHsgMTEsIC0xIH07CiB9CkBAIC0zMDg1LDUgKzMwODUsODggQEAg
+cHVibGljIHZvaWQgdGVzdDA2M2UoKSB7CiAJCW9wdGlvbnMsCiAJCW51bGwpOwogfQotCisvLyBC
+dWcgMzY4NzA5IC0gRW5kbGVzcyBsb29wIGluIEZha2VkVHJhY2tpbmdWYXJpYWJsZS5tYXJrUGFz
+c2VkVG9PdXRzaWRlCisvLyBvcmlnaW5hbCB0ZXN0IGNhc2UgZnJvbSBqZ2l0CitwdWJsaWMgdm9p
+ZCB0ZXN0QnVnMzY4NzA5YSgpIHsKKwlpZiAodGhpcy5jb21wbGlhbmNlTGV2ZWwgPCBDbGFzc0Zp
+bGVDb25zdGFudHMuSkRLMV81KSByZXR1cm47CisJTWFwIG9wdGlvbnMgPSBnZXRDb21waWxlck9w
+dGlvbnMoKTsKKwlvcHRpb25zLnB1dChDb21waWxlck9wdGlvbnMuT1BUSU9OX1JlcG9ydFVuY2xv
+c2VkQ2xvc2VhYmxlLCBDb21waWxlck9wdGlvbnMuRVJST1IpOworCW9wdGlvbnMucHV0KENvbXBp
+bGVyT3B0aW9ucy5PUFRJT05fUmVwb3J0UG90ZW50aWFsbHlVbmNsb3NlZENsb3NlYWJsZSwgQ29t
+cGlsZXJPcHRpb25zLkVSUk9SKTsKKwl0aGlzLnJ1bkNvbmZvcm1UZXN0KAorCQluZXcgU3RyaW5n
+W10geworCQkJIlguamF2YSIsCisJCQkiaW1wb3J0IGphdmEuaW8uKjtcbiIgKworCQkJImltcG9y
+dCBqYXZhLnV0aWwuemlwLio7XG4iICsKKwkJCSJwdWJsaWMgY2xhc3MgWCB7XG4iICsKKwkJCSIg
+IE9iamVjdCBkYiwgcGFjaztcbiIgKyAvLyBtb2NrCisJCQkiICBpbnQgb2JqZWN0T2Zmc2V0LCBo
+ZWFkZXJMZW5ndGgsIHR5cGUsIHNpemU7XG4iICsKKwkJCSIgIHB1YmxpYyBPYmplY3RTdHJlYW0g
+b3BlblN0cmVhbSgpIHRocm93cyBNaXNzaW5nT2JqZWN0RXhjZXB0aW9uLCBJT0V4Y2VwdGlvbiB7
+XG4iICsgCisJCQkiICAgIFdpbmRvd0N1cnNvciB3YyA9IG5ldyBXaW5kb3dDdXJzb3IoZGIpO1xu
+IiArIAorCQkJIiAgICBJbnB1dFN0cmVhbSBpbjtcbiIgKyAKKwkJCSIgICAgdHJ5XG4iICsgCisJ
+CQkiICAgICAge1xuIiArIAorCQkJIiAgICAgICAgaW4gPSBuZXcgUGFja0lucHV0U3RyZWFtKHBh
+Y2ssIChvYmplY3RPZmZzZXQgKyBoZWFkZXJMZW5ndGgpLCB3Yyk7XG4iICsgCisJCQkiICAgICAg
+fVxuIiArIAorCQkJIiAgICBjYXRjaCAoSU9FeGNlcHRpb24gcGFja0dvbmUpXG4iICsgCisJCQki
+ICAgICAge1xuIiArIAorCQkJIiAgICAgICAgcmV0dXJuIHdjLm9wZW4oZ2V0T2JqZWN0SWQoKSwg
+dHlwZSkub3BlblN0cmVhbSgpO1xuIiArIAorCQkJIiAgICAgIH1cbiIgKyAKKwkJCSIgICAgaW4g
+PSBuZXcgQnVmZmVyZWRJbnB1dFN0cmVhbShuZXcgSW5mbGF0ZXJJbnB1dFN0cmVhbShpbiwgd2Mu
+aW5mbGF0ZXIoKSwgODE5MiksIDgxOTIpO1xuIiArIAorCQkJIiAgICByZXR1cm4gbmV3IE9iamVj
+dFN0cmVhbS5GaWx0ZXIodHlwZSwgc2l6ZSwgaW4pO1xuIiArIAorCQkJIiAgfVxuIiArCisJCQki
+ICBTdHJpbmcgZ2V0T2JqZWN0SWQoKSB7IHJldHVybiBcIlwiOyB9XG4iICsgLy8gbW9jaworCQkJ
+In1cbiIgKworCQkJLy8gbW9jazoKKwkJCSJjbGFzcyBXaW5kb3dDdXJzb3Ige1xuIiArCisJCQki
+ICAgIFdpbmRvd0N1cnNvcihPYmplY3QgZGIpIHt9XG4iICsKKwkJCSIgICAgT2JqZWN0U3RyZWFt
+IG9wZW4oU3RyaW5nIGlkLCBpbnQgdHlwZSkgeyByZXR1cm4gbnVsbDsgfVxuIiArCisJCQkiICAg
+IEluZmxhdGVyIGluZmxhdGVyKCkgeyByZXR1cm4gbnVsbDsgfVxuIiArCisJCQkifVxuIiArCisJ
+CQkiY2xhc3MgTWlzc2luZ09iamVjdEV4Y2VwdGlvbiBleHRlbmRzIEV4Y2VwdGlvbiB7IE1pc3Np
+bmdPYmplY3RFeGNlcHRpb24oKSB7IHN1cGVyKCk7fSB9XG4iICsKKwkJCSJjbGFzcyBQYWNrSW5w
+dXRTdHJlYW0gZXh0ZW5kcyBJbnB1dFN0cmVhbSB7XG4iICsKKwkJCSIgICAgUGFja0lucHV0U3Ry
+ZWFtKE9iamVjdCBwYWNrLCBpbnQgb2Zmc2V0LCBXaW5kb3dDdXJzb3Igd2MpIHt9XG4iICsKKwkJ
+CSJ9XG4iICsKKwkJCSJjbGFzcyBPYmplY3RTdHJlYW0gZXh0ZW5kcyBJbnB1dFN0cmVhbSB7XG4i
+ICsKKwkJCSIgICAgc3RhdGljIGNsYXNzIEZpbHRlciBleHRlbmRzIE9iamVjdFN0cmVhbSB7XG4i
+ICsKKwkJCSIgICAgICAgIEZpbHRlcihpbnQgdHlwZSwgaW50IHNpemUsIElucHV0U3RyZWFtIGlu
+KSB7IH1cbiIgKworCQkJIiAgICB9XG4iICsKKwkJCSIgICAgT2JqZWN0U3RyZWFtIG9wZW5TdHJl
+YW0oKSB7IHJldHVybiB0aGlzOyB9XG4iICsKKwkJCSJ9XG4iCisJCX0sCisJCSIiLAorCQludWxs
+LAorCQl0cnVlLAorCQludWxsLAorCQlvcHRpb25zLAorCQludWxsKTsKK30KKy8vQnVnIDM2ODcw
+OSAtIEVuZGxlc3MgbG9vcCBpbiBGYWtlZFRyYWNraW5nVmFyaWFibGUubWFya1Bhc3NlZFRvT3V0
+c2lkZQorLy9vcmlnaW5hbCB0ZXN0IGNhc2UgZnJvbSBqZ2l0CitwdWJsaWMgdm9pZCB0ZXN0QnVn
+MzY4NzA5YigpIHsKKwlpZiAodGhpcy5jb21wbGlhbmNlTGV2ZWwgPCBDbGFzc0ZpbGVDb25zdGFu
+dHMuSkRLMV81KSByZXR1cm47CisJTWFwIG9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsK
+KwlvcHRpb25zLnB1dChDb21waWxlck9wdGlvbnMuT1BUSU9OX1JlcG9ydFVuY2xvc2VkQ2xvc2Vh
+YmxlLCBDb21waWxlck9wdGlvbnMuRVJST1IpOworCW9wdGlvbnMucHV0KENvbXBpbGVyT3B0aW9u
+cy5PUFRJT05fUmVwb3J0UG90ZW50aWFsbHlVbmNsb3NlZENsb3NlYWJsZSwgQ29tcGlsZXJPcHRp
+b25zLkVSUk9SKTsKKwl0aGlzLnJ1bkNvbmZvcm1UZXN0KAorCQluZXcgU3RyaW5nW10geworCQkJ
+IlguamF2YSIsCisJCQkiaW1wb3J0IGphdmEuaW8uKjtcbiIgKworCQkJImltcG9ydCBqYXZhLnV0
+aWwuemlwLio7XG4iICsKKwkJCSJwdWJsaWMgY2xhc3MgWCB7XG4iICsKKwkJCSIgIHZvaWQgZG9p
+dCgpIHRocm93cyBJT0V4Y2VwdGlvbiB7XG4iICsgCisJCQkiICAgIElucHV0U3RyZWFtIGluID0g
+bmV3IEZpbGVJbnB1dFN0cmVhbShcInNvbWVmaWxlXCIpO1xuIiArIAorCQkJIiAgICBpbiA9IG5l
+dyBCdWZmZXJlZElucHV0U3RyZWFtKG5ldyBJbmZsYXRlcklucHV0U3RyZWFtKGluLCBpbmZsYXRl
+cigpLCA4MTkyKSwgODE5Mik7XG4iICsgCisJCQkiICAgIHByb2Nlc3MoaW4pO1xuIiArCisJCQki
+ICB9XG4iICsKKwkJCSIgIEluZmxhdGVyIGluZmxhdGVyKCkgeyByZXR1cm4gbnVsbDsgfVxuIiAr
+CisJCQkiICB2b2lkIHByb2Nlc3MoSW5wdXRTdHJlYW0gaXMpIHsgfVxuIiArCisJCQkifVxuIgor
+CQl9LAorCQkiIiwKKwkJbnVsbCwKKwkJdHJ1ZSwKKwkJbnVsbCwKKwkJb3B0aW9ucywKKwkJbnVs
+bCk7Cit9CiB9CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcv
+ZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0Zha2VkVHJhY2tpbmdWYXJpYWJsZS5q
+YXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVy
+bmFsL2NvbXBpbGVyL2FzdC9GYWtlZFRyYWNraW5nVmFyaWFibGUuamF2YQppbmRleCA0NmFjODVk
+Li43MTAxZWY3IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcv
+ZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0Zha2VkVHJhY2tpbmdWYXJpYWJsZS5q
+YXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9p
+bnRlcm5hbC9jb21waWxlci9hc3QvRmFrZWRUcmFja2luZ1ZhcmlhYmxlLmphdmEKQEAgLTIwOSw4
+ICsyMDksMTIgQEAgcHVibGljIGNsYXNzIEZha2VkVHJhY2tpbmdWYXJpYWJsZSBleHRlbmRzIExv
+Y2FsRGVjbGFyYXRpb24gewogCQkJCS8vIGZpbmQgdGhlIHdyYXBwZWQgcmVzb3VyY2UgcmVwcmVz
+ZW50ZWQgYnkgaXRzIHRyYWNraW5nIHZhcjoKIAkJCQlGYWtlZFRyYWNraW5nVmFyaWFibGUgaW5u
+ZXJUcmFja2VyID0gZmluZENsb3NlVHJhY2tlcihzY29wZSwgZmxvd0luZm8sIGFsbG9jYXRpb24u
+YXJndW1lbnRzWzBdKTsKIAkJCQlpZiAoaW5uZXJUcmFja2VyICE9IG51bGwpIHsKLQkJCQkJaWYg
+KGlubmVyVHJhY2tlciA9PSBhbGxvY2F0aW9uLmNsb3NlVHJhY2tlcikKLQkJCQkJCXJldHVybjsg
+Ly8gc2VsZiB3cmFwIChyZXMgPSBuZXcgUmVzKHJlcykpIC0+IG5laXRoZXIgY2hhbmdlIChoZXJl
+KSBub3IgcmVtb3ZlIChiZWxvdykKKwkJCQkJRmFrZWRUcmFja2luZ1ZhcmlhYmxlIGN1cnJlbnRJ
+bm5lciA9IGlubmVyVHJhY2tlcjsKKwkJCQkJd2hpbGUgKGN1cnJlbnRJbm5lciAhPSBudWxsKSB7
+CisJCQkJCQlpZiAoY3VycmVudElubmVyID09IGFsbG9jYXRpb24uY2xvc2VUcmFja2VyKQorCQkJ
+CQkJCXJldHVybjsgLy8gc2VsZiB3cmFwIChyZXMgPSBuZXcgUmVzKHJlcykpIC0+IG5laXRoZXIg
+Y2hhbmdlIChoZXJlKSBub3IgcmVtb3ZlIChiZWxvdykKKwkJCQkJCWN1cnJlbnRJbm5lciA9IGN1
+cnJlbnRJbm5lci5pbm5lclRyYWNrZXI7CisJCQkJCX0KIAkJCQkJaW50IG5ld1N0YXR1cyA9IEZs
+b3dJbmZvLk5VTEw7CiAJCQkJCWlmIChhbGxvY2F0aW9uLmNsb3NlVHJhY2tlciA9PSBudWxsKSB7
+CiAJCQkJCQlhbGxvY2F0aW9uLmNsb3NlVHJhY2tlciA9IG5ldyBGYWtlZFRyYWNraW5nVmFyaWFi
+bGUoc2NvcGUsIGFsbG9jYXRpb24pOyAvLyBubyBsb2NhbCBhdmFpbGFibGUsIGNsb3NlYWJsZSBp
+cyB1bmFzc2lnbmVkCg==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

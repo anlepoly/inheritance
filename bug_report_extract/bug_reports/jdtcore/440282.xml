@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>440282</bug_id>
+          
+          <creation_ts>2014-07-23 22:55:00 -0400</creation_ts>
+          <short_desc>[resource] Resource leak detection false negative with empty finally block</short_desc>
+          <delta_ts>2015-04-24 01:02:30 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>Macintosh</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/45180</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=6a34e1e95ff381ca6683f9c33abd2421cd8e09d4</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Joshua Yanovski">pythonesque</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>manpalat</cc>
+    
+    <cc>pythonesque</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2431404</commentid>
+    <comment_count>0</comment_count>
+      <attachid>245317</attachid>
+    <who name="Joshua Yanovski">pythonesque</who>
+    <bug_when>2014-07-23 22:55:07 -0400</bug_when>
+    <thetext>Created attachment 245317
+Attached testcase
+
+Resource leak detection incorrectly reports a false negative with an *empty* finally block when returning an AutoCloseable, instead of reporting a warning.  This shouldn&apos;t happen; for me, the testcase crashes almost immediately with &quot;too many open files.&quot;  Removing the empty finally block causes the warning to occur.
+
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+
+public final class ResourceLeakFalseNegative {
+
+  private static final class Foo implements AutoCloseable {
+    final InputStreamReader reader;
+
+    Foo(final InputStreamReader reader) {
+      this.reader = reader;
+    }
+
+    public int read() throws IOException {
+      return reader.read();
+    }
+
+    @Override
+    public void close() throws IOException {
+      reader.close();
+    }
+  }
+
+  private static final class Bar {
+    final int read;
+
+    Bar(final InputStreamReader reader) throws IOException {
+      read = reader.read();
+    }
+    
+    public int read() {
+      return read;
+    }
+  }
+
+  public final static int foo() throws IOException {
+    final FileInputStream in = new FileInputStream(&quot;/dev/null&quot;);
+    final InputStreamReader reader = new InputStreamReader(in);
+    try {
+      return new Foo(reader).read();
+    } finally {
+      // even though Foo is not closed, no potential resource leak is reported.
+    }
+  }
+
+  public final static int bar() throws IOException {
+    final FileInputStream in = new FileInputStream(&quot;/dev/null&quot;);
+    final InputStreamReader reader = new InputStreamReader(in);
+    try {
+      final Bar bar = new Bar(reader);
+      return bar.read();
+    } finally {
+      // Removing the close correctly reports potential resource leak as a warning,
+      // because Bar does not implement AutoCloseable.
+      reader.close();
+    }
+  }
+
+  public static void main(String[] args) throws IOException {
+    for (;;) {
+      foo();
+      bar();
+    }
+  }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2431405</commentid>
+    <comment_count>1</comment_count>
+    <who name="Joshua Yanovski">pythonesque</who>
+    <bug_when>2014-07-23 23:02:43 -0400</bug_when>
+    <thetext>Sorry, the description says &quot;when returning an AutoCloseable&quot; but that is not in fact necessary to trigger this behavior.  Eclipse also incorrectly reports no potential resource leak when returning an AutoCloseable in general, which can cause crashes similar to the below, but with only local flow analysis available banning that would pretty much eliminate returning AutoCloseables from factories without suppressing the warning, which seems nonideal.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2431409</commentid>
+    <comment_count>2</comment_count>
+    <who name="Joshua Yanovski">pythonesque</who>
+    <bug_when>2014-07-23 23:07:41 -0400</bug_when>
+    <thetext>Another addendum, bar() should look like the below.  The way it&apos;s written now makes it seem like the real issue is that Bar is being assigned to a local variable while Foo is not, but again that is not necessary to trigger this behavior.
+
+  public final static int bar() throws IOException {
+    final FileInputStream in = new FileInputStream(&quot;/dev/null&quot;);
+    final InputStreamReader reader = new InputStreamReader(in);
+    try {
+      return new Bar(reader).read();
+    } finally {
+      // Removing the close correctly reports potential resource leak as a warning,
+      // because Bar does not implement AutoCloseable.
+      reader.close();
+    }
+  }</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2541823</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-02 15:34:47 -0400</bug_when>
+    <thetext>(In reply to Joshua Yanovski from comment #2)
+&gt; Another addendum, bar() should look like the below.  The way it&apos;s written
+&gt; now makes it seem like the real issue is that Bar is being assigned to a
+&gt; local variable while Foo is not ...
+
+and conversely, the desired warning appears if we change foo() to:
+
+  public final static int foo() throws IOException {
+    final FileInputStream in = new FileInputStream(&quot;/dev/null&quot;);
+    final InputStreamReader reader = new InputStreamReader(in);
+    try {
+      Foo aFoo = new Foo(reader); // extracted to new local variable
+      return aFoo.read();
+    } finally {
+      // even though Foo is not closed, no potential resource leak is reported.
+    }
+  }
+
+Now we report:
+        Foo aFoo = new Foo(reader);
+            ^^^^
+Resource leak: &apos;aFoo&apos; is never closed
+
+Let&apos;s see, if/how we can answer similarly for an unassigned resource, too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2541863</commentid>
+    <comment_count>4</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-04-02 18:03:42 -0400</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/45180</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2541872</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-02 18:12:17 -0400</bug_when>
+    <thetext>(In reply to Eclipse Genie from comment #4)
+&gt; New Gerrit change created: https://git.eclipse.org/r/45180
+
+Tiny fix: we just didn&apos;t precisely recognize which block owns a particular tracking variable and should analyse it at its end.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2542036</commentid>
+    <comment_count>6</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-04-03 08:24:20 -0400</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/45180 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=6a34e1e95ff381ca6683f9c33abd2421cd8e09d4</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2542037</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-03 08:25:50 -0400</bug_when>
+    <thetext>.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2551067</commentid>
+    <comment_count>8</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2015-04-24 01:02:30 -0400</bug_when>
+    <thetext>Verified for Eclipse 4.5 Mars M7 Build id: I20150422-1000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>245317</attachid>
+            <date>2014-07-23 22:55:00 -0400</date>
+            <delta_ts>2014-07-23 22:55:07 -0400</delta_ts>
+            <desc>Attached testcase</desc>
+            <filename>ResourceLeakFalseNegative.java</filename>
+            <type>text/x-java</type>
+            <size>1596</size>
+            <attacher name="Joshua Yanovski">pythonesque</attacher>
+            
+              <data encoding="base64">aW1wb3J0IGphdmEuaW8uRmlsZUlucHV0U3RyZWFtOwppbXBvcnQgamF2YS5pby5JT0V4Y2VwdGlv
+bjsKaW1wb3J0IGphdmEuaW8uSW5wdXRTdHJlYW1SZWFkZXI7CgpwdWJsaWMgZmluYWwgY2xhc3Mg
+UmVzb3VyY2VMZWFrRmFsc2VOZWdhdGl2ZSB7CgogIHByaXZhdGUgc3RhdGljIGZpbmFsIGNsYXNz
+IEZvbyBpbXBsZW1lbnRzIEF1dG9DbG9zZWFibGUgewogICAgZmluYWwgSW5wdXRTdHJlYW1SZWFk
+ZXIgcmVhZGVyOwoKICAgIEZvbyhmaW5hbCBJbnB1dFN0cmVhbVJlYWRlciByZWFkZXIpIHsKICAg
+ICAgdGhpcy5yZWFkZXIgPSByZWFkZXI7CiAgICB9CiAgICAKICAgIHB1YmxpYyBpbnQgcmVhZCgp
+IHRocm93cyBJT0V4Y2VwdGlvbiB7CiAgICAgIHJldHVybiByZWFkZXIucmVhZCgpOwogICAgfQoK
+ICAgIEBPdmVycmlkZQogICAgcHVibGljIHZvaWQgY2xvc2UoKSB0aHJvd3MgSU9FeGNlcHRpb24g
+ewogICAgICByZWFkZXIuY2xvc2UoKTsKICAgIH0KICB9CgogIHByaXZhdGUgc3RhdGljIGZpbmFs
+IGNsYXNzIEJhciB7CiAgICBmaW5hbCBpbnQgcmVhZDsKCiAgICBCYXIoZmluYWwgSW5wdXRTdHJl
+YW1SZWFkZXIgcmVhZGVyKSB0aHJvd3MgSU9FeGNlcHRpb24gewogICAgICByZWFkID0gcmVhZGVy
+LnJlYWQoKTsKICAgIH0KICAgIAogICAgcHVibGljIGludCByZWFkKCkgewogICAgICByZXR1cm4g
+cmVhZDsKICAgIH0KICB9CgogIHB1YmxpYyBmaW5hbCBzdGF0aWMgaW50IGZvbygpIHRocm93cyBJ
+T0V4Y2VwdGlvbiB7CiAgICBmaW5hbCBGaWxlSW5wdXRTdHJlYW0gaW4gPSBuZXcgRmlsZUlucHV0
+U3RyZWFtKCIvZGV2L251bGwiKTsKICAgIGZpbmFsIElucHV0U3RyZWFtUmVhZGVyIHJlYWRlciA9
+IG5ldyBJbnB1dFN0cmVhbVJlYWRlcihpbik7CiAgICB0cnkgewogICAgICByZXR1cm4gbmV3IEZv
+byhyZWFkZXIpLnJlYWQoKTsKICAgIH0gZmluYWxseSB7CiAgICAgIC8vIGV2ZW4gdGhvdWdoIEZv
+byBpcyBub3QgY2xvc2VkLCBubyBwb3RlbnRpYWwgcmVzb3VyY2UgbGVhayBpcyByZXBvcnRlZC4K
+ICAgIH0KICB9CgogIHB1YmxpYyBmaW5hbCBzdGF0aWMgaW50IGJhcigpIHRocm93cyBJT0V4Y2Vw
+dGlvbiB7CiAgICBmaW5hbCBGaWxlSW5wdXRTdHJlYW0gaW4gPSBuZXcgRmlsZUlucHV0U3RyZWFt
+KCIvZGV2L251bGwiKTsKICAgIGZpbmFsIElucHV0U3RyZWFtUmVhZGVyIHJlYWRlciA9IG5ldyBJ
+bnB1dFN0cmVhbVJlYWRlcihpbik7CiAgICB0cnkgewogICAgICBmaW5hbCBCYXIgYmFyID0gbmV3
+IEJhcihyZWFkZXIpOwogICAgICByZXR1cm4gYmFyLnJlYWQoKTsKICAgIH0gZmluYWxseSB7CiAg
+ICAgIC8vIFJlbW92aW5nIHRoZSBjbG9zZSBjb3JyZWN0bHkgcmVwb3J0cyBwb3RlbnRpYWwgcmVz
+b3VyY2UgbGVhayBhcyBhIHdhcm5pbmcsCiAgICAgIC8vIGJlY2F1c2UgQmFyIGRvZXMgbm90IGlt
+cGxlbWVudCBBdXRvQ2xvc2VhYmxlLgogICAgICByZWFkZXIuY2xvc2UoKTsKICAgIH0KICB9Cgog
+IHB1YmxpYyBzdGF0aWMgdm9pZCBtYWluKFN0cmluZ1tdIGFyZ3MpIHRocm93cyBJT0V4Y2VwdGlv
+biB7CiAgICBmb3IgKDs7KSB7CiAgICAgIGZvbygpOwogICAgICBiYXIoKTsKICAgIH0KICB9Cn0K
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

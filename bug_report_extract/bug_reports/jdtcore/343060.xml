@@ -1,0 +1,694 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>343060</bug_id>
+          
+          <creation_ts>2011-04-17 06:29:00 -0400</creation_ts>
+          <short_desc>Method.getMethods() returns different methods (compared to standard compiler) for public/non-public inheritance hierarchies</short_desc>
+          <delta_ts>2012-01-19 10:47:51 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.6.2</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows XP</op_sys>
+          <bug_status>REOPENED</bug_status>
+          <resolution></resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>---</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Bartosz Bankowski">bbankowski</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>pwebster</cc>
+    
+    <cc>satyam.kandula</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>1914766</commentid>
+    <comment_count>0</comment_count>
+    <who name="Bartosz Bankowski">bbankowski</who>
+    <bug_when>2011-04-17 06:29:39 -0400</bug_when>
+    <thetext>Build Identifier: 20110218-0911
+
+Given the following interfaces and classes:
+
+Interface.java:
+interface Interface&lt;M, X&gt; {
+	void method(X x, M m);
+}
+
+Abstract.java
+abstract class Abstract&lt;X&gt; implements Interface&lt;String, X&gt; {
+	@Override
+	public void method(X x, String string) {
+	}
+}
+
+PublicAbstract.java:
+public abstract class PublicAbstract&lt;X&gt; implements Interface&lt;String, X&gt; {
+	@Override
+	public void method(X x, String string) {
+	}
+}
+
+AbstractChild.java:
+public class AbstractChild extends Abstract&lt;Integer&gt; {
+}
+
+PublicAbstractChild:
+public class PublicAbstractChild extends PublicAbstract&lt;Integer&gt; {
+}
+
+And the program to test it (Main):
+import java.lang.reflect.Method;
+
+public class Main {
+	
+	public static void main(String[] args) {
+		printMethods(PublicAbstractChild.class);
+		printMethods(AbstractChild.class);
+	}
+
+	private static void printMethods(Class&lt;?&gt; clazz) {
+		System.out.println(&quot;Methods for class: &quot; + clazz.getName());
+		for (Method m : clazz.getMethods()) {
+			if (m.getName().startsWith(&quot;method&quot;)) {
+				System.out.println(m);
+			}
+		}
+	}
+	
+}
+
+When I have classes compiled by Eclipse the result is:
+
+Methods for class: PublicAbstractChild
+public void PublicAbstract.method(java.lang.Object,java.lang.String)
+public void PublicAbstract.method(java.lang.Object,java.lang.Object)
+Methods for class: AbstractChild
+public void AbstractChild.method(java.lang.Object,java.lang.String)
+public void Abstract.method(java.lang.Object,java.lang.Object)
+
+When I have classes compiled by Oracle JDK (tested on versions 1.6.0_24 and 1.6.0_20) the result is:
+
+Methods for class: PublicAbstractChild
+public void PublicAbstract.method(java.lang.Object,java.lang.String)
+public void PublicAbstract.method(java.lang.Object,java.lang.Object)
+Methods for class: AbstractChild
+public void Abstract.method(java.lang.Object,java.lang.String)
+public void Abstract.method(java.lang.Object,java.lang.Object)
+
+Results are different which causes major problems using reflection.
+
+
+Reproducible: Always
+
+Steps to Reproduce:
+1. Take the code described in the details section.
+2. Compile it and run Main within Eclipse.
+3. Compile it with Oracle JDK 1.6.0_2x and run Main.
+4. Compare the results.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1914767</commentid>
+    <comment_count>1</comment_count>
+      <attachid>193429</attachid>
+    <who name="Bartosz Bankowski">bbankowski</who>
+    <bug_when>2011-04-17 06:32:25 -0400</bug_when>
+    <thetext>Created attachment 193429
+Sources to reproduce the problem</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1914781</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-04-17 09:37:18 -0400</bug_when>
+    <thetext>From a quick look at the compiled byte code:
+Eclipse indeed generates an extra bridge method into AbstractChild:
+   public bridge synthetic void method(Object arg1, String arg2)
+This method is unnecessary, because it has the same signature as the
+inherited method and it does nothing but delegate (no cast involved).
+
+I haven&apos;t seen a paragraph in the spec that defines when bridges must
+(not) be created. So maybe the bytecode is legal, but maybe we should
+still try to avoid creating such unnecessary bridge methods?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2020531</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-11-03 01:00:00 -0400</bug_when>
+    <thetext>Will consider a fix for this in 3.8 M4</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2026567</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-11-15 08:03:36 -0500</bug_when>
+    <thetext>See eclipse bug https://bugs.eclipse.org/bugs/show_bug.cgi?id=288658 and
+related sun bugs http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=6342411.
+
+Need to see why those considerations don&apos;t kick in for javac in this test
+case. In particular, need to construct a test case similar to the one
+in http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=6342411 using comment#0
+test case to see if the IllegalAccessException shows up.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2026993</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-11-15 18:59:52 -0500</bug_when>
+    <thetext>(In reply to comment #4)
+&gt; See eclipse bug https://bugs.eclipse.org/bugs/show_bug.cgi?id=288658 and
+&gt; related sun bugs http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=6342411.
+&gt; 
+&gt; Need to see why those considerations don&apos;t kick in for javac in this test
+&gt; case. 
+
+Duh. Eclipse compiler misses the nuance that such a bridge would need to be
+introduced only when inheriting public methods introduced by non public classes 
+from a named package. Patch will follow shortly.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2027057</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-11-15 23:29:36 -0500</bug_when>
+    <thetext>Simpler test case that can be cut &amp; pasted into package explorer:
+
+import java.lang.reflect.Method;
+
+interface Interface&lt;M, T&gt; {
+    void method(T x, M m);
+}
+
+abstract class Abstract&lt;T&gt; implements Interface&lt;String, T&gt; {
+    @Override
+    public void method(T x, String string) {
+    }
+}
+
+public class X extends Abstract&lt;Integer&gt; {
+
+    public static void main(String[] args) {
+        printMethods(X.class);
+    }
+
+    private static void printMethods(Class&lt;?&gt; clazz) {
+        System.out.println(&quot;Methods for class: &quot; + clazz.getName());
+        for (Method m : clazz.getMethods()) {
+            if (m.getName().startsWith(&quot;method&quot;)) {
+                System.out.println(m);
+            }
+        }
+    }
+
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2027066</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-11-16 00:20:49 -0500</bug_when>
+    <thetext>Turns out the regression tests added for bug 288658 are actually
+testing the current scenario (i.e default package) I need to write
+junits for that bug now :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2027119</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-11-16 03:38:56 -0500</bug_when>
+    <thetext>Released fix and tests in 3.8 stream via commit id : f966b547afe1ce6e5e600680e6f3625db1aa756f.
+
+Ayush, this also needs to be backported to 3.7.2
+after a bit more testing as this is a regression
+in 3.7 relative to 3.6.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2030617</commentid>
+    <comment_count>9</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-11-23 01:53:57 -0500</bug_when>
+    <thetext>Released in 3.7 maintenance via commit cc817186788a86e60b58427a9b7e989e5093af0a</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2036443</commentid>
+    <comment_count>10</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-06 09:58:53 -0500</bug_when>
+    <thetext>Verified for 3.8M4 using build I20111202-0800.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2037573</commentid>
+    <comment_count>11</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-08 05:01:25 -0500</bug_when>
+    <thetext>Released in 362+java7 branch via commit b317a1f8cb626a10310b9e4d19e0361f15b998da</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052630</commentid>
+    <comment_count>12</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-19 01:21:55 -0500</bug_when>
+    <thetext>javac is behaving the same if the package is default or not. With this patch, Eclipse is behaving similar to javac if the package is default and not otherwise.  I believe there could be more to the observations in comment 5.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052632</commentid>
+    <comment_count>13</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-19 01:25:13 -0500</bug_when>
+    <thetext>(In reply to comment #12)
+&gt; javac is behaving the same if the package is default or not. With this patch,
+&gt; Eclipse is behaving similar to javac if the package is default and not
+&gt; otherwise.  I believe there could be more to the observations in comment 5.
+
+Not sure I understand, can you post a test case that shows material
+difference ? Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052637</commentid>
+    <comment_count>14</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-19 01:36:50 -0500</bug_when>
+    <thetext>Run the following test with both javac and Eclipse. They differ in the output.
+This is the simpler test case in comment 6, put in a package. 
+######
+package pkg1;
+import java.lang.reflect.Method;
+
+interface Interface&lt;M, T&gt; {
+    void method(T x, M m);
+}
+
+abstract class Abstract&lt;T&gt; implements Interface&lt;String, T&gt; {
+    @Override
+    public void method(T x, String string) {
+    }
+}
+
+public class X extends Abstract&lt;Integer&gt; {
+
+    public static void main(String[] args) {
+        printMethods(X.class);
+    }
+
+    private static void printMethods(Class&lt;?&gt; clazz) {
+        System.out.println(&quot;Methods for class: &quot; + clazz.getName());
+        for (Method m : clazz.getMethods()) {
+            if (m.getName().startsWith(&quot;method&quot;)) {
+                System.out.println(m);
+            }
+        }
+    }
+
+}
+
+########</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052650</commentid>
+    <comment_count>15</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-19 02:15:35 -0500</bug_when>
+    <thetext>Some more update:
+I don&apos;t think javac differs depends on the defaultness of the package. I think there is an issue with javac itself whenever type parameters are used.
+For eg: Use this testcase in a default package
+######
+
+class AbstractY {
+	public void method() {}
+}
+
+public class Y extends AbstractY {
+	 public static void main(String[] args) {
+	        printMethods(Y.class);
+	    }
+
+	    private static void printMethods(Class&lt;?&gt; clazz) {
+	        System.out.println(&quot;Methods for class: &quot; + clazz.getName());
+	        for (Method m : clazz.getMethods()) {
+	            if (m.getName().startsWith(&quot;method&quot;)) {
+	                System.out.println(m);
+	            }
+	        }
+	    }
+}
+########
+Run with javac and ecj. ecj prints AbstractY.method(), but javac prints Y.method(). 
+I will do some investigations and update.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052657</commentid>
+    <comment_count>16</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-19 02:47:56 -0500</bug_when>
+    <thetext>(In reply to comment #15)
+
+&gt; I will do some investigations and update.
+
+Thanks, if this isn&apos;t a regression relative to 3.7.1, please open
+a follow up defect.
+
+I verified that the scenario specified in comment#14 is not
+a regression. i.e for the default package case, we now conform
+with java7. For the named package case we differ from javac7,
+but not from 3.7.1 (i.e there is no regression).
+
+(In reply to comment #15)
+&gt; Some more update:
+&gt; I don&apos;t think javac differs depends on the defaultness of the package. I think
+&gt; there is an issue with javac itself whenever type parameters are used.
+
+I agree there could be more here. Bridge method generation is not specified
+in JLS and so there are some differences historically that we are trying
+to bridge ;-)
+
+The defaultness came into picture from following the reasoning
+for java.lang.IllegalAccessException discussed in https://bugs.eclipse.org/bugs/show_bug.cgi?id=288658
+
+If the concerned public method belongs to a package default
+type but that package happens to be the default package, 
+the visibility barrier goes away and so there is no need for 
+a bridge.
+
+So I think the current fix is actually correct, but your testing
+has uncovered some more nuances where we differ.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052659</commentid>
+    <comment_count>17</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-19 02:48:43 -0500</bug_when>
+    <thetext>(In reply to comment #15)
+&gt; Some more update:
+&gt; I don&apos;t think javac differs depends on the defaultness of the package. I think
+&gt; there is an issue with javac itself whenever type parameters are used.
+
+You may also want to see if the abstractness or not of the superclass has
+any bearing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052665</commentid>
+    <comment_count>18</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-19 03:07:34 -0500</bug_when>
+    <thetext>(In reply to comment #16)
+&gt; So I think the current fix is actually correct, but your testing
+&gt; has uncovered some more nuances where we differ.
+I am not sure about this. Please look at the test case in comment 15. javac and Eclipse 3.7.1 are similar for this test case but there is a change in 3.7.2.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052669</commentid>
+    <comment_count>19</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-19 03:17:12 -0500</bug_when>
+    <thetext>(In reply to comment #17)
+&gt; You may also want to see if the abstractness or not of the superclass has
+&gt; any bearing.
+This doesn&apos;t have any bearing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052671</commentid>
+    <comment_count>20</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-19 03:25:19 -0500</bug_when>
+    <thetext>(In reply to comment #18)
+&gt; (In reply to comment #16)
+&gt; &gt; So I think the current fix is actually correct, but your testing
+&gt; &gt; has uncovered some more nuances where we differ.
+&gt; I am not sure about this. Please look at the test case in comment 15. javac and
+&gt; Eclipse 3.7.1 are similar for this test case but there is a change in 3.7.2.
+
+There _is_ a change in behavior for this test case, but I don&apos;t think it is 
+a regression, it is a progression.
+
+I think what it is showing is that there is many inconsistencies in javac&apos;s
+bridge generation algorithm and it is nowhere nearly as straightforward as
+as the statement 
+
+&quot;Specifically, we would generate a bridge method when a public method
+is inherited from a nonpublic class into a public class.&quot; in 
+http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=6342411</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052676</commentid>
+    <comment_count>21</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-19 03:30:19 -0500</bug_when>
+    <thetext>(In reply to comment #16)
+&gt; (In reply to comment #15)
+&gt; 
+&gt; &gt; I will do some investigations and update.
+&gt; 
+&gt; Thanks, if this isn&apos;t a regression relative to 3.7.1, please open
+&gt; a follow up defect.
+
+I meant to say if this isn&apos;t a regression relative to 3.7 and/or 
+3.7.1.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052679</commentid>
+    <comment_count>22</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-19 03:41:54 -0500</bug_when>
+    <thetext>I think the problem is with substitution of the type parameter that the method
+takes causes the problem.
+###
+abstract class AbstractY&lt;T&gt; {
+    public void method(T a) {}
+}
+
+public class Y extends AbstractY&lt;String&gt; {
+}
+####
+javac breaks or differs in this condition. Note that the parameter that the
+method &apos;method&apos; takes is substituted by it&apos;s subclass. I still don&apos;t understand
+completely but in my opinion ECJ3.7.1 behaviour is correct.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052692</commentid>
+    <comment_count>23</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-19 03:53:12 -0500</bug_when>
+    <thetext>(In reply to comment #20)
+&gt; &quot;Specifically, we would generate a bridge method when a public method
+&gt; is inherited from a nonpublic class into a public class.&quot; in 
+&gt; http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=6342411
+I agree that this is the right thing to do, but with this bug fix, there is a change in behaviour for classes in default package. I don&apos;t think that is right. As I understand from 6342411, a bridge method is being added so that things work fine with reflection. So, the defaultness of the package should not cause change in behaviour. 
+
+&gt;There _is_ a change in behavior for this test case, but I don&apos;t think it is 
+&gt;a regression, it is a progression.
+It could be either way depending upon what is the expected behaviour. What should be the behaviour of the testcase in comment 22? Should the bridge method be generated or not? 
+BTW, this bug fix breaks (I believe it breaks and not differs) the test in comment 15. Hence, this may be a regression.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052713</commentid>
+    <comment_count>24</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-19 04:29:07 -0500</bug_when>
+    <thetext>(In reply to comment #16)
+
+&gt; The defaultness came into picture from following the reasoning
+&gt; for java.lang.IllegalAccessException discussed in
+&gt; https://bugs.eclipse.org/bugs/show_bug.cgi?id=288658
+&gt; 
+&gt; If the concerned public method belongs to a package default
+&gt; type but that package happens to be the default package, 
+&gt; the visibility barrier goes away and so there is no need for 
+&gt; a bridge.
+&gt; 
+&gt; So I think the current fix is actually correct, but your testing
+&gt; has uncovered some more nuances where we differ.
+
+On thinking more about this, I think I understand what Satyam
+is trying to say: I have been guilty of muddled thinking in
+treating default package as though it were a globally accessible
+package and claiming per earlier that the visibility barrier goes
+away and  so there is no need for a bridge...
+
+Satyam, thanks for persisting and for putting together a test case
+that will show that this package barrier does exist between default
+and named packages that can be used a test case when we work on
+this further.
+
+I think we should back put this fix for 3.7.2 and restore status quo
+as of 3.7.1 and continue future work only for 3.8.x streams.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052717</commentid>
+    <comment_count>25</comment_count>
+      <attachid>209730</attachid>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-19 04:33:10 -0500</bug_when>
+    <thetext>Created attachment 209730
+zip of the project
+
+Project to show that the current behavior is wrong. Run &lt;default&gt;.Y in this project.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052806</commentid>
+    <comment_count>26</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-01-19 07:50:16 -0500</bug_when>
+    <thetext>&gt; I think we should back put this fix for 3.7.2 and restore status quo
+&gt; as of 3.7.1 and continue future work only for 3.8.x streams.
+
+Talked to Srikanth. I agree that this is the best thing to do at this point.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052853</commentid>
+    <comment_count>27</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-19 09:07:02 -0500</bug_when>
+    <thetext>(In reply to comment #26)
+&gt; &gt; I think we should back put this fix for 3.7.2 and restore status quo
+&gt; &gt; as of 3.7.1 and continue future work only for 3.8.x streams.
+&gt; 
+&gt; Talked to Srikanth. I agree that this is the best thing to do at this point.
+
+We will shortly restore the behavior to what it was at 3.8M3/3.7.1/3.6.2
+time for the respective streams by backing out the &quot;fix&quot;, which fortunately
+is very small (only two lines of code change not counting tests.)
+
+Apologies for the confusion. Satyam, once again thanks for insistence/
+persistence in the face of my inclination to dismiss it rather readily.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052866</commentid>
+    <comment_count>28</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-01-19 09:16:40 -0500</bug_when>
+    <thetext>Reverted from 3.7 maintenance branch via commit 52ffa6a622336b1154708c0ba10ecff9e5941c7f</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052879</commentid>
+    <comment_count>29</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-01-19 09:31:36 -0500</bug_when>
+    <thetext>Pushing revert into 3.6.2+java7 branch fails with Can&apos;t connect to any repository: ssh://ajain@git.eclipse.org/gitroot/jdt/eclipse.jdt.core.git (An internal Exception occurred during push: ssh://ajain@git.eclipse.org/gitroot/jdt/eclipse.jdt.core.git: Short read of block.)
+Weird. :\</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052904</commentid>
+    <comment_count>30</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-01-19 09:58:48 -0500</bug_when>
+    <thetext>Reverted in 3.6.2+java7 branch via commit 6ddf29924a61a973ae1bd8add4af0942f5b5d8fb</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052947</commentid>
+    <comment_count>31</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-01-19 10:47:51 -0500</bug_when>
+    <thetext>Reverted in master via commit 99e06cdf0656ed0f6c3eb604300a8baae7ee3beb</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>193429</attachid>
+            <date>2011-04-17 06:32:00 -0400</date>
+            <delta_ts>2011-04-17 06:32:25 -0400</delta_ts>
+            <desc>Sources to reproduce the problem</desc>
+            <filename>src.zip</filename>
+            <type>application/octet-stream</type>
+            <size>1413</size>
+            <attacher name="Bartosz Bankowski">bbankowski</attacher>
+            
+              <data encoding="base64">UEsDBBQAAgAAAOhjkT4AAAAAAAAAAAAAAAAEAAAAc3JjL1BLAwQUAAIACABOX5E+XiyAqGoAAAB6
+AAAAEQAAAHNyYy9BYnN0cmFjdC5qYXZhS0wqLilKTC5RSM5JLC5WcIRybSLsFDJzC3JSc1PzSooV
+PPNKUovSEpNTbYJLijLz0nUUgPLVvFycDv5lqUVFmSmpQHZBaVJOZrJCWX5mikJuaklGfopGhEKF
+jgJEi0IxmNIEa6vl5aoFAFBLAwQUAAIACABPX5E+mRo4vTMAAAA5AAAAFgAAAHNyYy9BYnN0cmFj
+dENoaWxkLmphdmErKE3KyUxWSM5JLC5WcEwqLilKTC5xzsjMSVFIrShJzUtBiNp45pWkpqcW2SlU
+83LVAgBQSwMEFAACAAgATV+RPoP5EXQyAAAANwAAABIAAABzcmMvSW50ZXJmYWNlLmphdmHLzCtJ
+LUpLTE5V8ISxbHx1FCLsFKp5uTjL8jNTFHJTSzLyUzQiFCp0FHwVcjWteblqAVBLAwQUAAIACADh
+YpE+ORKi6e0AAAC6AQAADQAAAHNyYy9NYWluLmphdmF1kE1qwzAQhdc2+A6DVzIBHSAJLSXrhEAW
+WZQuJrZsK0iWkSaGpuTu0Y/bENqCGIHme/PeSOrRWIIzTsgVDh23olWiJr4V1JtmVeRFPl5OStZQ
+K3QOtigH+CryzJ+54QjJX5ORDWjfZgeycujePwBt56pIZ6N/ojTUsX0Uvp0cWaxp00vV8Di+Wv1i
+/6NuIVpAJyTxlOFJvgmC9etLiH+9zmEOn46E5uZCPMJqYOUsgNbYtOoSSlgkGe8E7VALVqWAgWFJ
+ABqWD+jbtZqNMtkC0w859zktuaOknpU6wuUP+1csnQzDtqnc4tf7egdQSwMEFAACAAgASV+RPuPm
+1e9wAAAAhwAAABcAAABzcmMvUHVibGljQWJzdHJhY3QuamF2YSsoTcrJTFZITCouKUpMLlFIzkks
+LlYIAIs6QgVtIuwUMnMLclJzU/NKihU880pSi9ISk1NtgkuKMvPSdRSA8tW8XJwO/mWpRUWZKalA
+dgHE3LL8zBSF3NSSjPwUjQiFCh0FiBaFYjClCdZWy8tVCwBQSwMEFAACAAgARF+RPsHw6F01AAAA
+RQAAABwAAABzcmMvUHVibGljQWJzdHJhY3RDaGlsZC5qYXZhKyhNyslMVkjOSSwuVggAcxyTikuK
+EpNLnDMyc1IUUitKUvNS0OVsPPNKUtNTi+wUqnm5agFQSwECFAAUAAIAAADoY5E+AAAAAAAAAAAA
+AAAABAAAAAAAAAAAADAAAAAAAAAAc3JjL1BLAQIUABQAAgAIAE5fkT5eLICoagAAAHoAAAARAAAA
+AAAAAAEAIAAAACIAAABzcmMvQWJzdHJhY3QuamF2YVBLAQIUABQAAgAIAE9fkT6ZGji9MwAAADkA
+AAAWAAAAAAAAAAEAIAAAALsAAABzcmMvQWJzdHJhY3RDaGlsZC5qYXZhUEsBAhQAFAACAAgATV+R
+PoP5EXQyAAAANwAAABIAAAAAAAAAAQAgAAAAIgEAAHNyYy9JbnRlcmZhY2UuamF2YVBLAQIUABQA
+AgAIAOFikT45EqLp7QAAALoBAAANAAAAAAAAAAEAIAAAAIQBAABzcmMvTWFpbi5qYXZhUEsBAhQA
+FAACAAgASV+RPuPm1e9wAAAAhwAAABcAAAAAAAAAAQAgAAAAnAIAAHNyYy9QdWJsaWNBYnN0cmFj
+dC5qYXZhUEsBAhQAFAACAAgARF+RPsHw6F01AAAARQAAABwAAAAAAAAAAQAgAAAAQQMAAHNyYy9Q
+dWJsaWNBYnN0cmFjdENoaWxkLmphdmFQSwUGAAAAAAcABwC/AQAAsAMAAAAA
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>209730</attachid>
+            <date>2012-01-19 04:33:00 -0500</date>
+            <delta_ts>2012-01-19 04:33:10 -0500</delta_ts>
+            <desc>zip of the project</desc>
+            <filename>TestProject.zip</filename>
+            <type>application/octet-stream</type>
+            <size>2264</size>
+            <attacher name="Satyam Kandula">satyam.kandula</attacher>
+            
+              <data encoding="base64">UEsDBAoAAAAAAEh2M0AAAAAAAAAAAAAAAAAMAAAAVGVzdFByb2plY3QvUEsDBBQAAAAIAEh2M0Bt
++s8qtwAAAC0BAAAWAAAAVGVzdFByb2plY3QvLmNsYXNzcGF0aH2PSwvCMBCEzwr+h5K7W72Ih1YR
+qaCgglavEpOlRuOm5CH23/tGEfQ2M3zLziT981FHJ7ROGUpZG1osQhJGKipStspHzS7r9xr1RGju
+XMn97mpqb4fkbRUdFMmUOStYdAsfMv5NCkMv0tgCUGhVOoS99KB5ILG7fofJItsM57N8MJ5li/ib
+U+TREtcgcRsKCOp5iRaWnpPkVq6neVViPOEnvsyabej8q2SCL4N/tdoqusNJ/Ln7AlBLAwQUAAAA
+CABIdjNAqovby74AAACDAQAAFAAAAFRlc3RQcm9qZWN0Ly5wcm9qZWN0dVBLDsIgEF1r4h0a9oLu
+XNC60Lg2sR4A6aShKZ8AbTy+QKlNTdzNezPvA/T8ln0xgnVCqxId8QEVoLhuhGpL9Kxv+xM6V7st
+NVZ3wP0VHLfC+HAd2A1VTEJVg/P3aU9JYuKKaylB+YqSeYps9nEJkBV6DaJvHgZ4RBlegpSpJjE5
+TdsWA++FcYC7xmOubRjYyJIA7FIhKJhth5jtMiZrgpLflMzMNUKkHyzk6wn8bzDtY4F0l+wWg+9z
+15/4AVBLAwQKAAAAAABIdjNAAAAAAAAAAAAAAAAAFgAAAFRlc3RQcm9qZWN0Ly5zZXR0aW5ncy9Q
+SwMEFAAAAAgASHYzQOzOjUe+AAAAVgIAADAAAABUZXN0UHJvamVjdC8uc2V0dGluZ3Mvb3JnLmVj
+bGlwc2UuamR0LmNvcmUucHJlZnOVkD+LAyEQxftAvoqQJp1NioM7QrjqelffLnPoKE8N5NvHJemz
+28gg85v3Bz5KqTCFmEGoRzV3sEpWezoeMheD98p/aMZnYjypSATHELBAjWgUxU/l5dGwflqomyLC
+1gPNcUH7ja7NmcmezHkr2bVXhGv2LtqRoYJ3fGZTieJG1i1KAVNfzBrw1tME2iELuvZR5g2u1v4c
+ZS1kJ1tzp8eX7AAL89BJxtVRRfsO0CazDNcgM7fS0J72si+zr0afUEsDBAoAAAAAABN3M0AAAAAA
+AAAAAAAAAAAQAAAAVGVzdFByb2plY3QvYmluL1BLAwQKAAAAAABkdjNAAAAAAAAAAAAAAAAAEAAA
+AFRlc3RQcm9qZWN0L3NyYy9QSwMECgAAAAAAhnYzQAAAAAAAAAAAAAAAABQAAABUZXN0UHJvamVj
+dC9zcmMvcGtnL1BLAwQUAAAACADBdjNAiMRv4DMBAABPAgAAHgAAAFRlc3RQcm9qZWN0L3NyYy9w
+a2cvSW5Qa2cuamF2YX2SUU+DMBDHnyXhO1x4KlG792E0Rn3Yg85kS3wu3Y0VaEvKbXEzfndbYGOL
+0X9IoOV+/7vrtRGyEgVCUxVZHMWR0o11BKXYCV4LU3CH6xol8ZnZWSlIWbMUrkB6+ZTYhGX2D/SK
+tLGrzrjZ5rWSIGvRtjAz71UBX3F0FUfgNfxsySeQsLNqBY1Thnq+ZU+Bunu4D/jhcAPzvPT2YPMy
+DS4waLFvCTW3W+IdXhuWDBawtq5PPoUErnsj7vt4ExpZmmajS4hkPQYapmPosZr0ImmQWgPToxv3
+jThqPxRtWKI7KvkN/VGxPq/lKHL77riCNFd+FhWy0H7Wb36Dn43cADuNBTA9EZMJLOfPc3jckr0t
+0KAThKsByWsrqyEQ+yoW5G/F0gnpezkmuKzpbDl8+pd/fgBQSwMEFAAAAAgA13YzQKALhlCcAAAA
+4gAAABYAAABUZXN0UHJvamVjdC9zcmMvWS5qYXZhdY67CgIxEEVrA/mHKROQ/MBWlhaCYBXEYjYb
+YzRmQzKuwrL/7r6wc4pp5pw71z9Tmwnu2KEKGJ3K9hqsIXWwdGubijPOTMBSYFcXymhIQ8/ZJr3q
+4A10rW/gOaNCQj9wNkzGel1EDfZDNjZ/Igoh/ZLQR3Gi7KM7XwCzK3JCYZ30cGofj+NOI0JLxSK0
+mh9tIdo3aCFltShzleELUEsBAhQACgAAAAAASHYzQAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAQAAAA
+AAAAAFRlc3RQcm9qZWN0L1BLAQIUABQAAAAIAEh2M0Bt+s8qtwAAAC0BAAAWAAAAAAAAAAEAIAAA
+ACoAAABUZXN0UHJvamVjdC8uY2xhc3NwYXRoUEsBAhQAFAAAAAgASHYzQKqL28u+AAAAgwEAABQA
+AAAAAAAAAQAgAAAAFQEAAFRlc3RQcm9qZWN0Ly5wcm9qZWN0UEsBAhQACgAAAAAASHYzQAAAAAAA
+AAAAAAAAABYAAAAAAAAAAAAQAAAABQIAAFRlc3RQcm9qZWN0Ly5zZXR0aW5ncy9QSwECFAAUAAAA
+CABIdjNA7M6NR74AAABWAgAAMAAAAAAAAAABACAAAAA5AgAAVGVzdFByb2plY3QvLnNldHRpbmdz
+L29yZy5lY2xpcHNlLmpkdC5jb3JlLnByZWZzUEsBAhQACgAAAAAAE3czQAAAAAAAAAAAAAAAABAA
+AAAAAAAAAAAQAAAARQMAAFRlc3RQcm9qZWN0L2Jpbi9QSwECFAAKAAAAAABkdjNAAAAAAAAAAAAA
+AAAAEAAAAAAAAAAAABAAAABzAwAAVGVzdFByb2plY3Qvc3JjL1BLAQIUAAoAAAAAAIZ2M0AAAAAA
+AAAAAAAAAAAUAAAAAAAAAAAAEAAAAKEDAABUZXN0UHJvamVjdC9zcmMvcGtnL1BLAQIUABQAAAAI
+AMF2M0CIxG/gMwEAAE8CAAAeAAAAAAAAAAEAIAAAANMDAABUZXN0UHJvamVjdC9zcmMvcGtnL0lu
+UGtnLmphdmFQSwECFAAUAAAACADXdjNAoAuGUJwAAADiAAAAFgAAAAAAAAABACAAAABCBQAAVGVz
+dFByb2plY3Qvc3JjL1kuamF2YVBLBQYAAAAACgAKALACAAASBgAAAAA=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

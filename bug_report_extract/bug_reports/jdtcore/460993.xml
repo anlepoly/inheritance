@@ -1,0 +1,511 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>460993</bug_id>
+          
+          <creation_ts>2015-02-26 15:25:00 -0500</creation_ts>
+          <short_desc>[compiler] Incremental build not always reports the same errors (type cannot be resolved - indirectly referenced)</short_desc>
+          <delta_ts>2015-03-18 04:27:23 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/42893</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=ae91e57f9e527d38f1a28381db960edf808acef4</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M6</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Markus Keller">markus_keller</reporter>
+          <assigned_to name="Markus Keller">markus_keller</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>saammana</cc>
+    
+    <cc>stephan.herrmann</cc>
+    
+    <cc>szymon.ptaszkiewicz</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="64264"
+          type_id="1"
+          status="?"
+          setter="jarthana"
+          requestee="stephan.herrmann"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2524583</commentid>
+    <comment_count>0</comment_count>
+      <attachid>251154</attachid>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-02-26 15:25:14 -0500</bug_when>
+    <thetext>Created attachment 251154
+2 test projects
+
+We&apos;re seeing a strange ping-pong effect when trying to compile master of org.eclipse.releng.tools and org.eclipse.jgit.
+
+On every second incremental compilation, we see this error in org.eclipse.releng.tools.git.GitCopyrightAdapter:
+&quot;The type java.lang.AutoCloseable cannot be resolved. It is indirectly referenced from required .class files&quot;
+
+The attached self-contained projects reproduce the problem (needs a 1.5 and a 1.7 Installed JRE). Just open GitCopyrightAdapter, add a space, and save. Hint: It&apos;s easier to debug without a reconciler thread: Use Open With &gt; Text Editor.
+
+
+In this code path, we get the IProblem#IsClassPathCorrect as expected:
+	at org.eclipse.jdt.internal.compiler.lookup.UnresolvedReferenceBinding.resolve(UnresolvedReferenceBinding.java:104)
+	at org.eclipse.jdt.internal.compiler.lookup.BinaryTypeBinding.resolveType(BinaryTypeBinding.java:187)
+	at org.eclipse.jdt.internal.compiler.lookup.BinaryTypeBinding.superInterfaces(BinaryTypeBinding.java:1805)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.findMethodInSuperInterfaces(Scope.java:1834)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.findDefaultAbstractMethod(Scope.java:1113)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.findMethod0(Scope.java:1630)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.findMethod(Scope.java:1525)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.getMethod(Scope.java:2800)
+	at org.eclipse.jdt.internal.compiler.ast.MessageSend.findMethodBinding(MessageSend.java:890)
+	at org.eclipse.jdt.internal.compiler.ast.MessageSend.resolveType(MessageSend.java:704)
+	at org.eclipse.jdt.internal.compiler.ast.Expression.resolve(Expression.java:1020)
+	at org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration.resolveStatements(AbstractMethodDeclaration.java:638)
+	at org.eclipse.jdt.internal.compiler.ast.MethodDeclaration.resolveStatements(MethodDeclaration.java:307)
+	at org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration.resolve(AbstractMethodDeclaration.java:548)
+	at org.eclipse.jdt.internal.compiler.ast.TypeDeclaration.resolve(TypeDeclaration.java:1188)
+	at org.eclipse.jdt.internal.compiler.ast.TypeDeclaration.resolve(TypeDeclaration.java:1301)
+	at org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration.resolve(CompilationUnitDeclaration.java:590)
+	at org.eclipse.jdt.internal.compiler.Compiler.process(Compiler.java:803)
+	at org.eclipse.jdt.internal.compiler.ProcessTaskManager.run(ProcessTaskManager.java:141)
+	at java.lang.Thread.run(Thread.java:745)
+
+
+In the next incremental compile pass, the builder decides to build the Messages class as well. That already looks wrong to me. But as a side effect, this computes the supertypes of type String.
+
+In MethodScope(Scope).findExactMethod(ReferenceBinding, char[], TypeBinding[], InvocationSite) line: 1215, the code reads:
+	
+	if (isPossibleSubtypeOfRawType(argumentTypes[i]))
+		return null;
+
+In the case where the Messages class has not been compiled before, the isPossibleSubtypeOfRawType(..) call returns true for argumentType=String (because the supertypes of String have not been resolved yet). As a consequence, Scope#findExactMethod(..) return null, and the findMethod0(..) shown above eventually resolves the type Repository and reports the missing supertype AutoCloseable.
+
+In the other case, where the compilation of class Messages already resolved the supertypes of String, the isPossibleSubtypeOfRawType(..) call returns false, and the findExactMethod(..) call returns the &quot;resolve&quot; method binding without ever checking the supertypes of type Repository.
+=&gt; Error is not reported in this case.
+
+Two questions to investigate:
+
+1. Why does incremental compilation compile class Messages again? Is it because the previous compilation aborted due to an incomplete build path, so the next build will be a full build?
+
+2. Why does findMethod0(..) resolve the receiver type and report errors, but findExactMethod(..) sometimes returns without ever having resolved the receiver type? If the error is worth reporting at all, then it should be reported all the time.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2524713</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-27 02:52:16 -0500</bug_when>
+    <thetext>(In reply to Markus Keller from comment #0)
+&gt; Two questions to investigate:
+
+Thanks for the detailed report, Markus!
+
+&gt; 1. Why does incremental compilation compile class Messages again? Is it
+&gt; because the previous compilation aborted due to an incomplete build path, so
+&gt; the next build will be a full build?
+
+Yep, This line in IncrementalImageBuilder (line: 84) adds all source files in the affected project when a build error was previously reported:
+
+		if (this.javaBuilder.hasBuildpathErrors()) {
+                  ....
+
+&gt; 2. Why does findMethod0(..) resolve the receiver type and report errors, but
+&gt; findExactMethod(..) sometimes returns without ever having resolved the
+&gt; receiver type? If the error is worth reporting at all, then it should be
+&gt; reported all the time.
+
+This looks like a problem and needs closer look.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2524796</commentid>
+    <comment_count>2</comment_count>
+      <attachid>251165</attachid>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-02-27 07:03:08 -0500</bug_when>
+    <thetext>Created attachment 251165
+2 test projects v2
+
+I was a bit too eager stripping out unnecessary files, and I accidentally removed the .settings that set the compiler compliance.
+
+Here&apos;s a version that is even easier to debug, since it avoids the MessageSend in Messages.java, and it includes the launch config I used to verify that javac doesn&apos;t have this problem.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2524797</commentid>
+    <comment_count>3</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-02-27 07:04:54 -0500</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/42893</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2524801</commentid>
+    <comment_count>4</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-02-27 07:11:56 -0500</bug_when>
+    <thetext>This could be easier to fix than I initially thought. Bug 360164 laid all the ground work to fix such problems. I think this is just an oversight where the &quot;this.environment.mayTolerateMissingType = true;&quot; range was chosen a bit too narrow.
+
+BinaryTypeBinding#superclass() probably has the same problem -- it also calls &quot;resolveType(..)&quot; outside of the &quot;mayTolerate&quot; block.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2524809</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-27 07:17:50 -0500</bug_when>
+    <thetext>Thanks Markus, for taking this up!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2524847</commentid>
+    <comment_count>6</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-02-27 09:14:38 -0500</bug_when>
+    <thetext>Looked too easy... Gerrit reports two failures for tests that have been added for bug 164622:
+MultiProjectTests.test102_missing_required_binaries
+MultiProjectTests.test103_missing_required_binaries
+
+I think I investigated into the wrong direction. For javac 1.7, the interface AutoCloseable seems to be a very special beast that is also supported in cross-compilation mode [1], although it really shouldn&apos;t be.
+
+When I change class org.eclipse.jgit.lib.Repository in the example projects to implement java.nio.file.CopyOption or java.nio.file.WatchKey, and then compile the 1.5 project org.eclipse.releng.tools with:
+
+javac -source 1.5 -target 1.5 -bootclasspath C:\java\jdk5\jre\lib\rt.jar -sourcepath src -d classes -classpath ..\org.eclipse.jgit\bin src\org\eclipse\releng\tools\git\*
+
+.. then I get a compile error form javac as well:
+
+javac 1.7.0_76
+src\org\eclipse\releng\tools\git\GitCopyrightAdapter.java:8: error: cannot access CopyOption
+		repo.resolve(&quot;Head&quot;); 
+		    ^
+  class file for java.nio.file.CopyOption not found
+1 error
+
+=&gt; I now think the compile error is actually correct, and we have to make sure that findExactMethod(..) doesn&apos;t take the shortcut that avoids resolving the supertypes of the receiver.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2524912</commentid>
+    <comment_count>7</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-02-27 10:40:06 -0500</bug_when>
+    <thetext>Some other bugs that always crop up when I look at this code: Bug 164622, bug 275471, bug 206930, bug 269883, bug 360164. It looks like we don&apos;t have crystal clear rules as to when supertypes of a binary type need to be resolved and when problems in there can be tolerated.
+
+This bug goes away when I revert bug 275471, i.e. when I comment out this line in Scope#isPossibleSubtypeOfRawType(TypeBinding), which effectively removes the &quot;Possible&quot; in the method&apos;s name:
+
+	if (!currentType.isHierarchyConnected()) return true; // do not fault in super types right now, so assume one is a raw type
+
+Then, the &quot;repo.resolve(&quot;Head&quot;);&quot; call consistently compiles without error. Which makes sense, since the supertypes of type Repository can&apos;t influence the validity of the method call at hand.
+
+I&apos;m inclined to just revert the fix for bug 275471. That looks like a hack and the bug&apos;s comments don&apos;t justify why this should be correct. I think the fix for bug 360164 actually fixes the problem from bug 275471. I&apos;ll prepare another Gerrit review for that.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2525188</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-28 10:19:18 -0500</bug_when>
+    <thetext>(In reply to Markus Keller from comment #6)
+&gt; I think I investigated into the wrong direction. For javac 1.7, the
+&gt; interface AutoCloseable seems to be a very special beast
+
+Right. You probably saw that the fix in bug 360164 specifically protects the code newly introduced via bug 349326, which eagerly searches for AutoCloseable or Closeable in the ancestry.
+Later BitUninternedType joined the party.
+
+&gt; that is also
+&gt; supported in cross-compilation mode [1], although it really shouldn&apos;t be.
+
+If you refer to the mix of 1.5 and 1.7 projects: your observation is true only for AutoCloseable, the other two should be detected also at 1.5.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2525759</commentid>
+    <comment_count>9</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-03-02 13:34:19 -0500</bug_when>
+    <thetext>OK, I&apos;ve written a test that fails against master and passes when I remove the hack for bug 275471: https://git.eclipse.org/r/#/c/42893/2
+
+I&apos;ll release this if Gerrit reports green tests. With this change, ECJ behaves the same as javac for the very specific example from comment 0 (with AutoCloseable as supertype of Repository). For other supertypes, javac reports an error, but ECJ won&apos;t (to keep cases like bug 360164 working).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2525792</commentid>
+    <comment_count>10</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-03-02 15:34:11 -0500</bug_when>
+    <thetext>For patch set 2, Gerrit reports that MethodVerifyTest#test124() fails for 1.5 and 1.6, but NOT for 1.7 and 1.8.
+
+This looked fishy again, and indeed I can construct an example where the compiler is definitely wrong even without my change. Just add another file &quot;A.java&quot; to the test, so that the hierarchy of &quot;String&quot; already gets &quot;connected&quot; when A.java is compiled:
+
+public void test124b() {
+	this.runConformTest(
+		new String[] {
+			&quot;A.java&quot;,
+			&quot;class A {\n&quot; +
+			&quot;  public Object o = \&quot;\&quot;;\n&quot; +
+			&quot;}\n&quot;,
+			&quot;X.java&quot;,
+			...
+
+In 1.5 and 1.6 compliance mode, this makes the test fail because it produces compile errors. (In 1.7 and 1.8 the test passes compilation and fails in the execution phase because it tries to run the wrong CU -- but that doesn&apos;t invalidate my argument about the wrong compilation.)
+
+I&apos;m a bit lost here. I still think that the &quot;isHierarchyConnected()&quot; call is wrong, but OTOH, I don&apos;t know how to fix this new problem.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2526740</commentid>
+    <comment_count>11</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-03-04 14:14:25 -0500</bug_when>
+    <thetext>There&apos;s no way around removing the wrong isHierarchyConnected() call.
+
+But I think a good way to keep the hacks in Scope#computeCompatibleMethod(..) for bug 207935 happy is to make sure Scope#getMethod(TypeBinding, char[], TypeBinding[], InvocationSite) doesn&apos;t return a ProblemMethodBinding from findExactMethod(..), but instead tries harder via #findMethod(..). See patch set 3.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2526763</commentid>
+    <comment_count>12</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-03-04 15:00:17 -0500</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/42893 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=ae91e57f9e527d38f1a28381db960edf808acef4</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2526765</commentid>
+    <comment_count>13</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-03-04 15:00:38 -0500</bug_when>
+    <thetext>.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2533404</commentid>
+    <comment_count>14</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2015-03-18 04:27:23 -0400</bug_when>
+    <thetext>Verified for 4.5 M6 using I20150316-2000 build</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>251154</attachid>
+            <date>2015-02-26 15:25:00 -0500</date>
+            <delta_ts>2015-02-27 07:03:08 -0500</delta_ts>
+            <desc>2 test projects</desc>
+            <filename>2 test projects.zip</filename>
+            <type>application/x-zip</type>
+            <size>4396</size>
+            <attacher name="Markus Keller">markus_keller</attacher>
+            
+              <data encoding="base64">UEsDBBQACAgIANOYWkYAAAAAAAAAAAAAAAAbAAAAb3JnLmVjbGlwc2UuamdpdC8uY2xhc3NwYXRo
+fY9ND8FAEIbP/Ipm751y4tASkUo0QUK5ynZ3UsuabfZD+PcIQiTcZibPm3nedHg+6uiE1ilDGetC
+h0VIwkhFdcbW5STus+GgnQrNnWu43w3arfeC5O0lOiiSGXNWsOh+fIzJT1AYeoHG1oBCq8Yh7KUH
+zQOJ3e01FMt8O17My9F0ni+Tb06RR0tcg8Qq1BDUM4kWVp6T5FZuZuWlwaTgJ77K4y70/hiZ4Jvg
+X1KVojubJh+dr1BLBwhrtIJItQAAACcBAABQSwMEFAAICAgA2phaRgAAAAAAAAAAAAAAABkAAABv
+cmcuZWNsaXBzZS5qZ2l0Ly5wcm9qZWN0dZBNDsIgEIXX9hSme0F3Lmi70HgB9QBIJw1N+QnQxuM7
+FGys0d17b97wAax5qmE7gfPS6Ko8kH25BS1MK3VXlffbZXcsm7pg1pkeRDiDF07agOW62DDNFdTG
+dQTEIK0H0ncyMDrHOBZGKdChZvStMMwn+ajpp3mMcmivFgSa7E64xnUbg1+wNhBhHAo+8bkPboHj
+AnfdGKk+WbryjH4RcpAvgLQwOkjVpP+z0zyi5148a1lf3rj6uhdQSwcI5qFQeLkAAAB3AQAAUEsD
+BBQACAgIAOGYWkYAAAAAAAAAAAAAAAAfAAAAb3JnLmVjbGlwc2UuamdpdC9iaW4vLmdpdGlnbm9y
+ZdPPL0rX5wIAUEsHCB2SPSIIAAAABgAAAFBLAwQUAAgICAAanVpGAAAAAAAAAAAAAAAAOgAAAG9y
+Zy5lY2xpcHNlLmpnaXQvYmluL29yZy9lY2xpcHNlL2pnaXQvbGliL1JlcG9zaXRvcnkuY2xhc3OF
+ULFOwzAQfW7SBEIhUGgZUbfCgBeYipBQJaYIJIq6J8EKrkxcOU4kPosJiYEP4KMQlzRSJBgYfM/3
+7j3fnb++Pz4BXGDso8dwok3GRarkuhB8lUnLlUz4g1jrQlptXn24DPuruIq5ivOM3ycrkVofHsNx
+x96UVs+VLkScKMHgXclc2msGZ3q6ZHDn+kkEcLAzgI8thjCSubgrXxJhHjeOYaTTWC1jI+u8JV37
+LAuGSfTPjDMG34hCq4pMo2nUzbWwRubZrB7CM6IqrKlb/akzBAtdmlTcyrpv2D19XmvdCWgVOn36
+uB4hLUFxmzJOyAj7Z+8I3prygKLXkA52KQ42AuwhJKTPxEFrvmz0xP02uo1xvCm2xvo2xGHT76jR
+j34AUEsHCHUmVzchAQAAywEAAFBLAwQUAAgICAAanVpGAAAAAAAAAAAAAAAAOQAAAG9yZy5lY2xp
+cHNlLmpnaXQvc3JjL29yZy9lY2xpcHNlL2pnaXQvbGliL1JlcG9zaXRvcnkuamF2YS3MMQ7CMAxA
+0ZmcwmNZcgEmxA3gBE4wkYsbR7Ebqap6dzqwfun9hvmLhUB7iZSFm1GcC3sUTrcQ2pqEM2Ay75gd
+sqAZPKmpsWvfgJcmtFB1g/vq+hA1wiQEe7j88VB+QydTGTR9uKLAyzvXcsZxfq+wwxGO8ANQSwcI
+fsNDMHYAAACLAAAAUEsDBBQACAgIAAGZWkYAAAAAAAAAAAAAAAAjAAAAb3JnLmVjbGlwc2UucmVs
+ZW5nLnRvb2xzLy5jbGFzc3BhdGh9kEFrAkEMhc/1VyxzN6uFQg+7isgKFWpBt72WMRPXsWNmmcyU
++u+rtFJtq7ckfI/3Xorhx9Zl7xTEei5VH3oqI0ZvLDeleq4n3Xs1HHQKdFqk1XE96Nz8LMQx7LI3
+y6ZUElBlh+PXmF8E0fMR9KEBQmdbIdiYCE4nxvXeGqbz6nX8NKtHD7Nqnv/mLEcKrB0YWqYGkv1W
+UoBF1Gx0MC+P9a6lfHq7qLp9uPs3D/rt0jJpRBIJyZGUaqWdkPrb6TxDY+OVhj7FNsWjcm9xYIv8
+5IefUEsHCOeUvcHTAAAAdwEAAFBLAwQUAAgICAAImVpGAAAAAAAAAAAAAAAAIQAAAG9yZy5lY2xp
+cHNlLnJlbGVuZy50b29scy8ucHJvamVjdHWQQQ7CIBBF1/YUhr2gOxe0XWi8gHoAhElDQ4EMtPH4
+Qlsba3T3/8yfeQO8fnZmOwAG7WxJDnRPtmClU9o2JbnfLrsjqauCe3QtyHiGIFH7mMJVseFWdFA5
+bChIo30AimDANjQ6ZwJnYzvFpOs6sLHi7K1Scd4Ysmaf5tFro64eZDKzO6UxYVUu/IC2KlLpMAkx
+iDEPuMDTgMCmz9QwWbbynH0R5sJ8QKLFHmGKTvo/e+pn9JjLu5bx5Y2rL3wBUEsHCFNltu2/AAAA
+fwEAAFBLAwQUAAgICAAUnVpGAAAAAAAAAAAAAAAAUwAAAG9yZy5lY2xpcHNlLnJlbGVuZy50b29s
+cy9iaW4vb3JnL2VjbGlwc2UvcmVsZW5nL3Rvb2xzL2dpdC9HaXRDb3B5cmlnaHRBZGFwdGVyLmNs
+YXNzlZLPbhMxEMbHaZpNl0BKSvl3MhKHcNlFFacWIVVRQUgRSLRU4ujdnWwcOZ6t7VTNS/A6SCDB
+nYdCjBdKQeLSPYzG/n4z83m03398/goAz+BhAh0BT8nVOZZGNx5zhwZtnQci4/Nah/yVDhNq1k7X
+83BYqSagS6ArYHuhzlVuFMNviwWWQUDvubY6vBCwMX5yKqA7oQoT2BIwvGKPnCPXhxsCPr63Dj2Z
+c6xkSctGGxU0Wdk4Kgwu92W6dTJHGdYNylifxfrscBVoYsijYkiWyloKskB52SqTr4PUXmpbaceu
+zJqlGTq0Jc+ZOVry+WzFWiWz0ijv5Uwb9GkKfbg5gE24JWB3PL1yfByctvVBfNFwqi2+WS0LdCdx
+voDRlEplTpXT8fz7shvm2gvYm153sQe8uhmRgMfjf2oXkTe6yN9hQ14HcuvWT3p0UWITt+YTuCdg
+5689XypMHdPKlfhSR2/3/zM2i2XwCHg6xK/D2Sb0OCbtb7LBGUD6BfofRuknGHxrmSHHXqv0YZvj
+4BcFt2HUdtmBO0ztctZl5e6fXp1r92LXLfXgJ1BLBwi58Fb8qAEAALkCAABQSwMEFAAICAgADZ1a
+RgAAAAAAAAAAAAAAAFAAAABvcmcuZWNsaXBzZS5yZWxlbmcudG9vbHMvYmluL29yZy9lY2xpcHNl
+L3JlbGVuZy90b29scy9wcmVmZXJlbmNlcy9NZXNzYWdlcy5jbGFzc5VQyU7DMBQct6EpaboQ1i9A
+LRKYAzeWCxKnsEhF5eyER3DlxpXtIvWzOIE48AF8FMIpIIE4Yen5vRmPRx6/vb+8AjjAVogaw642
+BadcyaklbkhRWXCntbJ8auiODJU5WX5O1oqCbIiAoTcWD4Ir4ZWX2Zhyx9A4kqV0Jwz1/mDEEJzq
+W4pQx3KMJTSaaDEwEaGNbojOL4fh3DqaxOhhhaGdKxLmyugpGTdn2O6nP5TOyLI4HPylGLqpLOli
+NsnIXItMEUOS6lyokTCywl9k4O6lZeDpv0J7/2ioZyanM1m5tL8P9qqXYB8+NqrFfPm4vod+Ova9
+Ylo7T2gm0TPim0cPa0j83llcqSPw8uqjVj2KP+VYw/rCbGOh3vwAUEsHCEG7up4cAQAAsQEAAFBL
+AwQUAAgICAAUnVpGAAAAAAAAAAAAAAAAUgAAAG9yZy5lY2xpcHNlLnJlbGVuZy50b29scy9zcmMv
+b3JnL2VjbGlwc2UvcmVsZW5nL3Rvb2xzL2dpdC9HaXRDb3B5cmlnaHRBZGFwdGVyLmphdmFVjjEO
+wjAMRefkFFandskFOiGEYOYGaWpSQ6gjxxQq1LsTJsT2pfee9LMPNx8RWKLDkCgXdIIJ5+iUORUX
+SXtr6Z5Z9M+6VuISDe6MmQspy1rF/BgSBQjJlwJH0j3nVShOuht9VhR4W2sWphEuzO0vBamzA52E
+nwUOr4BZieeqG/NF9VThtGDbnNCPTdcDWLPZzX4AUEsHCEUgaZ2UAAAAwQAAAFBLAwQUAAgICAAN
+nVpGAAAAAAAAAAAAAAAATwAAAG9yZy5lY2xpcHNlLnJlbGVuZy50b29scy9zcmMvb3JnL2VjbGlw
+c2UvcmVsZW5nL3Rvb2xzL3ByZWZlcmVuY2VzL01lc3NhZ2VzLmphdmENzMEKwjAMgOHz+hRhJwXp
+7u4kHjwJgk8QatYWY1uSyCiyd3fwX7+/YXhjJKgSPQXOTckLMZXorVZW34QWEiqBdHZuyQUZAqMq
+3El1pwo/N+wN0wRrtlS/BpayQkDmE9yyXWvrkmOyywubkQDyil0hoQIWIJEq533w7Gr08YEJ5SG1
+kVg/jDgeZ3DD5jb3B1BLBwj8ja64jwAAAK0AAABQSwECFAAUAAgICADTmFpGa7SCSLUAAAAnAQAA
+GwAAAAAAAAAAAAAAAAAAAAAAb3JnLmVjbGlwc2UuamdpdC8uY2xhc3NwYXRoUEsBAhQAFAAICAgA
+2phaRuahUHi5AAAAdwEAABkAAAAAAAAAAAAAAAAA/gAAAG9yZy5lY2xpcHNlLmpnaXQvLnByb2pl
+Y3RQSwECFAAUAAgICADhmFpGHZI9IggAAAAGAAAAHwAAAAAAAAAAAAAAAAD+AQAAb3JnLmVjbGlw
+c2UuamdpdC9iaW4vLmdpdGlnbm9yZVBLAQIUABQACAgIABqdWkZ1Jlc3IQEAAMsBAAA6AAAAAAAA
+AAAAAAAAAFMCAABvcmcuZWNsaXBzZS5qZ2l0L2Jpbi9vcmcvZWNsaXBzZS9qZ2l0L2xpYi9SZXBv
+c2l0b3J5LmNsYXNzUEsBAhQAFAAICAgAGp1aRn7DQzB2AAAAiwAAADkAAAAAAAAAAAAAAAAA3AMA
+AG9yZy5lY2xpcHNlLmpnaXQvc3JjL29yZy9lY2xpcHNlL2pnaXQvbGliL1JlcG9zaXRvcnkuamF2
+YVBLAQIUABQACAgIAAGZWkbnlL3B0wAAAHcBAAAjAAAAAAAAAAAAAAAAALkEAABvcmcuZWNsaXBz
+ZS5yZWxlbmcudG9vbHMvLmNsYXNzcGF0aFBLAQIUABQACAgIAAiZWkZTZbbtvwAAAH8BAAAhAAAA
+AAAAAAAAAAAAAN0FAABvcmcuZWNsaXBzZS5yZWxlbmcudG9vbHMvLnByb2plY3RQSwECFAAUAAgI
+CAAUnVpGufBW/KgBAAC5AgAAUwAAAAAAAAAAAAAAAADrBgAAb3JnLmVjbGlwc2UucmVsZW5nLnRv
+b2xzL2Jpbi9vcmcvZWNsaXBzZS9yZWxlbmcvdG9vbHMvZ2l0L0dpdENvcHlyaWdodEFkYXB0ZXIu
+Y2xhc3NQSwECFAAUAAgICAANnVpGQbu6nhwBAACxAQAAUAAAAAAAAAAAAAAAAAAUCQAAb3JnLmVj
+bGlwc2UucmVsZW5nLnRvb2xzL2Jpbi9vcmcvZWNsaXBzZS9yZWxlbmcvdG9vbHMvcHJlZmVyZW5j
+ZXMvTWVzc2FnZXMuY2xhc3NQSwECFAAUAAgICAAUnVpGRSBpnZQAAADBAAAAUgAAAAAAAAAAAAAA
+AACuCgAAb3JnLmVjbGlwc2UucmVsZW5nLnRvb2xzL3NyYy9vcmcvZWNsaXBzZS9yZWxlbmcvdG9v
+bHMvZ2l0L0dpdENvcHlyaWdodEFkYXB0ZXIuamF2YVBLAQIUABQACAgIAA2dWkb8ja64jwAAAK0A
+AABPAAAAAAAAAAAAAAAAAMILAABvcmcuZWNsaXBzZS5yZWxlbmcudG9vbHMvc3JjL29yZy9lY2xp
+cHNlL3JlbGVuZy90b29scy9wcmVmZXJlbmNlcy9NZXNzYWdlcy5qYXZhUEsFBgAAAAALAAsASAQA
+AM4MAAAAAA==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>251165</attachid>
+            <date>2015-02-27 07:03:00 -0500</date>
+            <delta_ts>2015-02-27 07:03:08 -0500</delta_ts>
+            <desc>2 test projects v2</desc>
+            <filename>2 test projects v2.zip</filename>
+            <type>application/x-zip</type>
+            <size>5651</size>
+            <attacher name="Markus Keller">markus_keller</attacher>
+            
+              <data encoding="base64">UEsDBBQACAgIANOYWkYAAAAAAAAAAAAAAAAbAAAAb3JnLmVjbGlwc2UuamdpdC8uY2xhc3NwYXRo
+fY9ND8FAEIbP/Ipm751y4tASkUo0QUK5ynZ3UsuabfZD+PcIQiTcZibPm3nedHg+6uiE1ilDGetC
+h0VIwkhFdcbW5STus+GgnQrNnWu43w3arfeC5O0lOiiSGXNWsOh+fIzJT1AYeoHG1oBCq8Yh7KUH
+zQOJ3e01FMt8O17My9F0ni+Tb06RR0tcg8Qq1BDUM4kWVp6T5FZuZuWlwaTgJ77K4y70/hiZ4Jvg
+X1KVojubJh+dr1BLBwhrtIJItQAAACcBAABQSwMEFAAICAgA2phaRgAAAAAAAAAAAAAAABkAAABv
+cmcuZWNsaXBzZS5qZ2l0Ly5wcm9qZWN0dZBNDsIgEIXX9hSme0F3Lmi70HgB9QBIJw1N+QnQxuM7
+FGys0d17b97wAax5qmE7gfPS6Ko8kH25BS1MK3VXlffbZXcsm7pg1pkeRDiDF07agOW62DDNFdTG
+dQTEIK0H0ncyMDrHOBZGKdChZvStMMwn+ajpp3mMcmivFgSa7E64xnUbg1+wNhBhHAo+8bkPboHj
+AnfdGKk+WbryjH4RcpAvgLQwOkjVpP+z0zyi5148a1lf3rj6uhdQSwcI5qFQeLkAAAB3AQAAUEsD
+BBQACAgIALtkW0YAAAAAAAAAAAAAAAA1AAAAb3JnLmVjbGlwc2UuamdpdC8uc2V0dGluZ3Mvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUucHJlZnOVkDFuBCEMRftIucOeAGmrVDQpVkoURVulZ+DPhAhsZMxK
+uf16tHsApkEW5vmbh1hy63BNsEJAEd3dID0z+fPrC8vm8Hzyl9RFFthRWy4QKxI2kMtUMuGzy/u/
+Yr/0oLAUpNkBFfrL6RokWGXpPvGJWE/WgwTF7BwNskGvJejKUv3Zvc2Sg0ZH+uIYijcXHXKbSK2t
+5GDOZpISlrG5XdT3qAvEz37uCe6r/QTJu9iDbOchEZd8AGzCllNd6KZCPxJI85pta4iwzNKgUY+y
+j2UfRu9QSwcII19K6tIAAACeAgAAUEsDBBQACAgIALtkW0YAAAAAAAAAAAAAAAA6AAAAb3JnLmVj
+bGlwc2UuamdpdC9iaW4vb3JnL2VjbGlwc2UvamdpdC9saWIvUmVwb3NpdG9yeS5jbGFzc4VQwUrD
+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
+vX8DUEsHCEh3Dr9cAQAApQIAAFBLAwQUAAgICAB8Z1tGAAAAAAAAAAAAAAAAUwAAAG9yZy5lY2xp
+cHNlLnJlbGVuZy50b29scy9iaW4vb3JnL2VjbGlwc2UvcmVsZW5nL3Rvb2xzL2dpdC9HaXRDb3B5
+cmlnaHRBZGFwdGVyLmNsYXNzlVBdSwJBFD3j1+pmaZZmHxBCD1rQVq9GEUL1IAUZvs+u0zqyOTI7
+Cv6sXgp66Af0o6K7qyRBIM3D/Zp7zrn3fn69fwA4xZ6FBMOJ0r4jvECOQuFoEYih7xilgtDxpXFu
+pGmp0VRLv2+uenxkhLaQYigO+IQ7Aafme3cgPMOQOZdDaS4YkvVGlyHVUj1hI4lcHmlkGAptORR3
+42dX6EfuBoKh1FYeD7pcyyifF1OmL0OGs/Z/52qS8pNSDAf1X9hB1B9I13kQIxVKo/S02ehmsU5a
+t4L3bGygbGGTYX8JLI8KthgsLUIVTGjWcr29uEPHaDn0m/HumjAMtaVzMNgdNdaeuJbR7tU/1jqO
+FFADbYfoJSiie5K1KHPIM/LpwzdkX+Jvm2xmVsQK2fw8zmM1JlhDYQ6+pO4EeeuoVHxFaQG343KW
+aHIxRWXW9kNhoYrtWHknxux+A1BLBwhnG3MoVwEAAFQCAABQSwMEFAAICAgAxmRbRgAAAAAAAAAA
+AAAAAFAAAABvcmcuZWNsaXBzZS5yZWxlbmcudG9vbHMvYmluL29yZy9lY2xpcHNlL3JlbGVuZy90
+b29scy9wcmVmZXJlbmNlcy9NZXNzYWdlcy5jbGFzc5VOQU7DMBAcJ6EJIaVtXgFIYLgC4oLEKdAD
+qHfHLMGViSs75V+ckDjwAB6FWEfwAPawM7s7uztf3x+fAM5Q50gEjp3vJGlrNoGkJ0t9JwfnbJAb
+T0/kqdcU5C2FoDoKOTKB+Vq9KmkVK5ftmvQgMLk0vRmuBNKDw5VAdu0eqUSK3Qo7mBTYE4DArDE9
+3W1fWvIPqrUkUDdOK7tS3sT6t5kNzyYIyOZf1i4Eynu39ZpuTLwy/RucRLs45f8pYrCVaIoxZ3bO
+mDAWR+8o6rJ5Y56g4rw/6lNkKFiZYspVNW4XPJuNl+ajevEDUEsHCA9W+xrpAAAAVAEAAFBLAwQU
+AAgICAAaaFtGAAAAAAAAAAAAAAAAIQAAAG9yZy5lY2xpcHNlLnJlbGVuZy50b29scy9jbGFzc2Vz
+LwMAUEsHCAAAAAACAAAAAAAAAFBLAwQUAAgICAB8Z1tGAAAAAAAAAAAAAAAAUgAAAG9yZy5lY2xp
+cHNlLnJlbGVuZy50b29scy9zcmMvb3JnL2VjbGlwc2UvcmVsZW5nL3Rvb2xzL2dpdC9HaXRDb3B5
+cmlnaHRBZGFwdGVyLmphdmFVjjEOwjAMRef4FFandskFOiEGmLlBmppgCDhy3EoV6t0JE2J70ntf
++iXER0iEoslTzFwqeaVMr+RNJFef2EYAfhZR+6vuzfjMk79QkcomurWwLFPmiDGHWvHEdpSyKaeb
+HeZQjBTfAG4VnvEq0v+mqA2HZp37UvtQJa/Ud2cKczeMCG6HHT5QSwcIUU046IcAAACvAAAAUEsD
+BBQACAgIAHdjW0YAAAAAAAAAAAAAAABPAAAAb3JnLmVjbGlwc2UucmVsZW5nLnRvb2xzL3NyYy9v
+cmcvZWNsaXBzZS9yZWxlbmcvdG9vbHMvcHJlZmVyZW5jZXMvTWVzc2FnZXMuamF2YQ3NsWoDMRCE
+4Vp6iuGqGIKuz+HCpEgVEsgTrJW1Ts7mJHbXmCP43SP425mvU/6hwmhaEmep3TgpC28leWtiqStf
+WHnLbEuMl7qRIAuZ4Z3NxtTwF8MozDPu1dd2c/haDZlEnvFW/bX1XWtZ/fRN3VlBcqfdsJKBNrBq
+05c4zyF87eb8m7Iw6ae2zur700TTYcEARh/nK2dHwxHTtGCQJNbg476w2oAZ51uJ4REf8R9QSwcI
+4Am2aq8AAADcAAAAUEsBAhQAFAAICAgA05haRmu0gki1AAAAJwEAABsAAAAAAAAAAAAAAAAAAAAA
+AG9yZy5lY2xpcHNlLmpnaXQvLmNsYXNzcGF0aFBLAQIUABQACAgIANqYWkbmoVB4uQAAAHcBAAAZ
+AAAAAAAAAAAAAAAAAP4AAABvcmcuZWNsaXBzZS5qZ2l0Ly5wcm9qZWN0UEsBAhQAFAAICAgAu2Rb
+RiNfSurSAAAAngIAADUAAAAAAAAAAAAAAAAA/gEAAG9yZy5lY2xpcHNlLmpnaXQvLnNldHRpbmdz
+L29yZy5lY2xpcHNlLmpkdC5jb3JlLnByZWZzUEsBAhQAFAAICAgAu2RbRs+A4FghAQAAywEAADoA
+AAAAAAAAAAAAAAAAMwMAAG9yZy5lY2xpcHNlLmpnaXQvYmluL29yZy9lY2xpcHNlL2pnaXQvbGli
+L1JlcG9zaXRvcnkuY2xhc3NQSwECFAAUAAgICAA7n1pGfsNDMHYAAACLAAAAOQAAAAAAAAAAAAAA
+AAC8BAAAb3JnLmVjbGlwc2UuamdpdC9zcmMvb3JnL2VjbGlwc2UvamdpdC9saWIvUmVwb3NpdG9y
+eS5qYXZhUEsBAhQAFAAICAgAAZlaRueUvcHTAAAAdwEAACMAAAAAAAAAAAAAAAAAmQUAAG9yZy5l
+Y2xpcHNlLnJlbGVuZy50b29scy8uY2xhc3NwYXRoUEsBAhQAFAAICAgACJlaRlNltu2/AAAAfwEA
+ACEAAAAAAAAAAAAAAAAAvQYAAG9yZy5lY2xpcHNlLnJlbGVuZy50b29scy8ucHJvamVjdFBLAQIU
+ABQACAgIAMZkW0ZZO6OB0gAAAJ4CAAA9AAAAAAAAAAAAAAAAAMsHAABvcmcuZWNsaXBzZS5yZWxl
+bmcudG9vbHMvLnNldHRpbmdzL29yZy5lY2xpcHNlLmpkdC5jb3JlLnByZWZzUEsBAhQAFAAICAgA
+i2VbRkh3Dr9cAQAApQIAADEAAAAAAAAAAAAAAAAACAkAAG9yZy5lY2xpcHNlLnJlbGVuZy50b29s
+cy9OZXdfY29uZmlndXJhdGlvbi5sYXVuY2hQSwECFAAUAAgICAB8Z1tGZxtzKFcBAABUAgAAUwAA
+AAAAAAAAAAAAAADDCgAAb3JnLmVjbGlwc2UucmVsZW5nLnRvb2xzL2Jpbi9vcmcvZWNsaXBzZS9y
+ZWxlbmcvdG9vbHMvZ2l0L0dpdENvcHlyaWdodEFkYXB0ZXIuY2xhc3NQSwECFAAUAAgICADGZFtG
+D1b7GukAAABUAQAAUAAAAAAAAAAAAAAAAACbDAAAb3JnLmVjbGlwc2UucmVsZW5nLnRvb2xzL2Jp
+bi9vcmcvZWNsaXBzZS9yZWxlbmcvdG9vbHMvcHJlZmVyZW5jZXMvTWVzc2FnZXMuY2xhc3NQSwEC
+FAAUAAgICAAaaFtGAAAAAAIAAAAAAAAAIQAAAAAAAAAAAAAAAAACDgAAb3JnLmVjbGlwc2UucmVs
+ZW5nLnRvb2xzL2NsYXNzZXMvUEsBAhQAFAAICAgAfGdbRlFNOOiHAAAArwAAAFIAAAAAAAAAAAAA
+AAAAUw4AAG9yZy5lY2xpcHNlLnJlbGVuZy50b29scy9zcmMvb3JnL2VjbGlwc2UvcmVsZW5nL3Rv
+b2xzL2dpdC9HaXRDb3B5cmlnaHRBZGFwdGVyLmphdmFQSwECFAAUAAgICAB3Y1tG4Am2aq8AAADc
+AAAATwAAAAAAAAAAAAAAAABaDwAAb3JnLmVjbGlwc2UucmVsZW5nLnRvb2xzL3NyYy9vcmcvZWNs
+aXBzZS9yZWxlbmcvdG9vbHMvcHJlZmVyZW5jZXMvTWVzc2FnZXMuamF2YVBLBQYAAAAADgAOAHcF
+AACGEAAAAAA=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

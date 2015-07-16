@@ -1,0 +1,1387 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>381443</bug_id>
+          
+          <creation_ts>2012-06-01 18:03:00 -0400</creation_ts>
+          <short_desc>[compiler][null] Allow parameter widening from @NonNull to unannotated</short_desc>
+          <delta_ts>2013-03-12 06:27:37 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>4.3 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Tor Norbye">tor.norbye</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>loskutov</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2118023</commentid>
+    <comment_count>0</comment_count>
+    <who name="Tor Norbye">tor.norbye</who>
+    <bug_when>2012-06-01 18:03:01 -0400</bug_when>
+    <thetext>Build Identifier: 20120524-0130
+
+In Eclipse 4.2RC1, the null analysis requires any overriding or implementing methods from a superclass or interface that have null annotations on them to repeat the same annotations.
+
+Here&apos;s a simple example:
+
+    private class Foo {
+        void foo(@NonNull Integer foo) {
+        }
+    }
+
+    private class Bar extends Foo {
+        @Override void foo(Integer foo) {
+        }
+    }
+
+This will generate the error &quot;Missing non-null annotation: inherited method from Foo declares this parameter as @NonNull&quot; on the overriding method.
+
+I don&apos;t think that should be necessary. I know that if a parameter does not specify an annotation then it&apos;s considered &quot;nullable&quot;, but I think that only makes sense when we&apos;re dealing with an un-annotated parameter. When a method is overriding another, then whatever annotation is provided on the parent should be used.
+
+If I had annotated this parameter with @Nullable, then clearly yes, this is an error. But when the parameter isn&apos;t there, I think Eclipse should look up the inheritance chain to see what it can find -- similar to how for example javadoc gets replicated on all overriding methods, no need to repeat it.
+
+The reason this is a significant problem is that it makes it very difficult to *add* annotations. We have an API which doesn&apos;t have null annotations. If we *do* add annotations, then suddenly all client code of the library (which in many cases implements interfaces) will need to bulk edited to insert all these annotations! 
+
+I&apos;m setting the severity of this bug to &quot;Major&quot; because I think the Null analysis is a really important feature, but with this behavior it&apos;s difficult for us to adopt.
+
+Reproducible: Always
+
+Steps to Reproduce:
+Compile
+
+
+    private class Foo {
+        void foo(@NonNull Integer foo) {
+        }
+    }
+
+    private class Bar extends Foo {
+        @Override void foo(Integer foo) {
+        }
+    }
+
+You get an error on the second foo line which I do not think should appear.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2118048</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-06-01 20:25:36 -0400</bug_when>
+    <thetext>Thanks for your report. My answer comes in two parts:
+
+1.:
+===
+I originally implemented exactly what you are requesting here, but after a detailed discussion we agreed on the current design, i.e., overrides need to explicitly re-declare null annotations from the super method.
+Please see the summary in bug 186342 comment 111, which has back references to previous statements.
+
+Note that bug 353472 already tries to alleviate the burden when creating new overrides.
+
+Also a quick fix is offered at the parameter lacking the annotation.
+When invoked from the problems view, the quick fix can even be used as a clean-up, i.e., fix the same problem in multiple files in one go.
+
+For the UI side I just filed bug 381443 as a strategy for avoiding the problem altogether.
+
+
+2.:
+===
+However, even when not implicitly inheriting the @NonNull annotation, your code example is actually safe, because changing @NonNull to unannotated can be seen as a contra-variant redefinition (override accepts more values than original), which is completely sound. You may verify this by adding an @Nullable annotation to the parameter in Bar#foo(): this is accepted by the compiler.
+
+The javadoc for JavaCore#COMPILER_PB_NULL_SPECIFICATION_VIOLATION indeed doesn&apos;t mention this case, so the compiler should be silent here, and the current behavior is actually a bug.
+
+I could still see a warning to be in place, among others as a handle for invoking the quick fix. But if we&apos;d get the refactoring I suggested in bug 381443 that should probably suffice -&gt; no quick fix and no warning needed.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2118050</commentid>
+    <comment_count>2</comment_count>
+    <who name="Tor Norbye">tor.norbye</who>
+    <bug_when>2012-06-01 20:56:51 -0400</bug_when>
+    <thetext>&gt; For the UI side I just filed bug 381443 as a strategy for avoiding the problem altogether.
+
+Did you paste the wrong bug id? 381443 is this issue :-)
+
+I will read through the discussion in issue 186342, but in the meantime I just want to explain further why I think this is a problem:  I&apos;m working on the Android tooling for Eclipse. I would like to advocate adding nullness annotations into the Android platform APIs. For example, the Activity class has this method which we could annotate with nonnull:
+
+    public void onCreate(@NonNull Bundle savedInstanceState)
+
+But if we do that, it means every single *existing* app (pretty much every single app has an activity that overrides onCreate, and there are hundreds of thousands of these apps) would now hit the above error, and they&apos;d have to use a quickfix to update their code. I ended up doing it manually for our plugin code, fixing about 20 of them one at a time, until I discovered that I could use Cmd-1 in the Problems view instead which let me bulk update them. But then I discovered that bulk updating them all (there were about 1200) tended to make the signature lines wider, and the formatter didn&apos;t reformat the signatures when they went past the 100 character limit the Java formatter had been configured with. So I had to go and manually rewrap a bunch of paragraphs.
+
+My point is that I think enforcing duplication of annotations aren&apos;t a big deal within a self contained code bases, but I think it&apos;s a big problem for libraries; you can&apos;t easily add annotations to a widely used library without inflicting a lot of pain on your users, and at that point you have to ask yourself whether it&apos;s a net positive or a net negative.
+
+(Note that while I work on the Android tools, I don&apos;t have control over the framework APIs and whether annotations will get added; I was just planning to advocate for adding these annotations and looking into the tools issues first. We&apos;ve already updated our ADT plugins to replicate the annotations, so I&apos;m enjoying all the other aspects of the null analysis on our own code now.)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2118051</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-06-01 21:29:51 -0400</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; &gt; For the UI side I just filed bug 381443 as a strategy for avoiding the problem altogether.
+&gt; 
+&gt; Did you paste the wrong bug id? 381443 is this issue :-)
+
+oops, should&apos;ve said bug 381449.
+
+&gt; I will read through the discussion in issue 186342, but in the meantime I just
+&gt; want to explain further why I think this is a problem:  I&apos;m working on the
+&gt; Android tooling for Eclipse. I would like to advocate adding nullness
+&gt; annotations into the Android platform APIs.
+
+cool!
+
+Thanks for explaining your situation. I understand the burden.
+
+Still, let&apos;s try to distinguish two issues here:
+
+a) redefining a @NonNull parameter with an unannotated one (see comment 1 part 2.)
+
+b) implicitly inheriting annotations.
+
+Assuming that a) could be accepted by the compiler, wouldn&apos;t that resolve your problem, too? Client code could then migrate to using null annotations at their own pace.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2118061</commentid>
+    <comment_count>4</comment_count>
+    <who name="Tor Norbye">tor.norbye</who>
+    <bug_when>2012-06-01 22:19:56 -0400</bug_when>
+    <thetext>Apologies, I&apos;m not sure I fully undertand the distinction between the two. I&apos;m not arguing that annotations should be inherited -- I just want it to &quot;appear&quot; that way, in other words that if I&apos;ve annotated a method with @Nullable or @Nonnull, then any overriding method does not have to specify it, AND, that the null analysis will treat calls to that overridden method as having the inherited annotation. In other words, in the original example, if the method contained &quot;if foo == null&quot;, then Eclipse would state that foo is never null.
+
+As long as both are the case (1, no requirement to add annotations on methods overriding annotated methods, and 2, local null analysis getting the null information as if the annotations had been literally copied in), then I think that would work very well. 
+
+I have to admit I haven&apos;t read all those comments in the other issue yet; I&apos;ll do that tonight before wasting more of your time, I just wanted to answer your question right away.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2121380</commentid>
+    <comment_count>5</comment_count>
+    <who name="Tor Norbye">tor.norbye</who>
+    <bug_when>2012-06-07 18:24:15 -0400</bug_when>
+    <thetext>I&apos;ve read through the discussion in bug 186342 comments 98 through 110. 
+
+Treating the null annotations as part of the type system may have sound theoretical basis, at least for those other languages listed there -- but at the end of the day I think it just makes the feature less usable. I&apos;ve used null analysis annotations with findbugs in the past (as well as briefly in IntelliJ), and I think they behaved in the way your code first was implemented -- with some sort of inheritance or consideration of annotations on the overridden methods.
+
+I don&apos;t think the @Override annotation analogy brought up in that discussion is a good one. Yes, you have to repeat @Override on *all* methods that are overriding. But that annotation is talking about the specific overridden method, and is a guard against *accidentally* aliasing some parent method. If a new method is added to a super class, then this annotation will catch existing methods that will now suddenly override it. That&apos;s different to me than *contracts*, which for example javadoc describes, and those contracts are inherited.
+
+As I mentioned earlier, with the nullness requirement, it makes it very difficult to add nullness annotations to an existing API.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2122170</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-06-10 10:19:13 -0400</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; I&apos;ve read through the discussion in bug 186342 comments 98 through 110. 
+
+thanks for taking the time.
+ 
+&gt; Treating the null annotations as part of the type system may have sound
+&gt; theoretical basis, at least for those other languages listed there -- but at
+&gt; the end of the day I think it just makes the feature less usable.
+
+Usability is relative to your context and goals.
+I always try to reconcile two seemingly conflicting goals:
+A. (eventually) enable *full* annotation / analysis so that absence of NPE
+   can be guaranteed
+B. facilitate gradual adoption of null annotations for various contexts
+
+For A. the annotations-as-part-of-the-typesystem view is essential.
+And I don&apos;t believe it presents any unsurmountable obstacles for B.
+
+&gt; I&apos;ve used
+&gt; null analysis annotations with findbugs in the past (as well as briefly in
+&gt; IntelliJ), and I think they behaved in the way your code first was implemented
+&gt; -- with some sort of inheritance or consideration of annotations on the
+&gt; overridden methods.
+
+There are indeed some differences between findbugs and JDT.
+Caveat: FindBugs focusses on heuristically finding some bugs while being silent about problems that are considered as &quot;likely not an issue&quot;. This comes at that price that, e.g., their @Nullable annotation has no precise semantics (null may be allowed but not checking for null may be allowed, too).
+
+&gt; I don&apos;t think the @Override annotation analogy brought up in that discussion is
+&gt; a good one.
+
+That wasn&apos;t the part that convinced me, either :)
+
+Readability was mentioned which in fact convinced me more: by looking at a method signature I should see all I need to know for calling that method.
+
+&gt; As I mentioned earlier, with the nullness requirement, it makes it very
+&gt; difficult to add nullness annotations to an existing API.
+
+It&apos;s this difficulty I&apos;d like to better understand.
+
+Let&apos;s assume we implement comment 1 part 2, then adding null annotations to published API involves these steps:
+
+1. add @NonNull to parameters in your API
+
+2. make sure no sub-types apply a nullness default
+
+3. compiler will accept implementors with unspecified parameters, existing
+   implementation just doesn&apos;t leverage the super-type&apos;s annotations.
+  a. compiler will already check all clients, flagging any potentially null
+     arguments in method calls as errors.
+
+4. for each class / method where you want to leverage the super-type&apos;s 
+   annotations:
+  a. invoke quickfix to apply annotations from the super-type to 
+     this method&apos;s signature
+  b. change your code by eliminating now-unnecessary null checks
+
+Doesn&apos;t it make perfect sense to do steps 4.a and 4.b together?
+
+
+This is the story for @NonNull parameters and I don&apos;t see any difficulty arising from the JDT&apos;s scheme (modulo comment 1 part 2).
+Adding @Nullable to a parameter is likely to make many implementations invalid (namely all those that dereference the argument without a null check), so some disruption is inherent in this case.
+The same holds for @NonNull method returns.
+
+From a process point of view we have support from code completion (when creating the override in the first place) and eventually for refactoring (see bug 381449).
+
+
+While focusing on @NonNull parameters I believe we only need to come to terms regardings comment 1 part 2. So let&apos;s go back:
+
+
+(In reply to comment #4)
+&gt; Apologies, I&apos;m not sure I fully undertand the distinction between the two. I&apos;m
+&gt; not arguing that annotations should be inherited -- I just want it to &quot;appear&quot;
+&gt; that way, in other words that if I&apos;ve annotated a method with @Nullable or
+&gt; @Nonnull, then any overriding method does not have to specify it, AND, that the
+&gt; null analysis will treat calls to that overridden method as having the
+&gt; inherited annotation. In other words, in the original example, if the method
+&gt; contained &quot;if foo == null&quot;, then Eclipse would state that foo is never null.
+&gt; 
+&gt; As long as both are the case (1, no requirement to add annotations on methods
+&gt; overriding annotated methods,
+
+Yes, with the change I&apos;m proposing this will be possible for @NonNull parameters. Callers using the annotated API will be required to ensure non-null, while implementors are allowed to continue using un-annotated types.
+
+&gt; and 2, local null analysis getting the null
+&gt; information as if the annotations had been literally copied in),
+
+No, if you don&apos;t change the implementation the implementation won&apos;t change :)
+A program with null checks for parameters that a super type declares as @NonNull is still valid / safe. Removing these checks is a matter of cleaning up your code. With the proposed approach you can do this cleanup at your own pace applying the above steps 4.a) and 4.b) for any part of the code at a time without spamming your problems view with myriads of warnings.
+
+In other words: by allowing a @NonNull parameter to be overridden with unspecified nullness, we support decoupled evolution: API and API clients use the enhanced contract, whereas the implementation can follow at its own pace.
+
+
+Maybe I should just implement comment 1 part 2 and let you play with it?
+Should I provide an experimental patch feature for that purpose?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2139068</commentid>
+    <comment_count>7</comment_count>
+    <who name="Andrey Loskutov">loskutov</who>
+    <bug_when>2012-07-19 10:58:48 -0400</bug_when>
+    <thetext>I was not aware of this bug, so I&apos;ve commented on bug 385440 comment 7. 
+I had exactly the feeling Tor had - in theory the JDT behavior sounds reasonable, in practice it is hardly to apply to existing code base.
+
+After reading the comments from Stephan on this bug, I still not sure what is the proposal for existing &quot;legacy&quot; code:
+
+    private class Foo {
+        void foo(@NonNull Integer foo) {
+        }
+    }
+
+    private class Bar extends Foo {
+        @Override void foo(Integer foo) { // warning in JDT 3.8, proposal?
+        }
+    }
+
+Same for interfaces:
+
+    interface Foo {
+        void foo(@NonNull Integer foo);
+    }
+
+    private class Bar implements Foo {
+        @Override void foo(Integer foo) { // warning in JDT 3.8, proposal?
+        }
+    }
+
+What I would like to have is that JDT does not complain for both cases and threat both Bar methods as @NonNull.
+
+However, contradictory annotations should be flagged:
+ 
+    private class Foo {
+        void foo(@NonNull Integer foo) {
+        }
+    }
+
+    private class Bar extends Foo {
+        @Override void foo(@Nullable Integer foo) { // warning!!!
+        }
+    }
+
+Same for interfaces:
+
+    interface Foo {
+        void foo(@NonNull Integer foo);
+    }
+
+    private class Bar implements Foo {
+        @Override void foo(@Nullable Integer foo) { // warning!!!
+        }
+    }</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2139091</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-19 11:22:15 -0400</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; I was not aware of this bug, so I&apos;ve commented on bug 385440 comment 7. 
+
+For x-ref: I tried to summarize our points in bug 385440 comment 4.
+
+&gt; After reading the comments from Stephan on this bug, I still not sure what is
+&gt; the proposal for existing &quot;legacy&quot; code:
+&gt; 
+&gt;     private class Foo {
+&gt;         void foo(@NonNull Integer foo) {
+&gt;         }
+&gt;     }
+&gt; 
+&gt;     private class Bar extends Foo {
+&gt;         @Override void foo(Integer foo) { // warning in JDT 3.8, proposal?
+&gt;         }
+&gt;     }
+
+I&apos;m not sure what&apos;s the question?  Quick fix has a proposal, but maybe that&apos;s not what you are asking :)
+
+&gt; Same for interfaces:
+
+Exactly, same story.
+
+&gt; However, contradictory annotations should be flagged:
+&gt; 
+&gt;     private class Foo {
+&gt;         void foo(@NonNull Integer foo) {
+&gt;         }
+&gt;     }
+&gt; 
+&gt;     private class Bar extends Foo {
+&gt;         @Override void foo(@Nullable Integer foo) { // warning!!!
+&gt;         }
+&gt;     }
+
+No need here. Bar.foo() is a &quot;better&quot; method, in addition to admitting nonnull arguments it also admits null. No way to create NPE here.
+I could only see this as an optional warning, because it differs from normal typing rules in Java:
+ - Java: argument non-variant, return covariant
+ - JDT null checker: argument contra-variant, return covariant
+But why would you want this warning? 
+
+
+Only the opposite is illegal (and flagged as such in Juno):
+
+    class Foo {
+        void foo(@Nullable Integer foo) { }
+    }
+    class Bar extends Foo {
+        @Override void foo(@NonNull Integer foo) { } // error
+    }</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2176029</commentid>
+    <comment_count>9</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-10-25 14:21:18 -0400</bug_when>
+    <thetext>I guess that&apos;s a dup of bug 388281, right?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2176133</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-10-25 18:58:33 -0400</bug_when>
+    <thetext>(In reply to comment #9)
+&gt; I guess that&apos;s a dup of bug 388281, right?
+
+For the bulk of the discussion you&apos;re right.
+
+However, in comment 1 item 2. there is actually a change which I&apos;m planning to implement: overriding a @NonNull parameter with an unannotated parameter is safe and should be accepted by the compiler.
+
+I&apos;ll keep this bug open just for this change.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2176137</commentid>
+    <comment_count>11</comment_count>
+    <who name="Tor Norbye">tor.norbye</who>
+    <bug_when>2012-10-25 19:17:40 -0400</bug_when>
+    <thetext>&gt; which I&apos;m planning to implement: overriding a @NonNull parameter with an unannotated parameter is safe
+
+Yay! Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2189763</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-02 14:10:29 -0500</bug_when>
+    <thetext>I&apos;ve adjusted the bug title to reflect the new focus (the broader topic has been resolved via bug 388281).
+
+Released for 4.3 M4 via commit 2c8186e7489f922689211662fed2641fe910c44e</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2189840</commentid>
+    <comment_count>13</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-03 03:47:15 -0500</bug_when>
+    <thetext>This lets org.eclipse.jdt.ui.tests.quickfix.NullAnnotationsQuickFixTest fail. 
+
+Please take a look whether this is a bug in your code or something that needs to be adjusted in the UI test. Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2189903</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-03 08:46:29 -0500</bug_when>
+    <thetext>(In reply to comment #13)
+&gt; This lets org.eclipse.jdt.ui.tests.quickfix.NullAnnotationsQuickFixTest
+&gt; fail. 
+
+Sorry, I should&apos;ve run also those tests before releasing.
+
+&gt; Please take a look whether this is a bug in your code or something that
+&gt; needs to be adjusted in the UI test. Thanks.
+
+Most likely the tests need updating, but I&apos;ll provide an update of those quick fixes anyway (on behalf of bug 388281).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2189908</commentid>
+    <comment_count>15</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-03 09:00:39 -0500</bug_when>
+    <thetext>(In reply to comment #14)
+&gt; (In reply to comment #13)
+&gt; &gt; This lets org.eclipse.jdt.ui.tests.quickfix.NullAnnotationsQuickFixTest
+&gt; &gt; fail. 
+&gt; 
+&gt; Sorry, I should&apos;ve run also those tests before releasing.
+&gt; 
+&gt; &gt; Please take a look whether this is a bug in your code or something that
+&gt; &gt; needs to be adjusted in the UI test. Thanks.
+&gt; 
+&gt; Most likely the tests need updating, but I&apos;ll provide an update of those
+&gt; quick fixes anyway (on behalf of bug 388281).
+
+I see no target on that one and Markus is away i.e. he can&apos;t review the patch for M4, so maybe we just fix the test for now?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190229</commentid>
+    <comment_count>16</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 04:09:41 -0500</bug_when>
+    <thetext>(In reply to comment #10)
+&gt; (In reply to comment #9)
+&gt; &gt; I guess that&apos;s a dup of bug 388281, right?
+&gt; 
+&gt; For the bulk of the discussion you&apos;re right.
+&gt; 
+&gt; However, in comment 1 item 2. there is actually a change which I&apos;m planning
+&gt; to implement: overriding a @NonNull parameter with an unannotated parameter
+&gt; is safe and should be accepted by the compiler.
+
+I would disagree here. We should not start to allow a mix of implicit inheritance. If I did not choose the inheritance option then a missing annotation should really mean &quot;unknown&quot;. Assume you have a large code base and then add @NonNull to a super type method. When I revisit the code base later, what do the missing annotations on the sub-type methods mean? The coder forgot to visit them? They are OK?
+
+I would revert this change or only offer it as an addition option (off by default).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190239</commentid>
+    <comment_count>17</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 04:26:32 -0500</bug_when>
+    <thetext>(In reply to comment #16)
+&gt; (In reply to comment #10)
+&gt; &gt; (In reply to comment #9)
+&gt; &gt; &gt; I guess that&apos;s a dup of bug 388281, right?
+&gt; &gt; 
+&gt; &gt; For the bulk of the discussion you&apos;re right.
+&gt; &gt; 
+&gt; &gt; However, in comment 1 item 2. there is actually a change which I&apos;m planning
+&gt; &gt; to implement: overriding a @NonNull parameter with an unannotated parameter
+&gt; &gt; is safe and should be accepted by the compiler.
+&gt; 
+&gt; I would disagree here. We should not start to allow a mix of implicit
+&gt; inheritance.
+
+This sounds like a misunderstanding to me.
+I never intended to introduce implicit inheritance.
+
+All I said and implemented is: overriding a @NonNull parameter with a unannotated parameter is safe. The unannotated parameter will remain at state &quot;unknown&quot;.
+
+The rationale is:
+@NonNull establishes the contract:
+- callers are required to pass a known-to-be-nonnull value.
+- implementor may dereference without null check.
+
+When overriding this with an unannotated parameter
+- callers using the super type are still obliged to pass nonnull
+  callers using the subtype may pass null
+- implementor does not assume anything
+
+There&apos;s no way how this can introduce undetected NPEs in annotated code. Only when caller using subtype actually passes null and implementor chooses not to check for null we may get an NPE but this is the normal behavior for unannotated parameters in the first place.
+
+This situation is comparable to overriding a @NonNull parameter with a @Nullable parameter, which is safe, too.
+
+
+Regarding your migration scenario: one way to detect is to enable the warning for missing @NonNullByDefault. If that is not enough we may want to think of an ultimate warning to be reported against each type use to which no null annotation applies (explicit or implicit). But I don&apos;t think we&apos;re there, yet :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190241</commentid>
+    <comment_count>18</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 04:27:58 -0500</bug_when>
+    <thetext>(In reply to comment #17)
+&gt; I never intended to introduce implicit inheritance.
+
+I.e., without enabling the option from bug 388281.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190246</commentid>
+    <comment_count>19</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 04:34:59 -0500</bug_when>
+    <thetext>(In reply to comment #14)
+&gt; &gt; Please take a look whether this is a bug in your code or something that
+&gt; &gt; needs to be adjusted in the UI test. Thanks.
+&gt; 
+&gt; Most likely the tests need updating, but I&apos;ll provide an update of those
+&gt; quick fixes anyway (on behalf of bug 388281).
+
+At a closer look there&apos;s nothing to fix. 
+The failing test (testChangeParameter3c) has this comment:
+
+// Attempt to override a @NonNull argument with an unspec&apos;ed argument
+// -&gt; change to @NonNull
+// TODO(stephan): here the underlying error is actually debatable / not necessary.
+//                @NonNull -&gt; unspec&apos;ed could be seen as safe contravariant overriding
+
+Thus the fix is: remove this test case.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190250</commentid>
+    <comment_count>20</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 04:41:41 -0500</bug_when>
+    <thetext>(In reply to comment #17)
+&gt; This situation is comparable to overriding a @NonNull parameter with a
+&gt; @Nullable parameter, which is safe, too.
+
+No it is not and that&apos;s my point. Out of the box I got an error with this code:
+
+	@Override
+	void foo(Integer foo) {
+		foo.byteValue();
+	}
+
+Now, nothing is issued anymore and this is a no go. I have to go and tweak options to get back to the M3 state.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190254</commentid>
+    <comment_count>21</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 04:43:58 -0500</bug_when>
+    <thetext>(In reply to comment #20)
+&gt; (In reply to comment #17)
+&gt; &gt; This situation is comparable to overriding a @NonNull parameter with a
+&gt; &gt; @Nullable parameter, which is safe, too.
+&gt; 
+&gt; No it is not and that&apos;s my point. Out of the box I got an error with this
+&gt; code:
+&gt; 
+&gt; 	@Override
+&gt; 	void foo(Integer foo) {
+&gt; 		foo.byteValue();
+&gt; 	}
+&gt; 
+&gt; Now, nothing is issued anymore and this is a no go.
+
+I have no idea what&apos;s wrong with this example.
+Please explain.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190261</commentid>
+    <comment_count>22</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 05:00:28 -0500</bug_when>
+    <thetext>(In reply to comment #21)
+&gt; (In reply to comment #20)
+&gt; &gt; (In reply to comment #17)
+&gt; &gt; &gt; This situation is comparable to overriding a @NonNull parameter with a
+&gt; &gt; &gt; @Nullable parameter, which is safe, too.
+&gt; &gt; 
+&gt; &gt; No it is not and that&apos;s my point. Out of the box I got an error with this
+&gt; &gt; code:
+&gt; &gt; 
+&gt; &gt; 	@Override
+&gt; &gt; 	void foo(Integer foo) {
+&gt; &gt; 		foo.byteValue();
+&gt; &gt; 	}
+&gt; &gt; 
+&gt; &gt; Now, nothing is issued anymore and this is a no go.
+&gt; 
+&gt; I have no idea what&apos;s wrong with this example.
+&gt; Please explain.
+
+1. start new workspace with 4.3 M3
+2. enable annotation-based null analysis
+3. paste the following snippet into the &apos;Package Explorer&apos;:
+---%&lt;---
+import org.eclipse.jdt.annotation.NonNull;
+
+public class Main  {
+	public static void main(String[] args) {
+		Bar b= new Bar();
+		b.foo(null);
+	}
+}
+class Foo {
+	void foo(@NonNull Integer foo) {
+	}
+}
+
+class Bar extends Foo {
+	@Override
+	void foo(Integer foo) {
+		foo.byteValue();
+	}
+}
+--- %&lt; ---
+4. add the annotations to the project
+==&gt; GOOD: compiler error on Foo.foo(Integer):
+Missing non-null annotation: inherited method from Foo declares this parameter as @NonNull
+
+
+Now, repeat the same steps but use the latest N-build
+BAD:
+==&gt; no error
+==&gt; run Main.main
+==&gt; NPE
+
+So, on M3 I am notified about the problem but with your change I now feel safe and run into an NPE later.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190264</commentid>
+    <comment_count>23</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 05:11:00 -0500</bug_when>
+    <thetext>(In reply to comment #22)
+&gt; So, on M3 I am notified about the problem but with your change I now feel
+&gt; safe and run into an NPE later.
+
+Why feel safer than wrt any other program that uses an unannotated parameter?
+Client seeing Bar sees that the parameter is unannotated and shouldn&apos;t feel safe when passing null. Implementor seeing unannotated parameter shouldn&apos;t feel safe dereferencing without null check.
+
+
+OTOH, adopters of null annotations have reported that it is a big pain to force the @NonNull from the super type an all subtypes *where not needed*. Eventually, they&apos;ll want to adapt the subtypes but in many cases this is just not feasible at once.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190265</commentid>
+    <comment_count>24</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 05:14:36 -0500</bug_when>
+    <thetext>(In reply to comment #23)
+&gt; (In reply to comment #22)
+&gt; &gt; So, on M3 I am notified about the problem but with your change I now feel
+&gt; &gt; safe and run into an NPE later.
+&gt; 
+&gt; Why feel safer than wrt any other program that uses an unannotated parameter?
+&gt; Client seeing Bar sees that the parameter is unannotated and shouldn&apos;t feel
+&gt; safe when passing null. Implementor seeing unannotated parameter shouldn&apos;t
+&gt; feel safe dereferencing without null check.
+&gt; 
+&gt; 
+&gt; OTOH, adopters of null annotations have reported that it is a big pain to
+&gt; force the @NonNull from the super type an all subtypes *where not needed*.
+&gt; Eventually, they&apos;ll want to adapt the subtypes but in many cases this is
+&gt; just not feasible at once.
+
+Right, that&apos;s why we started to offer inheritance. For me, if I compare M3 with the latest it is clearly a loss of function i.e. a case which I was able to detect and fix in M3 no longer works. I can&apos;t see *any* goodness in this.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190267</commentid>
+    <comment_count>25</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 05:17:50 -0500</bug_when>
+    <thetext>(In reply to comment #24)
+&gt; (In reply to comment #23)
+&gt; &gt; (In reply to comment #22)
+&gt; &gt; &gt; So, on M3 I am notified about the problem but with your change I now feel
+&gt; &gt; &gt; safe and run into an NPE later.
+&gt; &gt; 
+&gt; &gt; Why feel safer than wrt any other program that uses an unannotated parameter?
+&gt; &gt; Client seeing Bar sees that the parameter is unannotated and shouldn&apos;t feel
+&gt; &gt; safe when passing null. Implementor seeing unannotated parameter shouldn&apos;t
+&gt; &gt; feel safe dereferencing without null check.
+&gt; &gt; 
+&gt; &gt; 
+&gt; &gt; OTOH, adopters of null annotations have reported that it is a big pain to
+&gt; &gt; force the @NonNull from the super type an all subtypes *where not needed*.
+&gt; &gt; Eventually, they&apos;ll want to adapt the subtypes but in many cases this is
+&gt; &gt; just not feasible at once.
+&gt; 
+&gt; Right, that&apos;s why we started to offer inheritance. For me, if I compare M3
+&gt; with the latest it is clearly a loss of function i.e. a case which I was
+&gt; able to detect and fix in M3 no longer works. I can&apos;t see *any* goodness in
+&gt; this.
+
+I open to add this as a new option but by default I want this to be off i.e. as it works in M3.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190268</commentid>
+    <comment_count>26</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 05:24:13 -0500</bug_when>
+    <thetext>Since we have a contention let me step back one.
+
+My main goal when supporting mixed annotated/unannotated code is:
+
+Inside the annotated portions of the code no NPE must go unnoticed by the analysis.
+
+Inside unannotated portions of the code the user takes the responsibility for avoiding NPE, the analysis should never complain against variables of unknown nullness.
+
+
+Thus the analysis must be strict in disallowing unknown values to flow into variables annotated as @NonNull. Conversely, letting values with known nullness flow into unannotated variables is essential and should not be constrained (otherwise the two portions could not meaningfully communicate).
+
+
+Overriding a @NonNull parameter with an unannotated parameter establishes one instance of the latter situation: caller seeing the super type is forced to pass non-null, the overriding method discards this information.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190270</commentid>
+    <comment_count>27</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 05:28:23 -0500</bug_when>
+    <thetext>(In reply to comment #26)
+&gt; Since we have a contention let me step back one.
+&gt; 
+&gt; My main goal when supporting mixed annotated/unannotated code is:
+&gt; 
+&gt; Inside the annotated portions of the code no NPE must go unnoticed by the
+&gt; analysis.
+&gt; 
+&gt; Inside unannotated portions of the code the user takes the responsibility
+&gt; for avoiding NPE, the analysis should never complain against variables of
+&gt; unknown nullness.
+&gt; 
+&gt; 
+&gt; Thus the analysis must be strict in disallowing unknown values to flow into
+&gt; variables annotated as @NonNull. Conversely, letting values with known
+&gt; nullness flow into unannotated variables is essential and should not be
+&gt; constrained (otherwise the two portions could not meaningfully communicate).
+&gt; 
+&gt; 
+&gt; Overriding a @NonNull parameter with an unannotated parameter establishes
+&gt; one instance of the latter situation: caller seeing the super type is forced
+&gt; to pass non-null, the overriding method discards this information.
+
+I was too harsh saying I see *no* benefit, but it&apos;s the usual balance of being on the safe side or not. M3 nicely shows that we *can* provide more/better detection, so I don&apos;t see any point of throwing this out of the door now. If people like that, they should be able to enable this, but not by default.
+
+Also, the error from M3 allows me to go through them and decide myself whether to
+- add @NonNull
+- add @Nullable
+- enable inheritance
+- or enable the yet to introduce new option</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190272</commentid>
+    <comment_count>28</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 05:38:54 -0500</bug_when>
+    <thetext>(written before seeing comment 27):
+
+Regarding annotation inheritance:
+
+This is introduced as on option off-by-default and discouraged by us.
+
+One problem with annotation inheritance is that it changes the semantics of subclasses after-the-fact without touching their code.
+
+The fix in this bug helps to *avoid* annotation inheritance where it is not needed.
+
+In the example from comment 22 consider that all code existed without any null annotations. The code was unsafe but maybe the bug never surfaced.
+Next the owner of Foo adds @NonNull because that&apos;s the API intention and clients of Foo actually adhere to this contract.
+Sure, eventually we want to adjust Main and/or Bar so that the program becomes safe. But the owners of these classes should be allowed to do it at their own pace. From their p.o.v. nothing has change by the modification in Foo, the code was legal (though unsafe) before and it should still be compilable. (Note that null contract violations are errors by default and should never be downgraded to warning).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190275</commentid>
+    <comment_count>29</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 05:44:55 -0500</bug_when>
+    <thetext>(In reply to comment #28)
+&gt; (written before seeing comment 27):
+&gt; 
+&gt; Regarding annotation inheritance:
+&gt; 
+&gt; This is introduced as on option off-by-default and discouraged by us.
+&gt; 
+&gt; One problem with annotation inheritance is that it changes the semantics of
+&gt; subclasses after-the-fact without touching their code.
+&gt; 
+&gt; The fix in this bug helps to *avoid* annotation inheritance where it is not
+&gt; needed.
+&gt; 
+&gt; In the example from comment 22 consider that all code existed without any
+&gt; null annotations. The code was unsafe but maybe the bug never surfaced.
+&gt; Next the owner of Foo adds @NonNull because that&apos;s the API intention and
+&gt; clients of Foo actually adhere to this contract.
+&gt; Sure, eventually we want to adjust Main and/or Bar so that the program
+&gt; becomes safe. But the owners of these classes should be allowed to do it at
+&gt; their own pace. From their p.o.v. nothing has change by the modification in
+&gt; Foo, the code was legal (though unsafe) before and it should still be
+&gt; compilable. (Note that null contract violations are errors by default and
+&gt; should never be downgraded to warning).
+
+I don&apos;t argue against that scenario. It&apos;s a valid one. But mine is too and is now broken. I have to do more work to find the bad cases. As said, I&apos;m OK to add a new option even for M4 but the current &quot;fix&quot; is a no go for me.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190284</commentid>
+    <comment_count>30</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 06:10:00 -0500</bug_when>
+    <thetext>Upto this point I have argued towards avoidance of unnecessary options (which normally is your point, isn&apos;t it? :) )
+
+If we can&apos;t agree on the best behavior without introducing another option, which option will it be?
+
+I&apos;d like to assume that as a last step (after fully integrating null annotations with JSR 308) we&apos;ll add an optional warning for unannotated type use in any position with only two exceptions:
+- local variables (where nullness can be inferred from the context).
+- type references that are subject to a @NonNullByDefault.
+Can we agree on such a warning (off-by-default, of course)?
+
+This warning will complain against the parameter in Bar regardless of the super method.
+
+If you still say that this is not sufficient for your scenario, I need to understand what makes your example more severe from the situation without the method Foo#foo? In which way is Foo contributing to the danger at hand?
+
+Asked differently: what would be the name of the new option? I&apos;m having difficulties finding a description that would fit on a single line of text.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190293</commentid>
+    <comment_count>31</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 06:29:19 -0500</bug_when>
+    <thetext>There is another benefit of the reported error in M3: I can easily invoke the multi-fix and add @NonNull to all the cases I want in one go.
+
+
+(In reply to comment #30)
+&gt; Upto this point I have argued towards avoidance of unnecessary options
+&gt; (which normally is your point, isn&apos;t it? :) )
+
+Yes it is and clearly I&apos;d go without the option and leave the M3 behavior. But it seems you can&apos;t agree to this ;-) and I don&apos;t want to do this by forcing it.
+
+
+&gt; Asked differently: what would be the name of the new option? I&apos;m having
+&gt; difficulties finding a description that would fit on a single line of text.
+
+We could e.g. add a sub-option to &apos;Violation of null specification&apos;, which currently triggers the error in M3:
+[x]Ignore unannotated types in overridden methods
+
+
+The other option which warns if a type is missing and which is off by default (agreed) is a bit different from this one - we can see it as adding yet more warnings/errors to the current (M3) story) - so we&apos;d better leave this out for now.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190297</commentid>
+    <comment_count>32</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 07:00:12 -0500</bug_when>
+    <thetext>(In reply to comment #31)
+&gt; There is another benefit of the reported error in M3: I can easily invoke
+&gt; the multi-fix and add @NonNull to all the cases I want in one go.
+
+I agree, support to adopt super-specifications in overriding methods is valuable.
+
+&gt; We could e.g. add a sub-option to &apos;Violation of null specification&apos;, which
+&gt; currently triggers the error in M3:
+&gt; [x]Ignore unannotated types in overridden methods
+
+How do we signal that this applies only to @NonNull paramaters, not @Nullable ones?
+  Ignore unannotated parameter overriding a @NonNull parameter
+?
+ 
+I should admit that meanwhile I consider it as a bug in my implementation that this situation was ever reported as a &apos;violation of null specification&apos;.
+I don&apos;t see any specification violated &lt;shrug/&gt;.
+
+&gt; The other option which warns if a type is missing and which is off by
+&gt; default (agreed) is a bit different from this one - we can see it as adding
+&gt; yet more warnings/errors to the current (M3) story) - so we&apos;d better leave
+&gt; this out for now.
+
+I agree in that this is future.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190340</commentid>
+    <comment_count>33</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 08:41:02 -0500</bug_when>
+    <thetext>I think the requested option can best be described by reversing the logic and by decoupling from &apos;violation of null specification&apos;.
+
+S.t. like:
+Warn when an overriding method drops a @NonNull parameter annotation of an overridden method.
+
+So far this is the shortest description I can think of that is also accurate. Perhaps the last part (&quot;of an overridden method&quot;) can be omitted because readers will hopefully guess this.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190346</commentid>
+    <comment_count>34</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 08:53:09 -0500</bug_when>
+    <thetext>(In reply to comment #32)
+&gt; How do we signal that this applies only to @NonNull paramaters, not
+&gt; @Nullable ones?
+&gt;   Ignore unannotated parameter overriding a @NonNull parameter
+&gt; ?
+
+If we keep it that way, yes. But maybe we could go further here too: there is nothing that the user can do than adding &apos;@Nullable&apos;, so we could just implicitly assume this if &quot;ignore&quot; is chosen.
+
+
+(In reply to comment #33)
+&gt; I think the requested option can best be described by reversing the logic
+&gt; and by decoupling from &apos;violation of null specification&apos;.
+&gt; 
+&gt; S.t. like:
+&gt; Warn when an overriding method drops a @NonNull parameter annotation of an
+&gt; overridden method.
+&gt; 
+
+We try to avoid &quot;warn&quot; in the label since it can also result in an error being reported. And it is longer than the other message.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190352</commentid>
+    <comment_count>35</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 09:01:54 -0500</bug_when>
+    <thetext>(In reply to comment #34)
+&gt; (In reply to comment #32)
+&gt; &gt; How do we signal that this applies only to @NonNull paramaters, not
+&gt; &gt; @Nullable ones?
+&gt; &gt;   Ignore unannotated parameter overriding a @NonNull parameter
+&gt; &gt; ?
+&gt; 
+&gt; If we keep it that way, yes. But maybe we could go further here too: there
+&gt; is nothing that the user can do than adding &apos;@Nullable&apos;, so we could just
+&gt; implicitly assume this if &quot;ignore&quot; is chosen.
+
+Is this comment referring to the case of overriding a @Nullable parameter? So you suggest that for this particular situation &quot;ignore&quot; should have the same effect as &quot;inherit null annotations&quot;?
+
+ 
+&gt; (In reply to comment #33)
+&gt; &gt; I think the requested option can best be described by reversing the logic
+&gt; &gt; and by decoupling from &apos;violation of null specification&apos;.
+&gt; &gt; 
+&gt; &gt; S.t. like:
+&gt; &gt; Warn when an overriding method drops a @NonNull parameter annotation of an
+&gt; &gt; overridden method.
+&gt; &gt; 
+&gt; 
+&gt; We try to avoid &quot;warn&quot; in the label since it can also result in an error
+&gt; being reported.
+
+Granted. I just couldn&apos;t think of a better wording.
+
+&gt; And it is longer than the other message.
+
+Yes, longer, but also more accurate as it avoids the incorrect connection to &apos;violation of null specification&apos;.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190356</commentid>
+    <comment_count>36</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 09:07:15 -0500</bug_when>
+    <thetext>(In reply to comment #35)
+&gt; (In reply to comment #34)
+&gt; &gt; (In reply to comment #32)
+&gt; &gt; &gt; How do we signal that this applies only to @NonNull paramaters, not
+&gt; &gt; &gt; @Nullable ones?
+&gt; &gt; &gt;   Ignore unannotated parameter overriding a @NonNull parameter
+&gt; &gt; &gt; ?
+&gt; &gt; 
+&gt; &gt; If we keep it that way, yes. But maybe we could go further here too: there
+&gt; &gt; is nothing that the user can do than adding &apos;@Nullable&apos;, so we could just
+&gt; &gt; implicitly assume this if &quot;ignore&quot; is chosen.
+&gt; 
+&gt; Is this comment referring to the case of overriding a @Nullable parameter?
+
+Yes.
+
+
+&gt; So you suggest that for this particular situation &quot;ignore&quot; should have the
+&gt; same effect as &quot;inherit null annotations&quot;?
+
+Yes, given that there is really nothing else that the user can do other than manually adding &apos;@Nullable&apos;. If we go down this path, maybe we can come to another name for the option.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190358</commentid>
+    <comment_count>37</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 09:10:48 -0500</bug_when>
+    <thetext>(In reply to comment #36)
+&gt; (In reply to comment #35)
+&gt; &gt; (In reply to comment #34)
+&gt; &gt; &gt; (In reply to comment #32)
+&gt; &gt; &gt; &gt; How do we signal that this applies only to @NonNull paramaters, not
+&gt; &gt; &gt; &gt; @Nullable ones?
+&gt; &gt; &gt; &gt;   Ignore unannotated parameter overriding a @NonNull parameter
+&gt; &gt; &gt; &gt; ?
+&gt; &gt; &gt; 
+&gt; &gt; &gt; If we keep it that way, yes. But maybe we could go further here too: there
+&gt; &gt; &gt; is nothing that the user can do than adding &apos;@Nullable&apos;, so we could just
+&gt; &gt; &gt; implicitly assume this if &quot;ignore&quot; is chosen.
+&gt; &gt; 
+&gt; &gt; Is this comment referring to the case of overriding a @Nullable parameter?
+&gt; 
+&gt; Yes.
+&gt; 
+&gt; 
+&gt; &gt; So you suggest that for this particular situation &quot;ignore&quot; should have the
+&gt; &gt; same effect as &quot;inherit null annotations&quot;?
+&gt; 
+&gt; Yes, given that there is really nothing else that the user can do other than
+&gt; manually adding &apos;@Nullable&apos;. If we go down this path, maybe we can come to
+&gt; another name for the option.
+
+Not that this is just an idea, I&apos;m not pushing hard on this.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190360</commentid>
+    <comment_count>38</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 09:11:34 -0500</bug_when>
+    <thetext>(In reply to comment #37)
+&gt; Not that this is just an idea, I&apos;m not pushing hard on this.
+Note...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190366</commentid>
+    <comment_count>39</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 09:22:53 -0500</bug_when>
+    <thetext>Let me try one more:
+
+  Dropping of @NonNull parameter annotation in overriding method [E/W/I]
+
+I&apos;m fine with default = &quot;W&quot; although I&apos;d prefer &quot;I&quot;.
+
+Will a quick fix take me from a warning to this preference?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190368</commentid>
+    <comment_count>40</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 09:24:06 -0500</bug_when>
+    <thetext>either
+  &quot;in overriding&quot;
+or
+  &quot;from overridden&quot;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190430</commentid>
+    <comment_count>41</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 11:02:03 -0500</bug_when>
+    <thetext>(In reply to comment #39)
+&gt; Let me try one more:
+&gt; 
+&gt;   Dropping of @NonNull parameter annotation in overriding method [E/W/I]
+&gt; 
+&gt; I&apos;m fine with default = &quot;W&quot; although I&apos;d prefer &quot;I&quot;.
+&gt; 
+&gt; Will a quick fix take me from a warning to this preference?
+
+[E/W/I] is ugly. I like the true/false sub-option much better:
+
+[ ] Ignore unannotated parameters that override a @NonNull parameter</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190433</commentid>
+    <comment_count>42</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 11:05:03 -0500</bug_when>
+    <thetext>(In reply to comment #41)
+&gt; [E/W/I] is ugly. I like the true/false sub-option much better:
+
+Sub-option of what?
+I don&apos;t see a similar error/warning.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190443</commentid>
+    <comment_count>43</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-04 11:19:27 -0500</bug_when>
+    <thetext>(In reply to comment #42)
+&gt; (In reply to comment #41)
+&gt; &gt; [E/W/I] is ugly. I like the true/false sub-option much better:
+
+Sorry, I guess you did not mean [E/W/I] as being part of the label but just as the options.
+
+
+&gt; Sub-option of what?
+
+I think I said that before: &apos;Violation of null specification&apos;, which is what triggers the error in M3. But I see you are now consider that as a bug in the first place ;-)
+
+How about a new Error/Warning/Ignore pref:
+
+Inherited @NonNull parameter not annotated in overridden method
+
+I&apos;d be OK to have this as Warning by default.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190446</commentid>
+    <comment_count>44</comment_count>
+    <who name="Tor Norbye">tor.norbye</who>
+    <bug_when>2012-12-04 11:24:18 -0500</bug_when>
+    <thetext>Apologies, I haven&apos;t been able to follow the whole discussion so I&apos;m not sure what exactly the status is of the ability to allow @NonNull annotations to be inherited, by default.
+
+The use case that&apos;s *really* important to me is the one of a library author. I&apos;d like to be able to ADD @NonNull annotations to a library, without suddenly requiring all clients of the library to update their code in order for it to compile again. In *my* ideal world, Eclipse would propagate annotations implicitly (the same way the javadoc tool does it) such that calls within the library passing null to such a method now gives a warning. I understand from previous comments that this has other implications that make it undesirable, but I would much rather see *that* error than an error that my local method isn&apos;t overriding some non null annotation.
+
+It sounds like there&apos;s going to be a flag for this; I&apos;m just hoping the default will be one where not overriding a @NonNull annotation isn&apos;t an error. If you can distinguish between the overriding method coming from an external library and a local project, that might be useful. I think it&apos;s totally acceptable to say that if you add a @NonNull annotation in one of your classes, you want your other classes extending it to also be decorated with annotations. But when the superclass is a library, I think different considerations apply.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190450</commentid>
+    <comment_count>45</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 11:29:12 -0500</bug_when>
+    <thetext>(In reply to comment #44)
+
+Thanks, Tor, for chiming in.
+Have you seen that bug 388281 has been resolved recently?
+Maybe that already answers part of your comment.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190458</commentid>
+    <comment_count>46</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-04 11:36:36 -0500</bug_when>
+    <thetext>(In reply to comment #43)
+&gt; How about a new Error/Warning/Ignore pref:
+&gt; 
+&gt; Inherited @NonNull parameter not annotated in overridden method
+&gt; 
+&gt; I&apos;d be OK to have this as Warning by default.
+
+Are we approaching a compromise (which none of us will love nor hate)?
+
+If we manage to say the above without using &quot;inherited&quot; we should be fine,
+otherwise people might think that this preference is only effective if &quot;inherit null annotations&quot; is enabled. The opposite is true: when inheritance is enabled the warning does not occur.
+I see you said &quot;inherited ... parameter&quot; but this is a subtlety too easy to miss, I&apos;d say.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190782</commentid>
+    <comment_count>47</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-05 04:18:50 -0500</bug_when>
+    <thetext>(In reply to comment #46)
+&gt; (In reply to comment #43)
+&gt; &gt; How about a new Error/Warning/Ignore pref:
+&gt; &gt; 
+&gt; &gt; Inherited @NonNull parameter not annotated in overridden method
+&gt; &gt; 
+&gt; &gt; I&apos;d be OK to have this as Warning by default.
+&gt; 
+&gt; Are we approaching a compromise (which none of us will love nor hate)?
+
+It seems so.
+
+
+&gt; If we manage to say the above without using &quot;inherited&quot; we should be fine,
+&gt; otherwise people might think that this preference is only effective if
+&gt; &quot;inherit null annotations&quot; is enabled. The opposite is true: when
+&gt; inheritance is enabled the warning does not occur.
+&gt; I see you said &quot;inherited ... parameter&quot; but this is a subtlety too easy to
+&gt; miss, I&apos;d say.
+
+I see your point but without &quot;inherited&quot; we get:
+@NonNull parameter not annotated in overridden method
+which is also misleading, since in the overridden method the unannotated parameter could also be @Nullable.
+
+How about:
+Missing parameter annotation in overridden method
+and also apply it on the @Nullable case? This would allow users - for whatever reason they might have - to also disable the warning for @Nullable.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190823</commentid>
+    <comment_count>48</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-05 05:55:19 -0500</bug_when>
+    <thetext>(In reply to comment #47)
+&gt; I see your point but without &quot;inherited&quot; we get:
+&gt; @NonNull parameter not annotated in overridden method
+
+Should be:
+   @NonNull parameter not annotated in overriding method
+right?
+
+IMO it&apos;s the best we have so far.
+
+&gt; which is also misleading, since in the overridden method the unannotated
+&gt; parameter could also be @Nullable.
+
+Right, adding either @NonNull or @Nullable is a legal fix, but why is the label misleading: we complain that there is no annotation, we don&apos;t specifically say, which annotation should be added. 
+ 
+&gt; How about:
+&gt; Missing parameter annotation in overridden method
+&gt; and also apply it on the @Nullable case? This would allow users - for
+&gt; whatever reason they might have - to also disable the warning for @Nullable.
+
+If overridden (super) specifies @Nullable, missing annotation in overriding (sub) is a spec violation -&gt; more severe than the new warning we are discussing here. That warning should remain in its current group / irritant / preference.
+
+Independent of the exact wording in the UI I can implement the new preference and warning tonight after regular office hours.
+
+The javadoc of the new JavaCore constant will use all the verbage necessary to give an accurate description :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2190829</commentid>
+    <comment_count>49</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-05 06:15:41 -0500</bug_when>
+    <thetext>(In reply to comment #48)
+&gt; (In reply to comment #47)
+&gt; &gt; I see your point but without &quot;inherited&quot; we get:
+&gt; &gt; @NonNull parameter not annotated in overridden method
+&gt; 
+&gt; Should be:
+&gt;    @NonNull parameter not annotated in overriding method
+&gt; right?
+&gt; 
+&gt; IMO it&apos;s the best we have so far.
+&gt; 
+&gt; &gt; which is also misleading, since in the overridden method the unannotated
+&gt; &gt; parameter could also be @Nullable.
+&gt; 
+&gt; Right, adding either @NonNull or @Nullable is a legal fix, but why is the
+&gt; label misleading: we complain that there is no annotation, we don&apos;t
+&gt; specifically say, which annotation should be added. 
+
+It says &quot;@NonNull parameter not annotated&quot;. It&apos;s not clear (to me) that the one from the super class is meant. How about this then:
+
+@NonNull parameter form overridden method not annotated
+or
+Overridden @NonNull parameter not annotated
+
+
+&gt; &gt; How about:
+&gt; &gt; Missing parameter annotation in overridden method
+&gt; &gt; and also apply it on the @Nullable case? This would allow users - for
+&gt; &gt; whatever reason they might have - to also disable the warning for @Nullable.
+&gt; 
+&gt; If overridden (super) specifies @Nullable, missing annotation in overriding
+&gt; (sub) is a spec violation -&gt; more severe than the new warning we are
+&gt; discussing here. That warning should remain in its current group / irritant
+&gt; / preference.
+OK. In that case, the error message should talk about violation and not just &quot;missing...&quot;.
+
+
+&gt; Independent of the exact wording in the UI I can implement the new
+&gt; preference and warning tonight after regular office hours.
+Don&apos;t hurry. I will be away until Monday anyway.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2191506</commentid>
+    <comment_count>50</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-06 13:09:58 -0500</bug_when>
+    <thetext>While I have a patch in the making I want to share two things before releasing:
+
+(1) The javadoc of the new JavaCore constant currently looks like this:
+
+Compiler option ID: Reporting Dropped Nonnull Parameter Annotations.
+
+When enabled, the compiler will issue an error or a warning against a parameter of a method that overrides an inherited method if all of the following hold:
+
+* The overridden method declares the corresponding parameter as non-null (see COMPILER_NONNULL_ANNOTATION_NAME).
+* The parameter in the overriding method has no null annotation.
+* The overriding method is not affected by a nullness default (see COMPILER_NONNULL_BY_DEFAULT_ANNOTATION_NAME).
+* Inheritance of null annotations is disabled (see COMPILER_INHERIT_NULL_ANNOTATIONS).
+This particular situation bears the same inherent risk as any unannotated method parameter, because the compiler&apos;s null ananysis cannot decide wither null is or is not a legal value for this parameter. However, the annotation in the overridden method suggests that the parameter should also be annotated as non-null. If that is not intended or possible, it is recommended to annotate the parameter as nullable, in order to make this (legal) change of contract explicit.
+
+Option id:
+&quot;org.eclipse.jdt.core.compiler.problem.nonnullParameterAnnotationDropped&quot;
+Possible values:
+{ &quot;error&quot;, &quot;warning&quot;, &quot;ignore&quot; }
+Default:
+&quot;warning&quot;
+Since:
+3.9
+@category
+CompilerOptionID
+
+Any objections?
+
+
+(2) For the following case I&apos;m not totally sure, what to say:
+
+interface I {
+    void foo(@NonNull String s);
+}
+class C {
+    public void foo(String s) { }
+}
+class Sub extends C implements I {
+}
+
+(a) I&apos;m leaning towards silently accepting Sub, because I see little use in forcing Sub to declare a method foo. I#foo promises to the implementor that s is nonnull, but C#foo simply doesn&apos;t leverage this promise. Redeclaring foo in Sub doesn&apos;t improve this.
+
+(b) Consider any client:
+    void bar(Sub sub) {
+        sub.foo(null);
+    }
+This client is calling C#foo, so no contract is effective, but the *intention* may well be to force nonnull also here. Should we treat Sub#foo as having a nonnull parameter? Unfortunately, there is no Sub#foo, so implementation and explanation would have to jump through hoops to accomplish this effect.
+
+If remaining totally silent for (a) and (b) is not satisfactory we would have to invent another warning, like:
+
+Class Sub inherits two methods foo with different but compatible null specifications. It is recommended to redeclare foo in order to specify a null contract for this method.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2192399</commentid>
+    <comment_count>51</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-12-10 07:59:52 -0500</bug_when>
+    <thetext>(In reply to comment #50)
+&gt; While I have a patch in the making I want to share two things before
+&gt; releasing:
+&gt; 
+&gt; (1) The javadoc of the new JavaCore constant currently looks like this:
+...
+&gt; Any objections?
+
+Looks good.
+
+ 
+&gt; (2) For the following case I&apos;m not totally sure, what to say:
+&gt; 
+&gt; interface I {
+&gt;     void foo(@NonNull String s);
+&gt; }
+&gt; class C {
+&gt;     public void foo(String s) { }
+&gt; }
+&gt; class Sub extends C implements I {
+&gt; }
+&gt; 
+&gt; (a) I&apos;m leaning towards silently accepting Sub, because I see little use in
+&gt; forcing Sub to declare a method foo. I#foo promises to the implementor that
+&gt; s is nonnull, but C#foo simply doesn&apos;t leverage this promise. Redeclaring
+&gt; foo in Sub doesn&apos;t improve this.
+
+Right, but if you get the warning/error, you know you have to check C#foo and either add the annotation there 
+
+&gt; 
+&gt; (b) Consider any client:
+&gt;     void bar(Sub sub) {
+&gt;         sub.foo(null);
+&gt;     }
+
+I&apos;m fine to be silent for a and b.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2192840</commentid>
+    <comment_count>52</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-11 04:11:18 -0500</bug_when>
+    <thetext>I&apos;ll finish this early in M5.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2203191</commentid>
+    <comment_count>53</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-15 12:33:39 -0500</bug_when>
+    <thetext>I released for 4.3 M5 the second part (starting with re-open in comment 13)
+via commit 2ed80629ac2deb70ae8b8f65c52c0fee7ade8d07.
+
+I&apos;ve filed two follow-ups: bug 398211 (UI) and bug 398213 (doc).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2229414</commentid>
+    <comment_count>54</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-03-12 06:26:47 -0400</bug_when>
+    <thetext>Verified for 4.3 M6 using  build I20130310-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

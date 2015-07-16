@@ -1,0 +1,406 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>441983</bug_id>
+          
+          <creation_ts>2014-08-18 11:22:00 -0400</creation_ts>
+          <short_desc>Gerrit job test failures due to missing dependency on both versions of o.e.jdt.annotation</short_desc>
+          <delta_ts>2015-01-20 07:57:47 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4.2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Mickael Istria">mistria</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>mistria</cc>
+    
+    <cc>tobias.oberlies</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2440103</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-18 11:22:43 -0400</bug_when>
+    <thetext>We had it in the platform build, where for some time we needed a p2kludge feature (see bug 414444 comment 31) to pull in both versions of o.e.jdt.annotation into the build.
+
+Then we moved the dependencies into the jdt feature, which now depends on both versions.
+
+Unfortunately, in pure-testing situations like gerrit, we don&apos;t use that feature, hence a lot a tests fail because only one version is resolved (running on 1.7 we get 1.1.0, on 1.8 we get the higher version 2.0.0).
+
+It seems we need to introduce yet another test-only kludge to allow us to run tests with both bundle versions installed.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2440138</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-18 12:19:29 -0400</bug_when>
+    <thetext>Patch is being tested via https://git.eclipse.org/r/#/c/31845/
+
+This &quot;solution&quot; does not apply for any beauty contest. The problem is that I had to introduce two additional (empty) bundles just to get dependencies straight :(
+
+Once I have a +1 from hudson, please LMK if it&apos;s acceptable just from a pragmatic p.o.v.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2440251</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-18 20:12:20 -0400</bug_when>
+    <thetext>OK, the ugly approach seems to work, see https://git.eclipse.org/r/#/c/31845/
+and https://hudson.eclipse.org/platform/job/eclipse.jdt.core-Gerrit/112/console
+
+
+Cc&apos;ing Tobias for comments on some other things I tried which didn&apos;t work, however.
+
+@Tobias, it&apos;s another stanza in the two-versions-of-jdt.annotation saga: while the SDK build succeeds to package both versions by pulling them in from a feature, the gerrit test job fails because the test bundle that needs both versions cannot get them.
+
+What we need:
+- o.e.j.c.tests.compiler runs tests with
+  - o.e.j.annotation_1.1.0 AND
+  - o.e.j.annotation_2.0.0
+  (bundles accessed from within the test by explicit request to equinox)
+
+What seems to be required:
+- o.e.j.c.tests.compiler depends on two empty bundles
+  - A
+  - B - (optionally, to account for invocations without JRE 1.8)
+- A depends on o.e.j.annotation_1.1.0
+- B depends on o.e.j.annotation_2.0.0 (which has BREE 1.8)
+These artifical and empty bundles look messy to me :(
+
+
+What I tried but didn&apos;t work:
+
+take 1:
+=======
+    &lt;groupId&gt;org.eclipse.tycho&lt;/groupId&gt;
+    &lt;artifactId&gt;tycho-surefire-plugin&lt;/artifactId&gt;
+    &lt;version&gt;${tycho.version}&lt;/version&gt;
+    &lt;configuration&gt;
+        &lt;includes&gt;
+            ...
+        &lt;/includes&gt;
+        &lt;dependencies&gt;
+          &lt;dependency&gt;
+            &lt;type&gt;eclipse-plugin&lt;/type&gt;
+            &lt;groupId&gt;org.eclipse.jdt&lt;/groupId&gt;
+            &lt;artifactId&gt;org.eclipse.jdt.annotation&lt;/artifactId&gt;
+            &lt;version&gt;2.0.100&lt;/version&gt;
+          &lt;/dependency&gt;
+        &lt;/dependencies&gt;
+    &lt;/configuration&gt;
+&lt;/plugin&gt;
+
+Answer: Unable to satisfy dependency from tycho-extra-1408404312646 0.0.0.1408404312646 to bundle org.eclipse.jdt.annotation 2.0.100.
+
+(org.eclipse.jdt.annotation 2.0.100-SNAPSHOT is part of the same reactor build)
+
+
+take 2:
+=======
+&lt;plugin&gt;
+  &lt;groupId&gt;org.eclipse.tycho&lt;/groupId&gt;
+  &lt;artifactId&gt;target-platform-configuration&lt;/artifactId&gt;
+  &lt;version&gt;${tycho.version}&lt;/version&gt;
+  &lt;configuration&gt;
+    &lt;dependency-resolution&gt;
+      &lt;extraRequirements&gt;
+        &lt;requirement&gt;
+          &lt;type&gt;eclipse-plugin&lt;/type&gt;
+          &lt;id&gt;org.eclipse.jdt.annotation&lt;/id&gt;
+          &lt;versionRange&gt;[2.0.100,3.0.0)&lt;/versionRange&gt;
+        &lt;/requirement&gt;
+      &lt;/extraRequirements&gt;
+    &lt;/dependency-resolution&gt;
+  &lt;/configuration&gt;
+&lt;/plugin&gt;
+
+Answer: 
+org.apache.maven.InternalErrorException: Internal error: java.lang.RuntimeException: org.osgi.framework.BundleException: Bundle org.eclipse.jdt.core.tests.compiler cannot be resolved
+Resolution errors:
+   Bundle org.eclipse.jdt.core.tests.compiler - Missing Constraint: Require-Bundle: org.eclipse.jdt.annotation; bundle-version=&quot;[1.1.0,2.0.0)&quot;
+   Bundle org.eclipse.jdt.annotation - Missing Constraint: Bundle-RequiredExecutionEnvironment: JavaSE-1.8
+
+After browsing a ton of web pages I found this goody:
+
+   &lt;executionEnvironment&gt;JavaSE-1.8&lt;/executionEnvironment&gt;
+
+added it to the target-platform-configuration.configuration, and now got:
+
+Internal error: java.lang.RuntimeException: org.osgi.framework.BundleException: Bundle org.eclipse.jdt.core.tests.compiler cannot be resolved
+Resolution errors:
+   Bundle org.eclipse.jdt.core.tests.compiler - Missing Constraint: Require-Bundle: org.eclipse.jdt.annotation; bundle-version=&quot;[1.1.0,2.0.0)&quot;
+
+Apparently the extra dependency from the pom kills the dependency from the MANIFEST...
+
+
+
+@Tobias, I&apos;m I making any stupid mistakes? Should tycho be able to handle such dependencies without extra empty bundles? TIA</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2440278</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-08-19 01:57:04 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #2)
+&gt; OK, the ugly approach seems to work, see https://git.eclipse.org/r/#/c/31845/
+&gt; and
+&gt; https://hudson.eclipse.org/platform/job/eclipse.jdt.core-Gerrit/112/console
+
+Honestly, I have no idea what the changes mean let alone commenting on the patch or alternate patches, but I am glad things are working now. So, I will let Tobias comment and we will take it forward.
+
+I have fixed the two failing tests too and we finally have a green gerrit build:
+
+https://hudson.eclipse.org/platform/job/eclipse.jdt.core-Gerrit/113/
+
+Great work Stephan and thanks so much for the quick turn around!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2440934</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-19 12:30:07 -0400</bug_when>
+    <thetext>@Mickael: thanks for your version in https://git.eclipse.org/r/#/c/31897/
+
+From a first glance at those changes I was going to say: &quot;yeah, I&apos;ve already tried 15 variants of that approach, it just doesn&apos;t work&quot;.
+
+Much to my surprise the Hudson job looks very promising.
+
+From memory, the only thing I didn&apos;t try: make *both* dependencies optional (which semantically is wrong, btw :) ).
+
+Would there be any rational explanation, as to *why* this particular variant seems to work??
+
+Even if not, we&apos;ll be happy to just transfer that approach to one more test plugin and see tests running fine without my kludges. I will just go home confirmed in the experience that Maven (Tycho?, p2?) simply doesn&apos;t like my approach to solving problems ;-P   (how does the tool recognize when it&apos;s me???)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2440940</commentid>
+    <comment_count>5</comment_count>
+    <who name="Mickael Istria">mistria</who>
+    <bug_when>2014-08-19 12:47:25 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; From memory, the only thing I didn&apos;t try: make *both* dependencies optional
+&gt; (which semantically is wrong, btw :) ).
+&gt; 
+&gt; Would there be any rational explanation, as to *why* this particular variant
+&gt; seems to work??
+
+My rational (? I&apos;ll let you judge ;) ) explication would be that: p2 and Tycho are messed up by having 2 dependencies on the same bundle, but making both dependencies optional seems to make them less constrained and more tolerant and able to create a classpath/runtime which contains both bundles.
+Then it&apos;s probably some Equinox magic that computes a way to have this situation somehow working.
+
+I&apos;m trying to reproduce the test failure locally. Running the same command directly from the module seems to make test pass. I suspect those test failures show the limit of the hack I&apos;m trying to setup.
+If you have any idea about why wouldn&apos;t a jar that is listed in config.ini/osgi.bundles not be visible in Platform.getBundle, I&apos;m all ears.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2440944</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-19 12:54:43 -0400</bug_when>
+    <thetext>(In reply to Mickael Istria from comment #5)
+&gt; I&apos;m trying to reproduce the test failure locally. Running the same command
+&gt; directly from the module seems to make test pass. I suspect those test
+&gt; failures show the limit of the hack I&apos;m trying to setup.
+&gt; If you have any idea about why wouldn&apos;t a jar that is listed in
+&gt; config.ini/osgi.bundles not be visible in Platform.getBundle, I&apos;m all ears.
+
+Isn&apos;t that the case where the same test classes (from tests.builder) are extended from a different test plugin? 
+For the kludge-&quot;solution&quot; we simply had to copy the magic also into org.eclipse.jdt.apt.pluggable.tests.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2440946</commentid>
+    <comment_count>7</comment_count>
+    <who name="Mickael Istria">mistria</who>
+    <bug_when>2014-08-19 12:56:56 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #6)
+&gt; Isn&apos;t that the case where the same test classes (from tests.builder) are
+&gt; extended from a different test plugin? 
+&gt; For the kludge-&quot;solution&quot; we simply had to copy the magic also into
+&gt; org.eclipse.jdt.apt.pluggable.tests.
+
+Oh yeah, you&apos;re probably right. The optional dependencies may not be loaded transitively (either by p2 or Equinox, I don&apos;t know). I&apos;ll just try the same hack, and if it work, I&apos;ll push it to Gerrit and send a note here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2440979</commentid>
+    <comment_count>8</comment_count>
+    <who name="Mickael Istria">mistria</who>
+    <bug_when>2014-08-19 13:59:21 -0400</bug_when>
+    <thetext>With new change on https://git.eclipse.org/r/#/c/31897/ repeating the &quot;optional&quot; hack to the other bundle, there is now a single test failing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2441011</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-19 15:02:00 -0400</bug_when>
+    <thetext>(In reply to Mickael Istria from comment #8)
+&gt; there is now a single test failing.
+
+That guy is a known trouble maker, nothing related to the annotations bundle.
+
+I&apos;m making final tests, if running the tests inside the IDE still works ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2441018</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-19 15:13:26 -0400</bug_when>
+    <thetext>Released for 4.5 M2 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=90b810df265e79befa5cf6aa97ec5bb891d50b26
+
+Thanks a lot, Mickael!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2441093</commentid>
+    <comment_count>11</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-08-19 23:20:50 -0400</bug_when>
+    <thetext>I don&apos;t understand, I am still seeing failures in the last hudson job!
+
+https://hudson.eclipse.org/platform/job/eclipse.jdt.core-Gerrit/118/</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2441097</commentid>
+    <comment_count>12</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-08-19 23:49:34 -0400</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #11)
+&gt; I don&apos;t understand, I am still seeing failures in the last hudson job!
+&gt; 
+&gt; https://hudson.eclipse.org/platform/job/eclipse.jdt.core-Gerrit/118/
+
+Never mind. Looks like the changeset was not rebased. I have done it now and build started.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2442461</commentid>
+    <comment_count>13</comment_count>
+    <who name="Tobias Oberlies">tobias.oberlies</who>
+    <bug_when>2014-08-22 09:55:21 -0400</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; After browsing a ton of web pages I found this goody:
+&gt; 
+&gt; &lt;executionEnvironment&gt;JavaSE-1.8&lt;/executionEnvironment&gt;
+&gt; 
+&gt; added it to the target-platform-configuration.configuration, and now got:
+&gt; 
+&gt; Internal error: java.lang.RuntimeException: org.osgi.framework.BundleException:
+&gt; Bundle org.eclipse.jdt.core.tests.compiler cannot be resolved
+&gt; Resolution errors:
+&gt; Bundle org.eclipse.jdt.core.tests.compiler - Missing Constraint:
+&gt; Require-Bundle: org.eclipse.jdt.annotation; bundle-version=&quot;[1.1.0,2.0.0)&quot;
+&gt; 
+&gt; Apparently the extra dependency from the pom kills the dependency from the
+&gt; MANIFEST...
+
+This approach really should work because the org.eclipse.jdt.annotation bundles are not singletons. I suppose that there is in fact a bug in Tycho where the result of the p2 resolver (which was already successful in the above case) is transferred to the Equinox resolver (which failed).
+
+Could you set up a new, minimal project (i.e. the test bundle without any content, plus as few additional modules possible that reproduce the issue) and report a Tycho bug for this?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2452953</commentid>
+    <comment_count>14</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-09-17 05:22:19 -0400</bug_when>
+    <thetext>We have starting successful hudson builds with complete test runs.
+
+Verified for 4.5 M2.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2505091</commentid>
+    <comment_count>15</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-13 12:12:08 -0500</bug_when>
+    <thetext>Jay, do you mind backporting this to 4.4.2 so we could use gerrit on the branch, too?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2505303</commentid>
+    <comment_count>16</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-14 00:24:33 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #15)
+&gt; Jay, do you mind backporting this to 4.4.2 so we could use gerrit on the
+&gt; branch, too?
+
+Stephan, given that we are almost at the end of the SR2 cycle and we only have a couple of bugs to be back ported (as of now), I am not too keen on this one.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2505304</commentid>
+    <comment_count>17</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-14 00:25:21 -0500</bug_when>
+    <thetext>(In reply to Jay Arthanareeswaran from comment #16)
+&gt; Stephan, given that we are almost at the end of the SR2 cycle and we only
+&gt; have a couple of bugs to be back ported (as of now), I am not too keen on
+&gt; this one.
+
+If you think otherwise and see some value in it, please let me know.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2505306</commentid>
+    <comment_count>18</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-14 00:30:08 -0500</bug_when>
+    <thetext>(In reply to Jay Arthanareeswaran from comment #17)
+&gt; If you think otherwise and see some value in it, please let me know.
+
+Actually I just saw that your other back porting is proving to be more difficult than required. If this will help you on those fronts, +1 for back porting.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2505810</commentid>
+    <comment_count>19</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-14 16:38:42 -0500</bug_when>
+    <thetext>(In reply to Jay Arthanareeswaran from comment #18)
+&gt; (In reply to Jay Arthanareeswaran from comment #17)
+&gt; &gt; If you think otherwise and see some value in it, please let me know.
+&gt; 
+&gt; Actually I just saw that your other back porting is proving to be more
+&gt; difficult than required. If this will help you on those fronts, +1 for back
+&gt; porting.
+
+Thanks, released to R4_4_maintenance via commit 5c544d5829c234857b2ecc95d6f7ec8a2010bcc3
+
+I mean, it&apos;s not a big deal, but it lets me test one back-ported patch while working on s.t. else :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2507627</commentid>
+    <comment_count>20</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-20 00:14:40 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #19)
+&gt; Thanks, released to R4_4_maintenance via commit
+&gt; 5c544d5829c234857b2ecc95d6f7ec8a2010bcc3
+
+Stephan, did you get it working? I don&apos;t see any gerrit changes that were merged into R4_4_maintenance?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2507807</commentid>
+    <comment_count>21</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-20 07:57:47 -0500</bug_when>
+    <thetext>(In reply to Jay Arthanareeswaran from comment #20)
+&gt; (In reply to Stephan Herrmann from comment #19)
+&gt; &gt; Thanks, released to R4_4_maintenance via commit
+&gt; &gt; 5c544d5829c234857b2ecc95d6f7ec8a2010bcc3
+&gt; 
+&gt; Stephan, did you get it working? I don&apos;t see any gerrit changes that were
+&gt; merged into R4_4_maintenance?
+
+I did use gerrit for testing a few changes for R4_4_maintenance, but in the end some unrelated problems prevented me from pushing via gerrit, see, e.g., bug 445147 comment 9.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

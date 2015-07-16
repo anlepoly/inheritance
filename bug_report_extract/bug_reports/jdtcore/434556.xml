@@ -1,0 +1,503 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>434556</bug_id>
+          
+          <creation_ts>2014-05-09 18:15:00 -0400</creation_ts>
+          <short_desc>Broken class file generated for incorrect annotation usage</short_desc>
+          <delta_ts>2014-09-17 06:06:06 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M2</target_milestone>
+          
+          <blocked>377096</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andrew Clement">aclement</reporter>
+          <assigned_to name="Sasikanth Bharadwaj">saammana</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="63132"
+          type_id="1"
+          status="+"
+          setter="srikanth_sankaran"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2399725</commentid>
+    <comment_count>0</comment_count>
+    <who name="Andrew Clement">aclement</who>
+    <bug_when>2014-05-09 18:15:29 -0400</bug_when>
+    <thetext>This came up in AspectJ bug 377096 but appears to be a JDT issue. Basically, create a project with this source inside:
+
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+
+@Retention(RetentionPolicy.RUNTIME)
+@interface C {
+	int i(); 
+}
+public class A {
+	
+  @C(b={},i=42) 
+  public void xxx() {}
+  
+  public static void main(String []argv) throws Exception {
+	System.out.println(A.class.getDeclaredMethod(&quot;xxx&quot;).getAnnotations()[0]);  
+  }
+}
+
+There is a compile error against &apos;b={}&apos; because b doesn&apos;t exist in the annotation.  However, a class file is generated regardless (that&apos;s ok). The body of the method &apos;xxx()&apos; includes the message but the RuntimeVisibleAnnotation on xxx() is not correct. It breaks javap when attempting to decompile the class. Or to see the problem you can run the class above, which fails with:
+
+Exception in thread &quot;main&quot; java.lang.reflect.GenericSignatureFormatError: Signature Parse error: Expected Field Type Signature
+	Remaining input: i
+	at sun.reflect.generics.parser.SignatureParser.error(SignatureParser.java:124)
+	at sun.reflect.generics.parser.SignatureParser.parseFieldTypeSignature(SignatureParser.java:297)
+	at sun.reflect.generics.parser.SignatureParser.parseFieldTypeSignature(SignatureParser.java:283)
+	at sun.reflect.generics.parser.SignatureParser.parseTypeSignature(SignatureParser.java:485)
+	at sun.reflect.generics.parser.SignatureParser.parseTypeSig(SignatureParser.java:188)
+	at sun.reflect.annotation.AnnotationParser.parseSig(AnnotationParser.java:436)
+	at sun.reflect.annotation.AnnotationParser.parseAnnotation2(AnnotationParser.java:241)
+	at sun.reflect.annotation.AnnotationParser.parseAnnotations2(AnnotationParser.java:120)
+	at sun.reflect.annotation.AnnotationParser.parseAnnotations(AnnotationParser.java:72)
+	at java.lang.reflect.Executable.declaredAnnotations(Executable.java:546)
+	at java.lang.reflect.Executable.getDeclaredAnnotations(Executable.java:539)
+	at java.lang.reflect.Method.getDeclaredAnnotations(Method.java:615)
+	at java.lang.reflect.AccessibleObject.getAnnotations(AccessibleObject.java:206)
+	at A.main(A.java:14)
+
+Although the code does have an error in it, I don&apos;t believe we want to generate illegal class files.
+
+javap produces:
+
+  public void xxx();
+    descriptor: ()V
+    flags: ACC_PUBLIC
+Error: java.lang.reflect.InvocationTargetException
+      RuntimeVisibleAnnotations: length = 0x7
+       00 01 00 12 49 00 13 
+
+
+The first bit of the data is correct &apos;00 01&apos; =&gt; 1 annotation
+The remaining data is for the &apos;i=42&apos; (00 12 49 00 13).
+The data is missing between them for the annotation type itself, something like &apos;00 0d 00 01&apos; =&gt; annotation type A (#0d in constant pool) and there is 1 annotation value.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2399741</commentid>
+    <comment_count>1</comment_count>
+    <who name="Andrew Clement">aclement</who>
+    <bug_when>2014-05-09 20:54:56 -0400</bug_when>
+    <thetext>Appears to be this code in ClassFile.generateAnnotation():
+
+if (methodBinding == null) {
+  this.contentsOffset = startingContentsOffset;
+
+The check causes us to &apos;jump back&apos; in the byte data we are creating and then produce the data for the second attribute value (which is valid) over the top of where we just created the attribute type reference and attribute pair count.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2400000</commentid>
+    <comment_count>2</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-05-12 02:00:22 -0400</bug_when>
+    <thetext>Sasi: thanks for taking a look.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2400540</commentid>
+    <comment_count>3</comment_count>
+      <attachid>242991</attachid>
+    <who name="Andrew Clement">aclement</who>
+    <bug_when>2014-05-12 15:16:43 -0400</bug_when>
+    <thetext>Created attachment 242991
+patch for ClassFile that fixes this
+
+This is a first cut at a patch to address it... Basically it skips bad annotation values, like the original code did, but produces a valid annotation in the scenario this bug uncovered. I have not run the entire jdt core test suite on it though...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2419228</commentid>
+    <comment_count>4</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-06-23 07:46:46 -0400</bug_when>
+    <thetext>The patch solves the issue reported. However, there is one more scenario in which the generated class file results in an NPE when run.
+
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+
+@Retention(RetentionPolicy.RUNTIME)
+@interface C {
+	int i();
+	int b();
+}
+public class A {
+  @C(b={},i=42) 
+  public void xxx() {}
+  public static void main(String []argv) throws Exception {
+	System.out.println(A.class.getDeclaredMethod(&quot;xxx&quot;).getAnnotations()[0]);  
+  }
+}
+
+This is the stacktrace
+
+Exception in thread &quot;main&quot; java.lang.NullPointerException
+	at sun.reflect.annotation.AnnotationParser.parseArray(AnnotationParser.java:532)
+	at sun.reflect.annotation.AnnotationParser.parseMemberValue(AnnotationParser.java:355)
+	at sun.reflect.annotation.AnnotationParser.parseAnnotation2(AnnotationParser.java:286)
+	at sun.reflect.annotation.AnnotationParser.parseAnnotations2(AnnotationParser.java:120)
+	at sun.reflect.annotation.AnnotationParser.parseAnnotations(AnnotationParser.java:72)
+	at java.lang.reflect.Executable.declaredAnnotations(Executable.java:546)
+	at java.lang.reflect.Executable.getDeclaredAnnotations(Executable.java:539)
+	at java.lang.reflect.Method.getDeclaredAnnotations(Method.java:615)
+	at java.lang.reflect.AccessibleObject.getAnnotations(AccessibleObject.java:206)
+	at bugs.bug434556.A.main(A.java:16)
+	
+Investigating further to see how to fix this</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435437</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-08-05 02:04:04 -0400</bug_when>
+    <thetext>(In reply to Sasikanth Bharadwaj from comment #4)
+&gt; The patch solves the issue reported. However, there is one more scenario in
+&gt; which the generated class file results in an NPE when run.
+
+Sasi, is the NPE introduced by the fix by Andy ? If not and if it is an
+existing problem,
+
+(1) Please provide a test along with the existing patch for M1
+(2) Raise a follow up bug for the issue below.
+
+Thanks!
+&gt; 
+&gt; import java.lang.annotation.Retention;
+&gt; import java.lang.annotation.RetentionPolicy;
+&gt; 
+&gt; @Retention(RetentionPolicy.RUNTIME)
+&gt; @interface C {
+&gt; 	int i();
+&gt; 	int b();
+&gt; }
+&gt; public class A {
+&gt;   @C(b={},i=42) 
+&gt;   public void xxx() {}
+&gt;   public static void main(String []argv) throws Exception {
+&gt; 	System.out.println(A.class.getDeclaredMethod(&quot;xxx&quot;).getAnnotations()[0]);  
+&gt;   }
+&gt; }
+&gt; 
+&gt; This is the stacktrace
+&gt; 
+&gt; Exception in thread &quot;main&quot; java.lang.NullPointerException
+&gt; 	at
+&gt; sun.reflect.annotation.AnnotationParser.parseArray(AnnotationParser.java:532)
+&gt; 	at
+&gt; sun.reflect.annotation.AnnotationParser.parseMemberValue(AnnotationParser.
+&gt; java:355)
+&gt; 	at
+&gt; sun.reflect.annotation.AnnotationParser.parseAnnotation2(AnnotationParser.
+&gt; java:286)
+&gt; 	at
+&gt; sun.reflect.annotation.AnnotationParser.parseAnnotations2(AnnotationParser.
+&gt; java:120)
+&gt; 	at
+&gt; sun.reflect.annotation.AnnotationParser.parseAnnotations(AnnotationParser.
+&gt; java:72)
+&gt; 	at java.lang.reflect.Executable.declaredAnnotations(Executable.java:546)
+&gt; 	at java.lang.reflect.Executable.getDeclaredAnnotations(Executable.java:539)
+&gt; 	at java.lang.reflect.Method.getDeclaredAnnotations(Method.java:615)
+&gt; 	at
+&gt; java.lang.reflect.AccessibleObject.getAnnotations(AccessibleObject.java:206)
+&gt; 	at bugs.bug434556.A.main(A.java:16)
+&gt; 	
+&gt; Investigating further to see how to fix this</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435585</commentid>
+    <comment_count>6</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-08-05 06:02:49 -0400</bug_when>
+    <thetext>My contribution for this defect fix complies with http://www.eclipse.org/legal/CoO.php</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435588</commentid>
+    <comment_count>7</comment_count>
+      <attachid>245716</attachid>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-08-05 06:05:07 -0400</bug_when>
+    <thetext>Created attachment 245716
+Modified patch
+
+Same changes with small modification to address test failures and added jUnit test</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435592</commentid>
+    <comment_count>8</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-08-05 06:15:01 -0400</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; (In reply to Sasikanth Bharadwaj from comment #4)
+&gt; &gt; The patch solves the issue reported. However, there is one more scenario in
+&gt; &gt; which the generated class file results in an NPE when run.
+&gt; 
+&gt; Sasi, is the NPE introduced by the fix by Andy ? If not and if it is an
+&gt; existing problem,
+&gt; 
+&gt; (1) Please provide a test along with the existing patch for M1
+&gt; (2) Raise a follow up bug for the issue below.
+&gt; 
+&gt; Thanks!
+The NPE already exists with out this patch. Created bug 441151 for this case.
+Attached new patch which is essentially the same changes but with small modification to address test failure and additional jUnit test
+This is the change from original patch that needed modification
+@@ -2346,17 +2349,21 @@ public class ClassFile implements TypeConstants, TypeIds {
+ 					this.contents[this.contentsOffset++] = (byte) elementNameIndex;
+ 					MethodBinding methodBinding = memberValuePair.binding;
+ 					if (methodBinding == null) {
+-						this.contentsOffset = startingContentsOffset;
++						this.contentsOffset = resetPosition;
+ 					} else {
+ 						try {
+ 							generateElementValue(memberValuePair.value, methodBinding.returnType, startingContentsOffset);
++							memberValuePairsCount++;
++							resetPosition = this.contentsOffset;
+
+The last two lines had to be moved to address failure in AnnotationTest.test427367
+
+All jdt tests pass with this patch, Srikanth, please review</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2436053</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-08-06 00:59:38 -0400</bug_when>
+    <thetext>Will review/release next week.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2437417</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-08-11 02:32:25 -0400</bug_when>
+    <thetext>Patch looks good. Thanks Andy and Sasi.
+
+Released here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=a32a1b73bbb9c503cfac6e2969a20ff96f762f1b</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2452835</commentid>
+    <comment_count>11</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-09-16 22:27:31 -0400</bug_when>
+    <thetext>Verified for Mars 4.5M2 using I20140915-2000 build.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>242991</attachid>
+            <date>2014-05-12 15:16:00 -0400</date>
+            <delta_ts>2014-05-12 15:16:43 -0400</delta_ts>
+            <desc>patch for ClassFile that fixes this</desc>
+            <filename>pr434556.txt</filename>
+            <type>text/plain</type>
+            <size>2994</size>
+            <attacher name="Andrew Clement">aclement</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9DbGFzc0ZpbGUuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+L2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9DbGFzc0ZpbGUuamF2
+YQppbmRleCA1ODNlZWFhLi5kZTIxN2Q1IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvQ2xhc3NGaWxlLmph
+dmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2lu
+dGVybmFsL2NvbXBpbGVyL0NsYXNzRmlsZS5qYXZhCkBAIC0yMCw2ICsyMCw3IEBACiAgKiAgICAg
+ICAgICAgICAgICAgICAgICAgICAgQnVnIDQxNTM5OSAtIFsxLjhdW2NvbXBpbGVyXSBUeXBlIGFu
+bm90YXRpb25zIG9uIGNvbnN0cnVjdG9yIHJlc3VsdHMgZHJvcHBlZCBieSB0aGUgY29kZSBnZW5l
+cmF0b3IKICAqICAgICAgICAgICAgICAgICAgICAgICAgICBCdWcgNDE1NDcwIC0gWzEuOF1bY29t
+cGlsZXJdIFR5cGUgYW5ub3RhdGlvbnMgb24gY2xhc3MgZGVjbGFyYXRpb24gZ28gdmFuaXNoaW5n
+CiAgKiAgICAgICAgICAgICAgICAgICAgICAgICAgQnVnIDQwNTEwNCAtIFsxLjhdW2NvbXBpbGVy
+XVtjb2RlZ2VuXSBJbXBsZW1lbnQgc3VwcG9ydCBmb3Igc2VyaWFsaXplYWJsZSBsYW1iZGFzCisg
+KiAgICAgICAgICAgICAgICAgICAgICAgICAgQnVnIDQzNDU1NiAtIEJyb2tlbiBjbGFzcyBmaWxl
+IGdlbmVyYXRlZCBmb3IgaW5jb3JyZWN0IGFubm90YXRpb24gdXNhZ2UKICAqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqLwogcGFja2FnZSBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXI7CiAK
+QEAgLTIzMzMsOSArMjMzNCwxMSBAQCBwdWJsaWMgY2xhc3MgQ2xhc3NGaWxlIGltcGxlbWVudHMg
+VHlwZUNvbnN0YW50cywgVHlwZUlkcyB7CiAJCQlOb3JtYWxBbm5vdGF0aW9uIG5vcm1hbEFubm90
+YXRpb24gPSAoTm9ybWFsQW5ub3RhdGlvbikgYW5ub3RhdGlvbjsKIAkJCU1lbWJlclZhbHVlUGFp
+cltdIG1lbWJlclZhbHVlUGFpcnMgPSBub3JtYWxBbm5vdGF0aW9uLm1lbWJlclZhbHVlUGFpcnM7
+CiAJCQlpZiAobWVtYmVyVmFsdWVQYWlycyAhPSBudWxsKSB7CisJCQkJaW50IG1lbWJlclZhbHVl
+UGFpcnNDb3VudCA9IDA7CisJCQkJaW50IG1lbWJlclZhbHVlUGFpcnNMZW5ndGhQb3NpdGlvbiA9
+IHRoaXMuY29udGVudHNPZmZzZXQ7CisJCQkJdGhpcy5jb250ZW50c09mZnNldCs9MjsgLy8gbGVh
+dmUgc3BhY2UgdG8gZmlsbCBpbiB0aGUgcGFpciBjb3VudCBsYXRlcgorCQkJCWludCByZXNldFBv
+c2l0aW9uID0gdGhpcy5jb250ZW50c09mZnNldDsKIAkJCQlmaW5hbCBpbnQgbWVtYmVyVmFsdWVQ
+YWlyc0xlbmd0aCA9IG1lbWJlclZhbHVlUGFpcnMubGVuZ3RoOwotCQkJCXRoaXMuY29udGVudHNb
+dGhpcy5jb250ZW50c09mZnNldCsrXSA9IChieXRlKSAobWVtYmVyVmFsdWVQYWlyc0xlbmd0aCA+
+PiA4KTsKLQkJCQl0aGlzLmNvbnRlbnRzW3RoaXMuY29udGVudHNPZmZzZXQrK10gPSAoYnl0ZSkg
+bWVtYmVyVmFsdWVQYWlyc0xlbmd0aDsKIAkJCQlmb3IgKGludCBpID0gMDsgaSA8IG1lbWJlclZh
+bHVlUGFpcnNMZW5ndGg7IGkrKykgewogCQkJCQlNZW1iZXJWYWx1ZVBhaXIgbWVtYmVyVmFsdWVQ
+YWlyID0gbWVtYmVyVmFsdWVQYWlyc1tpXTsKIAkJCQkJaWYgKHRoaXMuY29udGVudHNPZmZzZXQg
+KyAyID49IHRoaXMuY29udGVudHMubGVuZ3RoKSB7CkBAIC0yMzQ2LDE3ICsyMzQ5LDIxIEBAIHB1
+YmxpYyBjbGFzcyBDbGFzc0ZpbGUgaW1wbGVtZW50cyBUeXBlQ29uc3RhbnRzLCBUeXBlSWRzIHsK
+IAkJCQkJdGhpcy5jb250ZW50c1t0aGlzLmNvbnRlbnRzT2Zmc2V0KytdID0gKGJ5dGUpIGVsZW1l
+bnROYW1lSW5kZXg7CiAJCQkJCU1ldGhvZEJpbmRpbmcgbWV0aG9kQmluZGluZyA9IG1lbWJlclZh
+bHVlUGFpci5iaW5kaW5nOwogCQkJCQlpZiAobWV0aG9kQmluZGluZyA9PSBudWxsKSB7Ci0JCQkJ
+CQl0aGlzLmNvbnRlbnRzT2Zmc2V0ID0gc3RhcnRpbmdDb250ZW50c09mZnNldDsKKwkJCQkJCXRo
+aXMuY29udGVudHNPZmZzZXQgPSByZXNldFBvc2l0aW9uOwogCQkJCQl9IGVsc2UgewogCQkJCQkJ
+dHJ5IHsKIAkJCQkJCQlnZW5lcmF0ZUVsZW1lbnRWYWx1ZShtZW1iZXJWYWx1ZVBhaXIudmFsdWUs
+IG1ldGhvZEJpbmRpbmcucmV0dXJuVHlwZSwgc3RhcnRpbmdDb250ZW50c09mZnNldCk7CisJCQkJ
+CQkJbWVtYmVyVmFsdWVQYWlyc0NvdW50Kys7CisJCQkJCQkJcmVzZXRQb3NpdGlvbiA9IHRoaXMu
+Y29udGVudHNPZmZzZXQ7CiAJCQkJCQl9IGNhdGNoKENsYXNzQ2FzdEV4Y2VwdGlvbiBlKSB7Ci0J
+CQkJCQkJdGhpcy5jb250ZW50c09mZnNldCA9IHN0YXJ0aW5nQ29udGVudHNPZmZzZXQ7CisJCQkJ
+CQkJdGhpcy5jb250ZW50c09mZnNldCA9IHJlc2V0UG9zaXRpb247CiAJCQkJCQl9IGNhdGNoKFNo
+b3VsZE5vdEltcGxlbWVudCBlKSB7Ci0JCQkJCQkJdGhpcy5jb250ZW50c09mZnNldCA9IHN0YXJ0
+aW5nQ29udGVudHNPZmZzZXQ7CisJCQkJCQkJdGhpcy5jb250ZW50c09mZnNldCA9IHJlc2V0UG9z
+aXRpb247CiAJCQkJCQl9CiAJCQkJCX0KIAkJCQl9CisJCQkJdGhpcy5jb250ZW50c1ttZW1iZXJW
+YWx1ZVBhaXJzTGVuZ3RoUG9zaXRpb24rK10gPSAoYnl0ZSkgKG1lbWJlclZhbHVlUGFpcnNDb3Vu
+dCA+PiA4KTsKKwkJCQl0aGlzLmNvbnRlbnRzW21lbWJlclZhbHVlUGFpcnNMZW5ndGhQb3NpdGlv
+bisrXSA9IChieXRlKSBtZW1iZXJWYWx1ZVBhaXJzQ291bnQ7CiAJCQl9IGVsc2UgewogCQkJCXRo
+aXMuY29udGVudHNbdGhpcy5jb250ZW50c09mZnNldCsrXSA9IDA7CiAJCQkJdGhpcy5jb250ZW50
+c1t0aGlzLmNvbnRlbnRzT2Zmc2V0KytdID0gMDsK
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>245716</attachid>
+            <date>2014-08-05 06:05:00 -0400</date>
+            <delta_ts>2014-08-05 06:05:07 -0400</delta_ts>
+            <desc>Modified patch</desc>
+            <filename>Fix-and-test-for-bug-434556.patch</filename>
+            <type>text/plain</type>
+            <size>5454</size>
+            <attacher name="Sasikanth Bharadwaj">saammana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0Fubm90YXRpb25UZXN0
+LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlw
+c2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9Bbm5vdGF0aW9uVGVzdC5qYXZh
+CmluZGV4IDVlYzgyYTUuLmFmY2UyMjkgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+LnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9y
+ZWdyZXNzaW9uL0Fubm90YXRpb25UZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUu
+dGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3Jl
+Z3Jlc3Npb24vQW5ub3RhdGlvblRlc3QuamF2YQpAQCAtMTExNzQsNCArMTExNzQsNTcgQEAKIAkJ
+IlRoZSBhbm5vdGF0aW9uIEBMViBpcyBkaXNhbGxvd2VkIGZvciB0aGlzIGxvY2F0aW9uXG4iICsK
+IAkJIi0tLS0tLS0tLS1cbiIpOwogfQorLy8gaHR0cHM6Ly9idWdzLmVjbGlwc2Uub3JnL2J1Z3Mv
+c2hvd19idWcuY2dpP2lkPTQzNDU1NgorcHVibGljIHZvaWQgdGVzdDQzNDU1NigpIHRocm93cyBF
+eGNlcHRpb24geworCWlmICh0aGlzLmNvbXBsaWFuY2VMZXZlbCA8IENsYXNzRmlsZUNvbnN0YW50
+cy5KREsxXzUpIHsKKwkJcmV0dXJuOworCX0KKwl0aGlzLnJ1bk5lZ2F0aXZlVGVzdCgKKwkJbmV3
+IFN0cmluZ1tdIHsKKwkJCSJBLmphdmEiLAorCQkJImltcG9ydCBqYXZhLmxhbmcuYW5ub3RhdGlv
+bi5SZXRlbnRpb247XG4iICsgCisJCQkiaW1wb3J0IGphdmEubGFuZy5hbm5vdGF0aW9uLlJldGVu
+dGlvblBvbGljeTtcbiIgKyAKKwkJCSJAUmV0ZW50aW9uKFJldGVudGlvblBvbGljeS5SVU5USU1F
+KVxuIiArIAorCQkJIkBpbnRlcmZhY2UgQyB7XG4iICsgCisJCQkiCWludCBpKCk7XG4iICsgCisJ
+CQkifVxuIiArIAorCQkJInB1YmxpYyBjbGFzcyBBIHtcbiIgKyAKKwkJCSIgIEBDKGI9e30saT00
+MilcbiIgKyAKKwkJCSIgIHB1YmxpYyB2b2lkIHh4eCgpIHt9XG4iICsgCisJCQkiICBwdWJsaWMg
+c3RhdGljIHZvaWQgbWFpbihTdHJpbmcgW11hcmd2KSB0aHJvd3MgRXhjZXB0aW9uIHtcbiIgKyAK
+KwkJCSIJU3lzdGVtLm91dC5wcmludGxuKEEuY2xhc3MuZ2V0RGVjbGFyZWRNZXRob2QoXCJ4eHhc
+IikuZ2V0QW5ub3RhdGlvbnMoKVswXSk7ICBcbiIgKyAKKwkJCSIgIH1cbiIgKyAKKwkJCSJ9Igor
+CQl9LAorCQkiLS0tLS0tLS0tLVxuIiArIAorCQkiMS4gRVJST1IgaW4gQS5qYXZhIChhdCBsaW5l
+IDgpXG4iICsgCisJCSIJQEMoYj17fSxpPTQyKVxuIiArIAorCQkiCSAgIF5cbiIgKyAKKwkJIlRo
+ZSBhdHRyaWJ1dGUgYiBpcyB1bmRlZmluZWQgZm9yIHRoZSBhbm5vdGF0aW9uIHR5cGUgQ1xuIiAr
+IAorCQkiLS0tLS0tLS0tLVxuIiwKKwkJbnVsbCwKKwkJdHJ1ZSwKKwkJbnVsbCwKKwkJdHJ1ZSwg
+Ly8gZ2VuZXJhdGUgb3V0cHV0CisJCWZhbHNlLAorCQlmYWxzZSk7CisKKwlTdHJpbmcgZXhwZWN0
+ZWRPdXRwdXQgPSAiQEMoaT0oaW50KSA0MilcbiIgKyAKKwkJCSIgIHB1YmxpYyB2b2lkIHh4eCgp
+O1xuIiArIAorCQkJIiAgICAgMCAgbmV3IGphdmEubGFuZy5FcnJvciBbMjBdXG4iICsgCisJCQki
+ICAgICAzICBkdXBcbiIgKyAKKwkJCSIgICAgIDQgIGxkYyA8U3RyaW5nIFwiVW5yZXNvbHZlZCBj
+b21waWxhdGlvbiBwcm9ibGVtOiBcXG5cXHRUaGUgYXR0cmlidXRlIGIgaXMgdW5kZWZpbmVkIGZv
+ciB0aGUgYW5ub3RhdGlvbiB0eXBlIENcXG5cIj4gWzIyXVxuIiArIAorCQkJIiAgICAgNiAgaW52
+b2tlc3BlY2lhbCBqYXZhLmxhbmcuRXJyb3IoamF2YS5sYW5nLlN0cmluZykgWzI0XVxuIiArIAor
+CQkJIiAgICAgOSAgYXRocm93XG4iICsgCisJCQkiICAgICAgTGluZSBudW1iZXJzOlxuIiArIAor
+CQkJIiAgICAgICAgW3BjOiAwLCBsaW5lOiA4XVxuIiArIAorCQkJIiAgICAgIExvY2FsIHZhcmlh
+YmxlIHRhYmxlOlxuIiArIAorCQkJIiAgICAgICAgW3BjOiAwLCBwYzogMTBdIGxvY2FsOiB0aGlz
+IGluZGV4OiAwIHR5cGU6IEFcbiIgKyAKKwkJCSIgIFxuIjsKKwl0cnkgeworCQljaGVja0Rpc2Fz
+c2VtYmxlZENsYXNzRmlsZShPVVRQVVRfRElSICsgRmlsZS5zZXBhcmF0b3IgICsiQS5jbGFzcyIs
+ICJBIiwgZXhwZWN0ZWRPdXRwdXQsIENsYXNzRmlsZUJ5dGVzRGlzYXNzZW1ibGVyLkRFVEFJTEVE
+KTsKKwl9IGNhdGNoKG9yZy5lY2xpcHNlLmpkdC5jb3JlLnV0aWwuQ2xhc3NGb3JtYXRFeGNlcHRp
+b24gY2ZlKSB7CisJCWZhaWwoIkVycm9yIHJlYWRpbmcgY2xhc3NmaWxlIik7CisJfQorfQogfQpk
+aWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0
+L2ludGVybmFsL2NvbXBpbGVyL0NsYXNzRmlsZS5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUv
+Y29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL0NsYXNzRmlsZS5qYXZh
+CmluZGV4IDU3NDI2NzAuLjI0YTIyNTMgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+L2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9DbGFzc0ZpbGUuamF2
+YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50
+ZXJuYWwvY29tcGlsZXIvQ2xhc3NGaWxlLmphdmEKQEAgLTIwLDYgKzIwLDcgQEAKICAqICAgICAg
+ICAgICAgICAgICAgICAgICAgICBCdWcgNDE1Mzk5IC0gWzEuOF1bY29tcGlsZXJdIFR5cGUgYW5u
+b3RhdGlvbnMgb24gY29uc3RydWN0b3IgcmVzdWx0cyBkcm9wcGVkIGJ5IHRoZSBjb2RlIGdlbmVy
+YXRvcgogICogICAgICAgICAgICAgICAgICAgICAgICAgIEJ1ZyA0MTU0NzAgLSBbMS44XVtjb21w
+aWxlcl0gVHlwZSBhbm5vdGF0aW9ucyBvbiBjbGFzcyBkZWNsYXJhdGlvbiBnbyB2YW5pc2hpbmcK
+ICAqICAgICAgICAgICAgICAgICAgICAgICAgICBCdWcgNDA1MTA0IC0gWzEuOF1bY29tcGlsZXJd
+W2NvZGVnZW5dIEltcGxlbWVudCBzdXBwb3J0IGZvciBzZXJpYWxpemVhYmxlIGxhbWJkYXMKKyAq
+ICAgICAgICAgICAgICAgICAgICAgICAgICBCdWcgNDM0NTU2IC0gQnJva2VuIGNsYXNzIGZpbGUg
+Z2VuZXJhdGVkIGZvciBpbmNvcnJlY3QgYW5ub3RhdGlvbiB1c2FnZQogICogICAgIFN0ZXBoYW4g
+SGVycm1hbm4gLSBDb250cmlidXRpb24gZm9yCiAgKgkJCQkJCQlCdWcgNDM4NDU4IC0gWzEuOF1b
+bnVsbF0gY2xlYW4gdXAgaGFuZGxpbmcgb2YgbnVsbCB0eXBlIGFubm90YXRpb25zIHdydCB0eXBl
+IHZhcmlhYmxlcwogICoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKiovCkBAIC0yMzI0LDkgKzIzMjUsMTEg
+QEAKIAkJCU1lbWJlclZhbHVlUGFpcltdIG1lbWJlclZhbHVlUGFpcnMgPSBub3JtYWxBbm5vdGF0
+aW9uLm1lbWJlclZhbHVlUGFpcnM7CiAJCQlpbnQgbWVtYmVyVmFsdWVQYWlyT2Zmc2V0ID0gdGhp
+cy5jb250ZW50c09mZnNldDsKIAkJCWlmIChtZW1iZXJWYWx1ZVBhaXJzICE9IG51bGwpIHsKKwkJ
+CQlpbnQgbWVtYmVyVmFsdWVQYWlyc0NvdW50ID0gMDsKKwkJCQlpbnQgbWVtYmVyVmFsdWVQYWly
+c0xlbmd0aFBvc2l0aW9uID0gdGhpcy5jb250ZW50c09mZnNldDsKKwkJCQl0aGlzLmNvbnRlbnRz
+T2Zmc2V0Kz0yOyAvLyBsZWF2ZSBzcGFjZSB0byBmaWxsIGluIHRoZSBwYWlyIGNvdW50IGxhdGVy
+CisJCQkJaW50IHJlc2V0UG9zaXRpb24gPSB0aGlzLmNvbnRlbnRzT2Zmc2V0OwogCQkJCWZpbmFs
+IGludCBtZW1iZXJWYWx1ZVBhaXJzTGVuZ3RoID0gbWVtYmVyVmFsdWVQYWlycy5sZW5ndGg7Ci0J
+CQkJdGhpcy5jb250ZW50c1t0aGlzLmNvbnRlbnRzT2Zmc2V0KytdID0gKGJ5dGUpIChtZW1iZXJW
+YWx1ZVBhaXJzTGVuZ3RoID4+IDgpOwotCQkJCXRoaXMuY29udGVudHNbdGhpcy5jb250ZW50c09m
+ZnNldCsrXSA9IChieXRlKSBtZW1iZXJWYWx1ZVBhaXJzTGVuZ3RoOwogCQkJCWxvb3A6IGZvciAo
+aW50IGkgPSAwOyBpIDwgbWVtYmVyVmFsdWVQYWlyc0xlbmd0aDsgaSsrKSB7CiAJCQkJCU1lbWJl
+clZhbHVlUGFpciBtZW1iZXJWYWx1ZVBhaXIgPSBtZW1iZXJWYWx1ZVBhaXJzW2ldOwogCQkJCQlp
+ZiAodGhpcy5jb250ZW50c09mZnNldCArIDIgPj0gdGhpcy5jb250ZW50cy5sZW5ndGgpIHsKQEAg
+LTIzMzcsNyArMjM0MCw3IEBACiAJCQkJCXRoaXMuY29udGVudHNbdGhpcy5jb250ZW50c09mZnNl
+dCsrXSA9IChieXRlKSBlbGVtZW50TmFtZUluZGV4OwogCQkJCQlNZXRob2RCaW5kaW5nIG1ldGhv
+ZEJpbmRpbmcgPSBtZW1iZXJWYWx1ZVBhaXIuYmluZGluZzsKIAkJCQkJaWYgKG1ldGhvZEJpbmRp
+bmcgPT0gbnVsbCkgewotCQkJCQkJdGhpcy5jb250ZW50c09mZnNldCA9IHN0YXJ0aW5nQ29udGVu
+dHNPZmZzZXQ7CisJCQkJCQl0aGlzLmNvbnRlbnRzT2Zmc2V0ID0gcmVzZXRQb3NpdGlvbjsKIAkJ
+CQkJfSBlbHNlIHsKIAkJCQkJCXRyeSB7CiAJCQkJCQkJZ2VuZXJhdGVFbGVtZW50VmFsdWUobWVt
+YmVyVmFsdWVQYWlyLnZhbHVlLCBtZXRob2RCaW5kaW5nLnJldHVyblR5cGUsIG1lbWJlclZhbHVl
+UGFpck9mZnNldCk7CkBAIC0yMzQ3LDEzICsyMzUwLDE3IEBACiAJCQkJCQkJCXRoaXMuY29udGVu
+dHNbdGhpcy5jb250ZW50c09mZnNldCsrXSA9IDA7CiAJCQkJCQkJCWJyZWFrIGxvb3A7CiAJCQkJ
+CQkJfQorCQkJCQkJCW1lbWJlclZhbHVlUGFpcnNDb3VudCsrOworCQkJCQkJCXJlc2V0UG9zaXRp
+b24gPSB0aGlzLmNvbnRlbnRzT2Zmc2V0OwogCQkJCQkJfSBjYXRjaChDbGFzc0Nhc3RFeGNlcHRp
+b24gZSkgewotCQkJCQkJCXRoaXMuY29udGVudHNPZmZzZXQgPSBzdGFydGluZ0NvbnRlbnRzT2Zm
+c2V0OworCQkJCQkJCXRoaXMuY29udGVudHNPZmZzZXQgPSByZXNldFBvc2l0aW9uOwogCQkJCQkJ
+fSBjYXRjaChTaG91bGROb3RJbXBsZW1lbnQgZSkgewotCQkJCQkJCXRoaXMuY29udGVudHNPZmZz
+ZXQgPSBzdGFydGluZ0NvbnRlbnRzT2Zmc2V0OworCQkJCQkJCXRoaXMuY29udGVudHNPZmZzZXQg
+PSByZXNldFBvc2l0aW9uOwogCQkJCQkJfQogCQkJCQl9CiAJCQkJfQorCQkJCXRoaXMuY29udGVu
+dHNbbWVtYmVyVmFsdWVQYWlyc0xlbmd0aFBvc2l0aW9uKytdID0gKGJ5dGUpIChtZW1iZXJWYWx1
+ZVBhaXJzQ291bnQgPj4gOCk7CisJCQkJdGhpcy5jb250ZW50c1ttZW1iZXJWYWx1ZVBhaXJzTGVu
+Z3RoUG9zaXRpb24rK10gPSAoYnl0ZSkgbWVtYmVyVmFsdWVQYWlyc0NvdW50OwogCQkJfSBlbHNl
+IHsKIAkJCQl0aGlzLmNvbnRlbnRzW3RoaXMuY29udGVudHNPZmZzZXQrK10gPSAwOwogCQkJCXRo
+aXMuY29udGVudHNbdGhpcy5jb250ZW50c09mZnNldCsrXSA9IDA7
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

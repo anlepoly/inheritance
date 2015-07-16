@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>394768</bug_id>
+          
+          <creation_ts>2012-11-21 07:36:00 -0500</creation_ts>
+          <short_desc>[compiler][resource] Incorrect resource leak warning when creating stream in conditional</short_desc>
+          <delta_ts>2012-12-12 01:39:27 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.2.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M4</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Egbert van der Wal">eclipse</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>anchakrk</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2186090</commentid>
+    <comment_count>0</comment_count>
+    <who name="Egbert van der Wal">eclipse</who>
+    <bug_when>2012-11-21 07:36:44 -0500</bug_when>
+    <thetext>I&apos;m trying to read a file from either the filesystem (using FileInputStream) or from the classpath (using getResourceAsStream), depending on whether a file in the filesystem with the given name exists or not.
+
+The following method reproduces the problem:
+
+    public void readFile(String path) throws Exception
+    {
+        InputStream stream = null;
+        File file = new File(path);
+        
+        if (file.exists())
+            stream = new FileInputStream(path);
+        else
+            stream = getClass().getClassLoader().getResourceAsStream(path);
+        
+        if (stream == null)
+            return;
+
+        try
+        {
+            // Use the opened stream here
+            stream.read();            
+        }
+        finally
+        {    
+            stream.close();
+        }
+    }
+
+The warning appears on the &apos;new FileInputStream(path)&apos; statement.
+
+I found some &apos;fixes&apos;, but the warning itself does not seem to make sense. If I comment out the &apos;else&apos; clause after the if (file.exists()), the warning goes away. If I surround the getResourceAsStream statement in try/catch, with a &apos;catch&apos; clause closing the stream, the warning also goes away. If i surround the entire method with a try/finally clause, the warning also goes away.
+
+I think it does not make sense:
+- the else clause is only executed when the first condition fails, meaning the stream is not even opened. Therefore, it should not generate a warning on the stream opened in the if-clause.
+- the getResourceAsStream does not declare that it throws exceptions, so surrounding it with try/catch is superfluous altogether
+- as far as I can see there is no exit path possible in which the stream does not get closed; the fact that the warning goes away when commenting out the else-clause seems to confirms idea that the warning is invalid.
+
+My specific version of Eclipse:
+Version: Juno Service Release 1
+Build id: 20120920-0800</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2186461</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-11-21 18:51:03 -0500</bug_when>
+    <thetext>I can reproduce in HEAD. 
+Thanks for the analysis.
+I&apos;ll take a look.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2186624</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-11-22 08:24:39 -0500</bug_when>
+    <thetext>Here is what happens:
+
+For the sequential case we track each assignment to a resource variable as a new resource (using a fresh FakedTrackingVariable).
+
+The assignment from variables to trackers is not flow-sensitive. This caused that the analysis interpreted the close() call as relating to the second assigned resource only, believing the first assigned resource is never closed.
+
+I have a fix under test that:
+- introduces a distinction between a variable that has nullStatus &quot;UNKNOWN&quot; from a variable that is not in scope for a given flow (no null info recorded)
+- avoid recording null status changes for a variable in a parallel universe (recognized by the former change)
+- at the end of the if statement merge the tracked information for both resources if both relate to the same original variable</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2186843</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-11-22 17:28:51 -0500</bug_when>
+    <thetext>Junit tests are happy, field test compiling the Eclipse SDK with all resource warnings enabled showed that my fix also avoids two bogus warings in org.eclipse.jdt.ui.JavadocContentAccess, which has the following block:
+
+		Reader reader;
+		if (isHTML)
+			reader= getHTMLContentReader(overridden, false, useAttachedJavadoc);
+		else
+			reader= getContentReader(overridden, false);
+		if (reader != null)
+			return reader;
+
+Before patch: two warnings(bogus) , with patch: no warning (OK).
+
+I&apos;ll release the fix after final clean-up.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2186858</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-11-22 18:41:34 -0500</bug_when>
+    <thetext>Released for 4.3 M4 via commit 480afa83136fc7a5f96f43ea1ef970428ab72813.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2187849</commentid>
+    <comment_count>5</comment_count>
+    <who name="Egbert van der Wal">eclipse</who>
+    <bug_when>2012-11-27 04:54:15 -0500</bug_when>
+    <thetext>Great work, thanks for the speedy fix. I&apos;ll see if I can check it out shortly.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2193408</commentid>
+    <comment_count>6</comment_count>
+    <who name="ANIRBAN CHAKRABORTY">anchakrk</who>
+    <bug_when>2012-12-12 01:16:50 -0500</bug_when>
+    <thetext>Hello,
+I verified, and agree that the warning issue is fixed.
+STATUS:FIXED
+Thanks
+Anirban</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2193412</commentid>
+    <comment_count>7</comment_count>
+    <who name="ANIRBAN CHAKRABORTY">anchakrk</who>
+    <bug_when>2012-12-12 01:34:37 -0500</bug_when>
+    <thetext>Hello,
+I verified with:
+4.3 M4 build ID: I20121210-2000
+Thanks
+Anirban</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

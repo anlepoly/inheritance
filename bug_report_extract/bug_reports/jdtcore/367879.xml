@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>367879</bug_id>
+          
+          <creation_ts>2012-01-04 12:50:00 -0500</creation_ts>
+          <short_desc>Incorrect &quot;Potential null pointer access&quot; warning on statement after try-with-resources within try-finally</short_desc>
+          <delta_ts>2012-03-12 04:22:50 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.7.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows XP</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>358827</dup_id>
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>minor</bug_severity>
+          <target_milestone>3.7.2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Sean Van Gorder">sean.van.gorder</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>satyam.kandula</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2046236</commentid>
+    <comment_count>0</comment_count>
+    <who name="Sean Van Gorder">sean.van.gorder</who>
+    <bug_when>2012-01-04 12:50:47 -0500</bug_when>
+    <thetext>Build Identifier: Version: Indigo Service Release 1 Build id: 20110916-0149
+
+Eclipse will incorrectly mark a variable with the warning &quot;Potential null pointer access: The variable [name] may be null at this location&quot; under very specific circumstances. This example is as far as I could narrow it down:
+
+public void test() throws IOException {
+	HttpURLConnection http = null;
+	try {
+		http = (HttpURLConnection) new URL(&quot;http://example.com/&quot;).openConnection();
+		try (InputStream in = http.getInputStream()) { /* get input */ }
+		http.getURL(); // WARNING: Potential null pointer access
+	} finally {
+		if (http != null) { /* http.disconnect(); */ }
+	}
+}
+
+Uncommenting the &quot;http.disconnect();&quot; in the finally block has no effect. However, if that line is changed to simply &quot;http.disconnect();&quot; without the null check, the warning will correctly appear on that &quot;http&quot;, and will no longer appear on the one in the try block.
+
+Changing nearly anything else will cause the warning to disappear, including:
+- Adding &quot;catch (IOException e) { }&quot; after the outer try block
+- Adding &quot;catch (IOException e) { }&quot; after the try-with block
+- Deleting the &quot;if (http != null)&quot; line, leaving the finally block empty
+- Removing the outer try/finally construct, leaving only the 3 lines from the try block
+- Deleting the try-with line
+- Replacing the try-with line with the old finally-close method:
+		InputStream in = null;
+		try {
+			in = http.getInputStream();
+		} finally {
+			if (in != null) in.close();
+		}
+
+The try-with replacement is the only real workaround to this issue.  Although, attempting to replace the old format with a try-with block is how I noticed the issue in the first place...
+
+Reproducible: Always
+
+Steps to Reproduce:
+Copy the &quot;test&quot; method above into a new class.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2046239</commentid>
+    <comment_count>1</comment_count>
+    <who name="Sean Van Gorder">sean.van.gorder</who>
+    <bug_when>2012-01-04 13:12:37 -0500</bug_when>
+    <thetext>Another possible workaround: adding &quot;catch (Exception e) { throw e; }&quot; after the try-with block. I&apos;m not 100% sure this has no side-effects apart from somehow avoiding this bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2046372</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-04 18:33:37 -0500</bug_when>
+    <thetext>This indeed looks weird. Many thanks for extracting the test case.
+
+Luckily, it seems we already fixed this: 
+I can reproduce only with builds &lt; 3.8M3.
+Most probably, this was fixed by the patch in bug 358827,
+which has been released for 3.8M3 and also for 3.7.2.
+
+Could you please check on your original sources with a more recent build,
+e.g. a 3.7 maintenance build like:
+http://download.eclipse.org/eclipse/downloads/drops/M20111214-1406 ?
+
+Anyway we should add your test case to our suite, because it actually
+triggers the same bug in a different way than the test in bug 358827.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2046375</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-04 18:39:24 -0500</bug_when>
+    <thetext>As an aside here&apos;s variant that demonstrates pretty well what&apos;s going on:
+
+	public void test() throws IOException {
+	    HttpURLConnection http = null;
+	    try {
+	        http = (HttpURLConnection) new URL(&quot;http://example.com/&quot;).openConnection();
+	        try (InputStream in = http.getInputStream()) { /* get input */ }
+	        http.getURL();
+	    } finally {
+	        if (http != null) { http.disconnect(); }
+	        http.getURL(); // WARNING: Potential null pointer access - OK
+	    }
+	}
+
+Now the warning is issued at the last line and not at the wrong location.
+The if statement sheds doubt on the nullness of http and obviously in
+the buggy case this information is wrongly folded back into the try-block.
+This nicely matches the explanation in bug 358827 comment 0.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2046458</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-05 03:59:19 -0500</bug_when>
+    <thetext>I verified that the patch from bug 358827 indeed toggles also this bug
+(the part in FlowContext actually).
+
+I added the example as a new regression test and released it for 3.8M5 
+via commit e62c45ebe5881b0e2838be4fcb8a4a48c85b9c0c</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2046574</commentid>
+    <comment_count>5</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-01-05 07:40:35 -0500</bug_when>
+    <thetext>Thanks Stephan. 
+Marking as a dup seems like a better resolution though, since nothing was fixed as such.
+
+*** This bug has been marked as a duplicate of bug 358827 ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2046588</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-05 07:56:05 -0500</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; Thanks Stephan. 
+&gt; Marking as a dup seems like a better resolution though, since nothing was 
+&gt; fixed as such.
+
+That&apos;s fine. I just wanted to use this as the reference bug for the added 
+test case :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2046639</commentid>
+    <comment_count>7</comment_count>
+    <who name="Sean Van Gorder">sean.van.gorder</who>
+    <bug_when>2012-01-05 09:48:49 -0500</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; Could you please check on your original sources with a more recent build,
+&gt; e.g. a 3.7 maintenance build like:
+&gt; http://download.eclipse.org/eclipse/downloads/drops/M20111214-1406 ?
+&gt; 
+&gt; Anyway we should add your test case to our suite, because it actually
+&gt; triggers the same bug in a different way than the test in bug 358827.
+
+Verified fixed in M20111214-1406. Glad to hear I could help with regression testing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052624</commentid>
+    <comment_count>8</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-19 00:49:33 -0500</bug_when>
+    <thetext>Verified for 3.7.2RC2 using build M20120118-0800</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2078481</commentid>
+    <comment_count>9</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2012-03-12 02:05:10 -0400</bug_when>
+    <thetext>This seem to have been missed out in our M5 verification. Marking it for M6.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2078518</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-03-12 04:22:50 -0400</bug_when>
+    <thetext>I could verify that this bugs shows up in 3.8 M1 and not in
+Build id: I20120306-0800. Verified for 3.8 M6.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

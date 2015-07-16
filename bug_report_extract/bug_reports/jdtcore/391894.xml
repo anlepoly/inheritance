@@ -1,0 +1,534 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>391894</bug_id>
+          
+          <creation_ts>2012-10-15 02:55:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler] Support type annotations on ArrayCreation nodes</short_desc>
+          <delta_ts>2013-02-05 02:26:07 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          <dependson>399453</dependson>
+          <blocked>391847</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>markus_keller</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="55413"
+          type_id="1"
+          status="+"
+          setter="srikanth_sankaran"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2171596</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-10-15 02:55:12 -0400</bug_when>
+    <thetext>BETA_JAVA8:
+
+    ArrayCreation node needs to be modified so it can capture the
+annotations.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2198012</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-01-02 04:07:36 -0500</bug_when>
+    <thetext>Looks like the DimensionType we came up with for bug 391890 may not cover ArrayCreation entirely.
+
+Currently, ArrayCreation has a list property (DIMENSIONS_PROPERTY) which is of type Expression. My initial idea was to introduce a AST8-only property, let&apos;s say ANNOTATABLE_DIMENSIONS_PROPERTY, which will be of type DimensionType. But that would mean DimensionType has to include an Expression, but only when it appears as part of an ArrayCreation. But I am not sure if this is a great idea, because just looking at the DimensionType won&apos;t tell us whether an expression is supported or not, unless we add another flag for that purpose.
+
+Srikanth/Markus, what do you think?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211157</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-02-01 11:04:09 -0500</bug_when>
+    <thetext>On a closer look, we may not need a Dimension Info to capture the annotations or the extra dimensions at all. Looks like this detail is already captured in ArrayCreation#arrayType. The arrayType being annotatable already, we can simply populate the ArrayType#annotations and let the ArrayCreation#dimensions to store the dimension expression.
+
+I will do bit more testing to confirm this working and post a patch soon.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211236</commentid>
+    <comment_count>3</comment_count>
+      <attachid>226464</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-02-01 14:24:32 -0500</bug_when>
+    <thetext>Created attachment 226464
+Proposed fix with test
+
+This also means that DimensionInfo need not capture the expression.
+
+Srikanth, if you are fine with this patch, I will also post a patch for removing expression field from DimensionInfo&apos;s Javadoc.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211241</commentid>
+    <comment_count>4</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-02-01 14:31:43 -0500</bug_when>
+    <thetext>I was afraid that using the annotations of the ArrayType would violate the guarantees given in ASTParser#setKind(int):
+
+ * Source ranges nest properly: the source range for a child is always
+ * within the source range of its parent, and the source ranges of sibling
+ * nodes never overlap.
+
+However, this is already violated by the current AST for ArrayCreation nodes with non-empty dimensions, since an ArrayType node includes the &quot;[]&quot; and the dimension expression. That makes the ArrayCreation&apos;s children overlap.
+BTW: The grammar in the Javadoc of ArrayType conceals the dimension expression.
+
+The AST for the expression &quot;new @AnnS String @Ann1 [1] @Ann2 [2]&quot; will be:
+ArrayCreation:              ------------------------------------
+  type: ArrayType:              --------------------------------
+    componentType: ArrayType:   ----------------------
+      componentType: SimpleType:------------
+      annotations:                           -----
+    annotations:                                       -----
+  dimensions: NumberLiteral                         -         -
+
+=&gt; The addition of annotations doesn&apos;t make the overlap worse, so I think we can just live on with this problem. However, the order of the properties of ArrayType should correspond to the source order (annotations *after* componentType).
+
+Since the other applications of DimensionInfo don&apos;t need an expression, DimensionInfo#expression can be removed.
+
+In hindsight, the name DimensionInfo looks a bit weird. Can we rename this to ExtraDimension? And the 3 new getExtraDimensionInfos() methods from bug 391895 should be called extraDimensionInfos(), since this is a live list.
+
+We still need the ExtraDimension node type, since e.g. SingleVariableDeclaration#extraDimensions() must be a List&lt;? extends ASTNode&gt; (can&apos;t be a List&lt;Annotation[]&gt;).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211354</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-02-02 07:28:46 -0500</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; Created attachment 226464 [details]
+&gt; Proposed fix with test
+&gt; 
+&gt; This also means that DimensionInfo need not capture the expression.
+&gt; 
+&gt; Srikanth, if you are fine with this patch, I will also post a patch for
+&gt; removing expression field from DimensionInfo&apos;s Javadoc.
+
+Patch looks good. Please proceed and remove expression field from DimensionInfo,
+suitably renamed as suggested by Markus below.
+
+This requires careful adjustment of Javadoc in many places, the last round
+from DimensionType to DimensionInfo left many javadoc references in a bad
+state.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211360</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-02-02 09:42:05 -0500</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; (In reply to comment #3)
+&gt; &gt; Created attachment 226464 [details]
+&gt; &gt; Proposed fix with test
+&gt; &gt; 
+&gt; &gt; This also means that DimensionInfo need not capture the expression.
+&gt; &gt; 
+&gt; &gt; Srikanth, if you are fine with this patch, I will also post a patch for
+&gt; &gt; removing expression field from DimensionInfo&apos;s Javadoc.
+&gt; 
+&gt; Patch looks good. 
+
+Jay, please add a test for array creation with initializers also. These
+go through a different code path in the compiler and is worth testing
+separately.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211473</commentid>
+    <comment_count>7</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-02-03 12:14:20 -0500</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; Patch looks good. Please proceed and remove expression field from
+&gt; DimensionInfo,
+&gt; suitably renamed as suggested by Markus below.
+
+Removed expression via a separate commit as mentioned in bug 391895, comment #33.
+Will post a new patch for array creation with additional tests.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211514</commentid>
+    <comment_count>8</comment_count>
+      <attachid>226488</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-02-04 01:13:11 -0500</bug_when>
+    <thetext>Created attachment 226488
+With new tests
+
+While going through the fix, I was wondering if we should anticipate and handle the cases where we would have incorrect size of elements in the annotations array in the following methods:
+
+org.eclipse.jdt.core.dom.ASTConverter.annotateType(Type, Annotation[][])
+
+I can&apos;t construct a case where this happens, though. Srikanth, what&apos;s your take?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211543</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-02-04 04:03:36 -0500</bug_when>
+    <thetext>(In reply to comment #8)
+&gt; Created attachment 226488 [details]
+&gt; With new tests
+&gt; 
+&gt; While going through the fix, I was wondering if we should anticipate and
+&gt; handle the cases where we would have incorrect size of elements in the
+&gt; annotations array in the following methods:
+&gt; 
+&gt; org.eclipse.jdt.core.dom.ASTConverter.annotateType(Type, Annotation[][])
+&gt; 
+&gt; I can&apos;t construct a case where this happens, though. Srikanth, what&apos;s your
+&gt; take?
+
+This can&apos;t happen unless there is a bug in the compiler. So I won&apos;t worry
+about it at this point.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2212122</commentid>
+    <comment_count>10</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-02-05 00:32:53 -0500</bug_when>
+    <thetext>Srikanth, I wasn&apos;t sure if your go ahead was only for removing expression from ExtraDimension or for this patch as well. Please mark the review flag if you are fine with the patch added in comment #8.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2212125</commentid>
+    <comment_count>11</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-02-05 00:47:07 -0500</bug_when>
+    <thetext>(1) I think this code in ASTConverter:
+
+		if (expression.annotationsOnDimensions != null &amp;&amp; this.ast.apiLevel &gt;= AST.JLS8) {
+			annotateType(arrayType, expression.annotationsOnDimensions);
+		}
+
+will short circuit the setting of ASTMalformed flag in JLS4- with type
+annotations on array creation nodes ? 
+
+(2) We could add a test that runs in JLS4 mode with annotations on
+array creation and verify that malformed is set.
+
+(3) The tests seem to check for source range alone. We should add
+a test that verifies that on each dimesion the annotations are as
+expected.
+
+Please make these changes and release. Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2212138</commentid>
+    <comment_count>12</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-02-05 02:26:07 -0500</bug_when>
+    <thetext>(In reply to comment #11)
+&gt; Please make these changes and release. Thanks.
+
+Released with the changes via commit:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=245ac5a64fa1b2c3e6c4d54ba7019a89566be0e5</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>226464</attachid>
+            <date>2013-02-01 14:24:00 -0500</date>
+            <delta_ts>2013-02-04 01:13:11 -0500</delta_ts>
+            <desc>Proposed fix with test</desc>
+            <filename>Fix-for-bug-391894_final.patch</filename>
+            <type>text/plain</type>
+            <size>4470</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9kb20vQVNUQ29udmVydGVyMThUZXN0LmphdmEgYi9vcmcuZWNs
+aXBzZS5qZHQuY29yZS50ZXN0cy5tb2RlbC9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMv
+ZG9tL0FTVENvbnZlcnRlcjE4VGVzdC5qYXZhCmluZGV4IGFkZGI4NDcuLjBlMGUwNjMgMTAwNjQ0
+Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNsaXBzZS9q
+ZHQvY29yZS90ZXN0cy9kb20vQVNUQ29udmVydGVyMThUZXN0LmphdmEKKysrIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Rv
+bS9BU1RDb252ZXJ0ZXIxOFRlc3QuamF2YQpAQCAtMTA5Miw0ICsxMDkyLDUxIEBACiAJCU1ldGhv
+ZERlY2xhcmF0aW9uIG1ldGhvZCA9IChNZXRob2REZWNsYXJhdGlvbikgbm9kZTsKIAkJYXNzZXJ0
+RXh0cmFEaW1lbnNpb25zRXF1YWwoIkluY29ycmVjdCBkaW1lbnNpb24gaW5mbyIsIG1ldGhvZC5n
+ZXRFeHRyYURpbWVuc2lvbkluZm9zKCksICJATWFya2VyIFtdIEBNYXJrZXIgW10iKTsKIAl9CisJ
+Ly8gaHR0cHM6Ly9idWdzLmVjbGlwc2Uub3JnL2J1Z3Mvc2hvd19idWcuY2dpP2lkPTM5MTg5NAor
+CXB1YmxpYyB2b2lkIHRlc3QwMDExKCkgdGhyb3dzIEphdmFNb2RlbEV4Y2VwdGlvbiB7CisJCVN0
+cmluZyBjb250ZW50cyA9CisJCQkJImltcG9ydCBqYXZhLmxhbmcuYW5ub3RhdGlvbi5FbGVtZW50
+VHlwZTtcbiIgKworCQkJCSJwdWJsaWMgY2xhc3MgWCB7XG4iICsKKwkJCQkiIAlwdWJsaWMgdm9p
+ZCBmb28oKSB7XG4iICsKKwkJCQkiCQlpbnQgQE1hcmtlciBbXVtdW10gaSA9IG5ldyBATWFya2Vy
+MiBpbnQgQE1hcmtlciBATWFya2VyMiBbMl0gQE1hcmtlcjIgQE1hcmtlcjMgW2JhcigpXSBATWFy
+a2VyMyBATWFya2VyIFtdOyBcbiIgKyAgCisJCQkJIgkJaW50IEBNYXJrZXIgW11bXVtdIGogPSBu
+ZXcgQE1hcmtlciBpbnQgQE1hcmtlcjMgQE1hcmtlciBbMl0gQE1hcmtlciBATWFya2VyMiBbWC5i
+YXIyKDIpXSBATWFya2VyMiBATWFya2VyMyBbXTtcbiIgKworCQkJCSIJfVxuIiArCisJCQkJIglw
+dWJsaWMgaW50IGJhcigpIHtcbiIgKworCQkJCSIJCXJldHVybiAyO1xuIiArCisJCQkJIgl9XG4i
+ICsKKwkJCQkiCXB1YmxpYyBzdGF0aWMgaW50IGJhcjIoaW50IGspIHtcbiIgKworCQkJCSIJCXJl
+dHVybiBrO1xuIiArCisJCQkJIgl9XG4iICsKKwkJCQkifVxuIiArCisJCQkJIkBqYXZhLmxhbmcu
+YW5ub3RhdGlvbi5UYXJnZXQgKEVsZW1lbnRUeXBlLlRZUEVfVVNFKVxuIiArIAorCQkJCSJAaW50
+ZXJmYWNlIE1hcmtlciB7fVxuIiArCisJCQkJIkBqYXZhLmxhbmcuYW5ub3RhdGlvbi5UYXJnZXQg
+KEVsZW1lbnRUeXBlLlRZUEVfVVNFKVxuIiArIAorCQkJCSJAaW50ZXJmYWNlIE1hcmtlcjIge31c
+biIgKworCQkJCSJAamF2YS5sYW5nLmFubm90YXRpb24uVGFyZ2V0IChFbGVtZW50VHlwZS5UWVBF
+X1VTRSlcbiIgKyAKKwkJCQkiQGludGVyZmFjZSBNYXJrZXIzIHt9IjsKKwkJCisJCXRoaXMud29y
+a2luZ0NvcHkgPSBnZXRXb3JraW5nQ29weSgiL0NvbnZlcnRlcjE4L3NyYy9YLmphdmEiLCB0cnVl
+KTsKKwkJQVNUTm9kZSBub2RlID0gYnVpbGRBU1QoY29udGVudHMsIHRoaXMud29ya2luZ0NvcHkp
+OworCQlhc3NlcnRFcXVhbHMoIk5vdCBhIGNvbXBpbGF0aW9uIHVuaXQiLCBBU1ROb2RlLkNPTVBJ
+TEFUSU9OX1VOSVQsIG5vZGUuZ2V0Tm9kZVR5cGUoKSk7CisJCUNvbXBpbGF0aW9uVW5pdCB1bml0
+ID0gKENvbXBpbGF0aW9uVW5pdCkgbm9kZTsKKwkJbm9kZSA9IGdldEFTVE5vZGUodW5pdCwgMCwg
+MCk7CisJCWFzc2VydEVxdWFscygiTm90IGEgTWV0aG9kIERlY2xhcmF0aW9uIiwgQVNUTm9kZS5N
+RVRIT0RfREVDTEFSQVRJT04sIG5vZGUuZ2V0Tm9kZVR5cGUoKSk7CisJCU1ldGhvZERlY2xhcmF0
+aW9uIG1ldGhvZCA9IChNZXRob2REZWNsYXJhdGlvbikgbm9kZTsKKwkJTGlzdCBsaXN0ID0gbWV0
+aG9kLmdldEJvZHkoKS5zdGF0ZW1lbnRzKCk7CisJCWFzc2VydEVxdWFscygiSW5jb3JyZWN0IG5v
+IG9mIHN0YXRlbWVudHMiLCAyLCBsaXN0LnNpemUoKSk7CisJCVZhcmlhYmxlRGVjbGFyYXRpb25T
+dGF0ZW1lbnQgc3RhdGVtZW50MSA9IChWYXJpYWJsZURlY2xhcmF0aW9uU3RhdGVtZW50KSBsaXN0
+LmdldCgwKTsKKwkJVmFyaWFibGVEZWNsYXJhdGlvblN0YXRlbWVudCBzdGF0ZW1lbnQyID0gKFZh
+cmlhYmxlRGVjbGFyYXRpb25TdGF0ZW1lbnQpIGxpc3QuZ2V0KDEpOworCQlsaXN0ID0gc3RhdGVt
+ZW50MS5mcmFnbWVudHMoKTsKKwkJYXNzZXJ0RXF1YWxzKCJJbmNvcnJlY3Qgbm8gb2YgZnJhZ21l
+bnRzIiwgMSwgbGlzdC5zaXplKCkpOworCQlWYXJpYWJsZURlY2xhcmF0aW9uRnJhZ21lbnQgZnJh
+Z21lbnQgPSAoVmFyaWFibGVEZWNsYXJhdGlvbkZyYWdtZW50KSBsaXN0LmdldCgwKTsKKwkJQXJy
+YXlDcmVhdGlvbiBjcmVhdGlvbiA9IChBcnJheUNyZWF0aW9uKSBmcmFnbWVudC5nZXRJbml0aWFs
+aXplcigpOworCQlUeXBlIHR5cGUgPSBjcmVhdGlvbi5nZXRUeXBlKCk7CisJCWFzc2VydEVxdWFs
+cygiSW5jb3JyZWN0IHR5cGUiLCB0cnVlLCB0eXBlLmlzQXJyYXlUeXBlKCkpOworCQljaGVja1Nv
+dXJjZVJhbmdlKHR5cGUsICJATWFya2VyMiBpbnQgQE1hcmtlciBATWFya2VyMiBbMl0gQE1hcmtl
+cjIgQE1hcmtlcjMgW2JhcigpXSBATWFya2VyMyBATWFya2VyIFtdIiwgY29udGVudHMudG9DaGFy
+QXJyYXkoKSk7CisJCWxpc3QgPSBzdGF0ZW1lbnQyLmZyYWdtZW50cygpOworCQlhc3NlcnRFcXVh
+bHMoIkluY29ycmVjdCBubyBvZiBmcmFnbWVudHMiLCAxLCBsaXN0LnNpemUoKSk7CisJCWZyYWdt
+ZW50ID0gKFZhcmlhYmxlRGVjbGFyYXRpb25GcmFnbWVudCkgbGlzdC5nZXQoMCk7CisJCWNyZWF0
+aW9uID0gKEFycmF5Q3JlYXRpb24pIGZyYWdtZW50LmdldEluaXRpYWxpemVyKCk7CisJCWNoZWNr
+U291cmNlUmFuZ2UoY3JlYXRpb24uZ2V0VHlwZSgpLCAiQE1hcmtlciBpbnQgQE1hcmtlcjMgQE1h
+cmtlciBbMl0gQE1hcmtlciBATWFya2VyMiBbWC5iYXIyKDIpXSBATWFya2VyMiBATWFya2VyMyBb
+XSIsIGNvbnRlbnRzLnRvQ2hhckFycmF5KCkpOworCX0KIH0KZGlmZiAtLWdpdCBhL29yZy5lY2xp
+cHNlLmpkdC5jb3JlL2RvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vQVNUQ29udmVydGVyLmph
+dmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9kb20vb3JnL2VjbGlwc2UvamR0L2NvcmUvZG9tL0FT
+VENvbnZlcnRlci5qYXZhCmluZGV4IDc5MGFlYzcuLjllOTg4MmEgMTAwNjQ0Ci0tLSBhL29yZy5l
+Y2xpcHNlLmpkdC5jb3JlL2RvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vQVNUQ29udmVydGVy
+LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvZG9tL29yZy9lY2xpcHNlL2pkdC9jb3Jl
+L2RvbS9BU1RDb252ZXJ0ZXIuamF2YQpAQCAtOTcyLDYgKzk3Miw5IEBACiAJCQkJY29tcG9uZW50
+VHlwZSA9IChBcnJheVR5cGUpIGNvbXBvbmVudFR5cGUuZ2V0UGFyZW50KCk7CiAJCQl9CiAJCX0K
+KwkJaWYgKGV4cHJlc3Npb24uYW5ub3RhdGlvbnNPbkRpbWVuc2lvbnMgIT0gbnVsbCAmJiB0aGlz
+LmFzdC5hcGlMZXZlbCA+PSBBU1QuSkxTOCkgeworCQkJYW5ub3RhdGVUeXBlKGFycmF5VHlwZSwg
+ZXhwcmVzc2lvbi5hbm5vdGF0aW9uc09uRGltZW5zaW9ucyk7CisJCX0KIAkJYXJyYXlDcmVhdGlv
+bi5zZXRUeXBlKGFycmF5VHlwZSk7CiAJCWlmICh0aGlzLnJlc29sdmVCaW5kaW5ncykgewogCQkJ
+cmVjb3JkTm9kZXMoYXJyYXlUeXBlLCBleHByZXNzaW9uKTsKQEAgLTMyMDQsNiArMzIwNywxNSBA
+QAogCQkJCX0KIAkJfQogCX0KKwlwcml2YXRlIHZvaWQgYW5ub3RhdGVUeXBlKFR5cGUgdHlwZSwg
+b3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmFzdC5Bbm5vdGF0aW9uW11bXSBhbm5v
+dGF0aW9ucykgeworCQlpbnQgbGV2ZWwgPSBhbm5vdGF0aW9ucy5sZW5ndGggLSAxOworCQl3aGls
+ZSh0eXBlLmlzQXJyYXlUeXBlKCkpIHsKKwkJCUFycmF5VHlwZSBhcnJheVR5cGUgPSAoQXJyYXlU
+eXBlKSB0eXBlOworCQkJb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmFzdC5Bbm5v
+dGF0aW9uW10gdHlwZUFubm90YXRpb25zID0gYW5ub3RhdGlvbnNbbGV2ZWwtLV07CisJCQlhbm5v
+dGF0ZVR5cGUoYXJyYXlUeXBlLCB0eXBlQW5ub3RhdGlvbnMpOworCQkJdHlwZSA9IGFycmF5VHlw
+ZS5nZXRDb21wb25lbnRUeXBlKCk7CisJCX0KKwl9CiAKIAlwcml2YXRlIHZvaWQgYW5ub3RhdGVU
+eXBlUGFyYW1ldGVyKFR5cGVQYXJhbWV0ZXIgdHlwZVBhcmFtZXRlciwgb3JnLmVjbGlwc2UuamR0
+LmludGVybmFsLmNvbXBpbGVyLmFzdC5Bbm5vdGF0aW9uW10gYW5ub3RhdGlvbnMpIHsKIAkJc3dp
+dGNoKHRoaXMuYXN0LmFwaUxldmVsKSB7
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>226488</attachid>
+            <date>2013-02-04 01:13:00 -0500</date>
+            <delta_ts>2013-02-04 01:13:11 -0500</delta_ts>
+            <desc>With new tests</desc>
+            <filename>Fix-for-bug-391894.patch</filename>
+            <type>text/plain</type>
+            <size>9392</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL05lZ2F0aXZlVHlwZUFu
+bm90YXRpb25UZXN0LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9z
+cmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OZWdhdGl2
+ZVR5cGVBbm5vdGF0aW9uVGVzdC5qYXZhCmluZGV4IDgxZjA0MmYuLjBlNGEwOWYgMTAwNjQ0Ci0t
+LSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9q
+ZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL05lZ2F0aXZlVHlwZUFubm90YXRpb25U
+ZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTmVnYXRpdmVUeXBl
+QW5ub3RhdGlvblRlc3QuamF2YQpAQCAtMzE1Myw0ICszMTUzLDQ3IEBACiAJCQkJIlN5bnRheCBl
+cnJvciwgdHlwZSBhbm5vdGF0aW9ucyBhcmUgaWxsZWdhbCBoZXJlXG4iICsgDQogCQkJCSItLS0t
+LS0tLS0tXG4iKTsgDQogCX0NCisJLy8gaHR0cHM6Ly9idWdzLmVjbGlwc2Uub3JnL2J1Z3Mvc2hv
+d19idWcuY2dpP2lkPTM5OTQ1Mw0KKwlwdWJsaWMgdm9pZCB0ZXN0QnVnMzkxODk0KCkgew0KKwkJ
+dGhpcy5ydW5OZWdhdGl2ZVRlc3QoDQorCQkJCW5ldyBTdHJpbmdbXXsNCisJCQkJCSJYLmphdmEi
+LA0KKwkJCQkJImltcG9ydCBqYXZhLmxhbmcuYW5ub3RhdGlvbi5UYXJnZXQ7XG4iICsNCisJCQkJ
+CSJpbXBvcnQgc3RhdGljIGphdmEubGFuZy5hbm5vdGF0aW9uLkVsZW1lbnRUeXBlLio7XG4iICsN
+CisJCQkJCSJwdWJsaWMgY2xhc3MgWCB7XG4iICsNCisJCQkJCSIJcHVibGljIHZvaWQgZm9vKCkg
+e1xuIiArDQorCQkJCQkiCQlpbnQgQE1hcmtlciBbXVtdW10gaSA9IG5ldyBATWFya2VyMiBpbnQg
+QE1hcmtlciBATWFya2VyMiBbMl0gQE1hcmtlciBATWFya2VyMiBbQE1hcmtlciBiYXIoKV0gO1xu
+IiArDQorCQkJCQkiCQlpbnQgQE1hcmtlciBbXSBqID0gbmV3IEBNYXJrZXIyIGludCBATWFya2Vy
+IEBNYXJrZXIyIFsyXSBATWFya2VyIEBNYXJrZXIyIFtATWFya2VyIGJhcigpXSA7XG4iICsNCisJ
+CQkJCSIJfVxuIiArDQorCQkJCQkiCXB1YmxpYyBpbnQgYmFyKCkge1xuIiArDQorCQkJCQkiCQly
+ZXR1cm4gMjtcbiIgKw0KKwkJCQkJIgl9XG4iICsNCisJCQkJCSJ9XG4iICsNCisJCQkJCSJAVGFy
+Z2V0IChqYXZhLmxhbmcuYW5ub3RhdGlvbi5FbGVtZW50VHlwZS5UWVBFX1VTRSlcbiIgKw0KKwkJ
+CQkJIkBpbnRlcmZhY2UgTWFya2VyIHt9XG4iICsNCisJCQkJCSJAVGFyZ2V0IChqYXZhLmxhbmcu
+YW5ub3RhdGlvbi5FbGVtZW50VHlwZS5UWVBFX1VTRSlcbiIgKw0KKwkJCQkJIkBpbnRlcmZhY2Ug
+TWFya2VyMiB7fVxuIg0KKwkJCQl9LA0KKwkJCQkiLS0tLS0tLS0tLVxuIiArIA0KKwkJCQkiMS4g
+RVJST1IgaW4gWC5qYXZhIChhdCBsaW5lIDUpXG4iICsgDQorCQkJCSIJaW50IEBNYXJrZXIgW11b
+XVtdIGkgPSBuZXcgQE1hcmtlcjIgaW50IEBNYXJrZXIgQE1hcmtlcjIgWzJdIEBNYXJrZXIgQE1h
+cmtlcjIgW0BNYXJrZXIgYmFyKCldIDtcbiIgKyANCisJCQkJIgkgICAgICAgICAgICAgICAgICAg
+ICAgIF5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5e
+Xl5eXl5eXl5eXl5eXl5eXl5cbiIgKyANCisJCQkJIlR5cGUgbWlzbWF0Y2g6IGNhbm5vdCBjb252
+ZXJ0IGZyb20gaW50W11bXSB0byBpbnRbXVtdW11cbiIgKyANCisJCQkJIi0tLS0tLS0tLS1cbiIg
+KyANCisJCQkJIjIuIEVSUk9SIGluIFguamF2YSAoYXQgbGluZSA1KVxuIiArIA0KKwkJCQkiCWlu
+dCBATWFya2VyIFtdW11bXSBpID0gbmV3IEBNYXJrZXIyIGludCBATWFya2VyIEBNYXJrZXIyIFsy
+XSBATWFya2VyIEBNYXJrZXIyIFtATWFya2VyIGJhcigpXSA7XG4iICsgDQorCQkJCSIJICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgIF5eXl5eXl5cbiIgKyANCisJCQkJIlN5bnRheCBlcnJvciwgdHlwZSBh
+bm5vdGF0aW9ucyBhcmUgaWxsZWdhbCBoZXJlXG4iICsgDQorCQkJCSItLS0tLS0tLS0tXG4iICsg
+DQorCQkJCSIzLiBFUlJPUiBpbiBYLmphdmEgKGF0IGxpbmUgNilcbiIgKyANCisJCQkJIglpbnQg
+QE1hcmtlciBbXSBqID0gbmV3IEBNYXJrZXIyIGludCBATWFya2VyIEBNYXJrZXIyIFsyXSBATWFy
+a2VyIEBNYXJrZXIyIFtATWFya2VyIGJhcigpXSA7XG4iICsgDQorCQkJCSIJICAgICAgICAgICAg
+ICAgICAgIF5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5e
+Xl5eXl5eXl5eXl5eXl5eXl5eXl5cbiIgKyANCisJCQkJIlR5cGUgbWlzbWF0Y2g6IGNhbm5vdCBj
+b252ZXJ0IGZyb20gaW50W11bXSB0byBpbnRbXVxuIiArIA0KKwkJCQkiLS0tLS0tLS0tLVxuIiAr
+IA0KKwkJCQkiNC4gRVJST1IgaW4gWC5qYXZhIChhdCBsaW5lIDYpXG4iICsgDQorCQkJCSIJaW50
+IEBNYXJrZXIgW10gaiA9IG5ldyBATWFya2VyMiBpbnQgQE1hcmtlciBATWFya2VyMiBbMl0gQE1h
+cmtlciBATWFya2VyMiBbQE1hcmtlciBiYXIoKV0gO1xuIiArIA0KKwkJCQkiCSAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgIF5eXl5eXl5cbiIgKyANCisJCQkJIlN5bnRheCBlcnJvciwgdHlwZSBhbm5vdGF0aW9u
+cyBhcmUgaWxsZWdhbCBoZXJlXG4iICsgDQorCQkJCSItLS0tLS0tLS0tXG4iKTsgDQorCX0NCiB9
+ClwgTm8gbmV3bGluZSBhdCBlbmQgb2YgZmlsZQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0
+LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2RvbS9BU1RD
+b252ZXJ0ZXIxOFRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3Ny
+Yy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9kb20vQVNUQ29udmVydGVyMThUZXN0LmphdmEK
+aW5kZXggZDcxY2M0NC4uOWMxZGQyMSAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUu
+dGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2RvbS9BU1RDb252ZXJ0
+ZXIxOFRlc3QuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5tb2RlbC9zcmMv
+b3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvZG9tL0FTVENvbnZlcnRlcjE4VGVzdC5qYXZhCkBA
+IC0xMDkyLDQgKzEwOTIsODcgQEAKIAkJTWV0aG9kRGVjbGFyYXRpb24gbWV0aG9kID0gKE1ldGhv
+ZERlY2xhcmF0aW9uKSBub2RlOwogCQlhc3NlcnRFeHRyYURpbWVuc2lvbnNFcXVhbCgiSW5jb3Jy
+ZWN0IGV4dHJhIGRpbWVuc2lvbnMiLCBtZXRob2QuZXh0cmFEaW1lbnNpb25JbmZvcygpLCAiQE1h
+cmtlciBbXSBATWFya2VyIFtdIik7CiAJfQorCS8vIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy9i
+dWdzL3Nob3dfYnVnLmNnaT9pZD0zOTE4OTQKKwlwdWJsaWMgdm9pZCB0ZXN0MDAxMSgpIHRocm93
+cyBKYXZhTW9kZWxFeGNlcHRpb24geworCQlTdHJpbmcgY29udGVudHMgPQorCQkJCSJpbXBvcnQg
+amF2YS5sYW5nLmFubm90YXRpb24uRWxlbWVudFR5cGU7XG4iICsKKwkJCQkicHVibGljIGNsYXNz
+IFgge1xuIiArCisJCQkJIiAJcHVibGljIHZvaWQgZm9vKCkge1xuIiArCisJCQkJIgkJaW50IEBN
+YXJrZXIgW11bXVtdIGkgPSBuZXcgQE1hcmtlcjIgaW50IEBNYXJrZXIgQE1hcmtlcjIgWzJdIEBN
+YXJrZXIyIEBNYXJrZXIzIFtiYXIoKV0gQE1hcmtlcjMgQE1hcmtlciBbXTsgXG4iICsgIAorCQkJ
+CSIJCWludCBATWFya2VyIFtdW11bXSBqID0gbmV3IEBNYXJrZXIgaW50IEBNYXJrZXIzIEBNYXJr
+ZXIgWzJdIEBNYXJrZXIgQE1hcmtlcjIgW1guYmFyMigyKV0gQE1hcmtlcjIgQE1hcmtlcjMgW107
+XG4iICsKKwkJCQkiCX1cbiIgKworCQkJCSIJcHVibGljIGludCBiYXIoKSB7XG4iICsKKwkJCQki
+CQlyZXR1cm4gMjtcbiIgKworCQkJCSIJfVxuIiArCisJCQkJIglwdWJsaWMgc3RhdGljIGludCBi
+YXIyKGludCBrKSB7XG4iICsKKwkJCQkiCQlyZXR1cm4gaztcbiIgKworCQkJCSIJfVxuIiArCisJ
+CQkJIn1cbiIgKworCQkJCSJAamF2YS5sYW5nLmFubm90YXRpb24uVGFyZ2V0IChFbGVtZW50VHlw
+ZS5UWVBFX1VTRSlcbiIgKyAKKwkJCQkiQGludGVyZmFjZSBNYXJrZXIge31cbiIgKworCQkJCSJA
+amF2YS5sYW5nLmFubm90YXRpb24uVGFyZ2V0IChFbGVtZW50VHlwZS5UWVBFX1VTRSlcbiIgKyAK
+KwkJCQkiQGludGVyZmFjZSBNYXJrZXIyIHt9XG4iICsKKwkJCQkiQGphdmEubGFuZy5hbm5vdGF0
+aW9uLlRhcmdldCAoRWxlbWVudFR5cGUuVFlQRV9VU0UpXG4iICsgCisJCQkJIkBpbnRlcmZhY2Ug
+TWFya2VyMyB7fSI7CisJCQorCQl0aGlzLndvcmtpbmdDb3B5ID0gZ2V0V29ya2luZ0NvcHkoIi9D
+b252ZXJ0ZXIxOC9zcmMvWC5qYXZhIiwgdHJ1ZSk7CisJCUFTVE5vZGUgbm9kZSA9IGJ1aWxkQVNU
+KGNvbnRlbnRzLCB0aGlzLndvcmtpbmdDb3B5KTsKKwkJYXNzZXJ0RXF1YWxzKCJOb3QgYSBjb21w
+aWxhdGlvbiB1bml0IiwgQVNUTm9kZS5DT01QSUxBVElPTl9VTklULCBub2RlLmdldE5vZGVUeXBl
+KCkpOworCQlDb21waWxhdGlvblVuaXQgdW5pdCA9IChDb21waWxhdGlvblVuaXQpIG5vZGU7CisJ
+CW5vZGUgPSBnZXRBU1ROb2RlKHVuaXQsIDAsIDApOworCQlhc3NlcnRFcXVhbHMoIk5vdCBhIE1l
+dGhvZCBEZWNsYXJhdGlvbiIsIEFTVE5vZGUuTUVUSE9EX0RFQ0xBUkFUSU9OLCBub2RlLmdldE5v
+ZGVUeXBlKCkpOworCQlNZXRob2REZWNsYXJhdGlvbiBtZXRob2QgPSAoTWV0aG9kRGVjbGFyYXRp
+b24pIG5vZGU7CisJCUxpc3QgbGlzdCA9IG1ldGhvZC5nZXRCb2R5KCkuc3RhdGVtZW50cygpOwor
+CQlhc3NlcnRFcXVhbHMoIkluY29ycmVjdCBubyBvZiBzdGF0ZW1lbnRzIiwgMiwgbGlzdC5zaXpl
+KCkpOworCQlWYXJpYWJsZURlY2xhcmF0aW9uU3RhdGVtZW50IHN0YXRlbWVudDEgPSAoVmFyaWFi
+bGVEZWNsYXJhdGlvblN0YXRlbWVudCkgbGlzdC5nZXQoMCk7CisJCVZhcmlhYmxlRGVjbGFyYXRp
+b25TdGF0ZW1lbnQgc3RhdGVtZW50MiA9IChWYXJpYWJsZURlY2xhcmF0aW9uU3RhdGVtZW50KSBs
+aXN0LmdldCgxKTsKKwkJbGlzdCA9IHN0YXRlbWVudDEuZnJhZ21lbnRzKCk7CisJCWFzc2VydEVx
+dWFscygiSW5jb3JyZWN0IG5vIG9mIGZyYWdtZW50cyIsIDEsIGxpc3Quc2l6ZSgpKTsKKwkJVmFy
+aWFibGVEZWNsYXJhdGlvbkZyYWdtZW50IGZyYWdtZW50ID0gKFZhcmlhYmxlRGVjbGFyYXRpb25G
+cmFnbWVudCkgbGlzdC5nZXQoMCk7CisJCUFycmF5Q3JlYXRpb24gY3JlYXRpb24gPSAoQXJyYXlD
+cmVhdGlvbikgZnJhZ21lbnQuZ2V0SW5pdGlhbGl6ZXIoKTsKKwkJVHlwZSB0eXBlID0gY3JlYXRp
+b24uZ2V0VHlwZSgpOworCQlhc3NlcnRFcXVhbHMoIkluY29ycmVjdCB0eXBlIiwgdHJ1ZSwgdHlw
+ZS5pc0FycmF5VHlwZSgpKTsKKwkJY2hlY2tTb3VyY2VSYW5nZSh0eXBlLCAiQE1hcmtlcjIgaW50
+IEBNYXJrZXIgQE1hcmtlcjIgWzJdIEBNYXJrZXIyIEBNYXJrZXIzIFtiYXIoKV0gQE1hcmtlcjMg
+QE1hcmtlciBbXSIsIGNvbnRlbnRzLnRvQ2hhckFycmF5KCkpOworCQlsaXN0ID0gc3RhdGVtZW50
+Mi5mcmFnbWVudHMoKTsKKwkJYXNzZXJ0RXF1YWxzKCJJbmNvcnJlY3Qgbm8gb2YgZnJhZ21lbnRz
+IiwgMSwgbGlzdC5zaXplKCkpOworCQlmcmFnbWVudCA9IChWYXJpYWJsZURlY2xhcmF0aW9uRnJh
+Z21lbnQpIGxpc3QuZ2V0KDApOworCQljcmVhdGlvbiA9IChBcnJheUNyZWF0aW9uKSBmcmFnbWVu
+dC5nZXRJbml0aWFsaXplcigpOworCQljaGVja1NvdXJjZVJhbmdlKGNyZWF0aW9uLmdldFR5cGUo
+KSwgIkBNYXJrZXIgaW50IEBNYXJrZXIzIEBNYXJrZXIgWzJdIEBNYXJrZXIgQE1hcmtlcjIgW1gu
+YmFyMigyKV0gQE1hcmtlcjIgQE1hcmtlcjMgW10iLCBjb250ZW50cy50b0NoYXJBcnJheSgpKTsK
+Kwl9CisJLy8gaHR0cHM6Ly9idWdzLmVjbGlwc2Uub3JnL2J1Z3Mvc2hvd19idWcuY2dpP2lkPTM5
+MTg5NAorCXB1YmxpYyB2b2lkIHRlc3QwMDEyKCkgdGhyb3dzIEphdmFNb2RlbEV4Y2VwdGlvbiB7
+CisJCVN0cmluZyBjb250ZW50cyA9CisJCQkJImltcG9ydCBqYXZhLmxhbmcuYW5ub3RhdGlvbi5F
+bGVtZW50VHlwZTtcbiIgKworCQkJCSJwdWJsaWMgY2xhc3MgWCB7XG4iICsKKwkJCQkiIAlwdWJs
+aWMgdm9pZCBmb28oKSB7XG4iICsKKwkJCQkiCQlpbnQgQE1hcmtlciBbXVtdW10gaSA9IG5ldyBA
+TWFya2VyMiBpbnQgQE1hcmtlciBATWFya2VyMiBbXSBATWFya2VyMiBATWFya2VyMyBbXSBATWFy
+a2VyMyBATWFya2VyIFtdIHt7ezEsIDIsIDN9fX07IFxuIiArICAKKwkJCQkiCX1cbiIgKworCQkJ
+CSJ9XG4iICsKKwkJCQkiQGphdmEubGFuZy5hbm5vdGF0aW9uLlRhcmdldCAoRWxlbWVudFR5cGUu
+VFlQRV9VU0UpXG4iICsgCisJCQkJIkBpbnRlcmZhY2UgTWFya2VyIHt9XG4iICsKKwkJCQkiQGph
+dmEubGFuZy5hbm5vdGF0aW9uLlRhcmdldCAoRWxlbWVudFR5cGUuVFlQRV9VU0UpXG4iICsgCisJ
+CQkJIkBpbnRlcmZhY2UgTWFya2VyMiB7fVxuIiArCisJCQkJIkBqYXZhLmxhbmcuYW5ub3RhdGlv
+bi5UYXJnZXQgKEVsZW1lbnRUeXBlLlRZUEVfVVNFKVxuIiArIAorCQkJCSJAaW50ZXJmYWNlIE1h
+cmtlcjMge30iOworCQlTeXN0ZW0ub3V0LnByaW50bG4oY29udGVudHMpOworCQl0aGlzLndvcmtp
+bmdDb3B5ID0gZ2V0V29ya2luZ0NvcHkoIi9Db252ZXJ0ZXIxOC9zcmMvWC5qYXZhIiwgdHJ1ZSk7
+CisJCUFTVE5vZGUgbm9kZSA9IGJ1aWxkQVNUKGNvbnRlbnRzLCB0aGlzLndvcmtpbmdDb3B5KTsK
+KwkJYXNzZXJ0RXF1YWxzKCJOb3QgYSBjb21waWxhdGlvbiB1bml0IiwgQVNUTm9kZS5DT01QSUxB
+VElPTl9VTklULCBub2RlLmdldE5vZGVUeXBlKCkpOworCQlDb21waWxhdGlvblVuaXQgdW5pdCA9
+IChDb21waWxhdGlvblVuaXQpIG5vZGU7CisJCW5vZGUgPSBnZXRBU1ROb2RlKHVuaXQsIDAsIDAp
+OworCQlhc3NlcnRFcXVhbHMoIk5vdCBhIE1ldGhvZCBEZWNsYXJhdGlvbiIsIEFTVE5vZGUuTUVU
+SE9EX0RFQ0xBUkFUSU9OLCBub2RlLmdldE5vZGVUeXBlKCkpOworCQlNZXRob2REZWNsYXJhdGlv
+biBtZXRob2QgPSAoTWV0aG9kRGVjbGFyYXRpb24pIG5vZGU7CisJCUxpc3QgbGlzdCA9IG1ldGhv
+ZC5nZXRCb2R5KCkuc3RhdGVtZW50cygpOworCQlhc3NlcnRFcXVhbHMoIkluY29ycmVjdCBubyBv
+ZiBzdGF0ZW1lbnRzIiwgMSwgbGlzdC5zaXplKCkpOworCQlWYXJpYWJsZURlY2xhcmF0aW9uU3Rh
+dGVtZW50IHN0YXRlbWVudDEgPSAoVmFyaWFibGVEZWNsYXJhdGlvblN0YXRlbWVudCkgbGlzdC5n
+ZXQoMCk7CisJCWxpc3QgPSBzdGF0ZW1lbnQxLmZyYWdtZW50cygpOworCQlhc3NlcnRFcXVhbHMo
+IkluY29ycmVjdCBubyBvZiBmcmFnbWVudHMiLCAxLCBsaXN0LnNpemUoKSk7CisJCVZhcmlhYmxl
+RGVjbGFyYXRpb25GcmFnbWVudCBmcmFnbWVudCA9IChWYXJpYWJsZURlY2xhcmF0aW9uRnJhZ21l
+bnQpIGxpc3QuZ2V0KDApOworCQlBcnJheUNyZWF0aW9uIGNyZWF0aW9uID0gKEFycmF5Q3JlYXRp
+b24pIGZyYWdtZW50LmdldEluaXRpYWxpemVyKCk7CisJCVR5cGUgdHlwZSA9IGNyZWF0aW9uLmdl
+dFR5cGUoKTsKKwkJYXNzZXJ0RXF1YWxzKCJJbmNvcnJlY3QgdHlwZSIsIHRydWUsIHR5cGUuaXNB
+cnJheVR5cGUoKSk7CisJCWNoZWNrU291cmNlUmFuZ2UodHlwZSwgIkBNYXJrZXIyIGludCBATWFy
+a2VyIEBNYXJrZXIyIFtdIEBNYXJrZXIyIEBNYXJrZXIzIFtdIEBNYXJrZXIzIEBNYXJrZXIgW10i
+LCBjb250ZW50cy50b0NoYXJBcnJheSgpKTsKKwkJQXJyYXlJbml0aWFsaXplciBpbml0aWFsaXpl
+ciA9IGNyZWF0aW9uLmdldEluaXRpYWxpemVyKCk7CisJCWNoZWNrU291cmNlUmFuZ2UoaW5pdGlh
+bGl6ZXIsICJ7e3sxLCAyLCAzfX19IiwgY29udGVudHMudG9DaGFyQXJyYXkoKSk7CisJfQogfQpk
+aWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvZG9tL29yZy9lY2xpcHNlL2pkdC9jb3Jl
+L2RvbS9BU1RDb252ZXJ0ZXIuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2RvbS9vcmcvZWNs
+aXBzZS9qZHQvY29yZS9kb20vQVNUQ29udmVydGVyLmphdmEKaW5kZXggNmQwZDU1ZC4uOWI5ZjZk
+ZSAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvZG9tL29yZy9lY2xpcHNlL2pkdC9j
+b3JlL2RvbS9BU1RDb252ZXJ0ZXIuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9kb20v
+b3JnL2VjbGlwc2UvamR0L2NvcmUvZG9tL0FTVENvbnZlcnRlci5qYXZhCkBAIC05NzIsNiArOTcy
+LDkgQEAKIAkJCQljb21wb25lbnRUeXBlID0gKEFycmF5VHlwZSkgY29tcG9uZW50VHlwZS5nZXRQ
+YXJlbnQoKTsKIAkJCX0KIAkJfQorCQlpZiAoZXhwcmVzc2lvbi5hbm5vdGF0aW9uc09uRGltZW5z
+aW9ucyAhPSBudWxsICYmIHRoaXMuYXN0LmFwaUxldmVsID49IEFTVC5KTFM4KSB7CisJCQlhbm5v
+dGF0ZVR5cGUoYXJyYXlUeXBlLCBleHByZXNzaW9uLmFubm90YXRpb25zT25EaW1lbnNpb25zKTsK
+KwkJfQogCQlhcnJheUNyZWF0aW9uLnNldFR5cGUoYXJyYXlUeXBlKTsKIAkJaWYgKHRoaXMucmVz
+b2x2ZUJpbmRpbmdzKSB7CiAJCQlyZWNvcmROb2RlcyhhcnJheVR5cGUsIGV4cHJlc3Npb24pOwpA
+QCAtMzIwNCw2ICszMjA3LDE1IEBACiAJCQkJfQogCQl9CiAJfQorCXByaXZhdGUgdm9pZCBhbm5v
+dGF0ZVR5cGUoVHlwZSB0eXBlLCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuYXN0
+LkFubm90YXRpb25bXVtdIGFubm90YXRpb25zKSB7CisJCWludCBsZXZlbCA9IGFubm90YXRpb25z
+Lmxlbmd0aCAtIDE7CisJCXdoaWxlKHR5cGUuaXNBcnJheVR5cGUoKSkgeworCQkJQXJyYXlUeXBl
+IGFycmF5VHlwZSA9IChBcnJheVR5cGUpIHR5cGU7CisJCQlvcmcuZWNsaXBzZS5qZHQuaW50ZXJu
+YWwuY29tcGlsZXIuYXN0LkFubm90YXRpb25bXSB0eXBlQW5ub3RhdGlvbnMgPSBhbm5vdGF0aW9u
+c1tsZXZlbC0tXTsKKwkJCWFubm90YXRlVHlwZShhcnJheVR5cGUsIHR5cGVBbm5vdGF0aW9ucyk7
+CisJCQl0eXBlID0gYXJyYXlUeXBlLmdldENvbXBvbmVudFR5cGUoKTsKKwkJfQorCX0KIAogCXBy
+aXZhdGUgdm9pZCBhbm5vdGF0ZVR5cGVQYXJhbWV0ZXIoVHlwZVBhcmFtZXRlciB0eXBlUGFyYW1l
+dGVyLCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuYXN0LkFubm90YXRpb25bXSBh
+bm5vdGF0aW9ucykgewogCQlzd2l0Y2godGhpcy5hc3QuYXBpTGV2ZWwpIHs=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

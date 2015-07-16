@@ -1,0 +1,619 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>421165</bug_id>
+          
+          <creation_ts>2013-11-06 10:32:00 -0500</creation_ts>
+          <short_desc>[performance] Low hit rates in JavaModel caches</short_desc>
+          <delta_ts>2014-04-29 05:22:03 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords>performance</keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Terry Parker">tparker</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>eclipse.sprigogin</cc>
+    
+    <cc>het</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>john_arthorne</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2327230</commentid>
+    <comment_count>0</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2013-11-06 10:32:07 -0500</bug_when>
+    <thetext>By analyzing UI delays logged using the (new in Luna) UI Performance Monitoring API, we saw that ~50% of all JDT-related UI delays greater than 500ms are attributed to low hit rates in the JavaModel caches, which are currently evicted on every Java-related resource change and every Java build.
+
+The JavaModel existingExternalFiles and existingExternalCommittedFiles caches cache the return value of java.io.File.isFile() and are used heavily by JavaProject.findPackageFragmentRoots() and related calls. By giving the DeltaProcessor class the sole responsibility of updating these caches, we see a speedup of ~56x in calculating JavaProject.findPackageFragmentRoots for a project with ~4200 jars (see below for more details).
+
+The changes to improve the caching include:
+
+* Remove the JavaModel existingExternalFiles and existingExternalCommittedFiles
+  caches, replacing them with an updated JavaModelManager externalFiles cache
+  and a new assumedExternalFiles cache.
+* Make the DeltaProcessor fully responsible for updating the cached values with
+  current file system state. This is triggered only by calls to DeltaProcessor
+  .refreshExternalArchives() and PRE_REFRESH events in the DeltaProcessor&apos;s
+  IResourceChangeListener. The previous JavaModel caches were invalidated on
+  every incremental build and Java file resource change.
+* In addition, evict the cache if a Java project has multiple builders and
+  the first builder is not the Java builder, since previous builders may
+  create jar artifacts that are consumed by the Java builder.
+* Looking at the two JavaModel caches, both are populated using the same
+  criteria and evicted at the same time, so there really never was a need
+  for two separate caches. See http://bugs.eclipse/org/83750
+  &quot;[perf] Excessive File.isFile calls for clients of JavaModel.getTarget(...)&quot;
+  for the history of the existingExternalCommittedFiles cache.
+* Add a performance test for this change. When with on our patched Eclipse 4.3.1
+  release, which adds the Google-supplied performance patches that have already 
+  been applied to Luna, we get the following results for a classpath containing
+  100 jars:
+  Unpatched, local file system: 18ms
+  Patched, local file system:   18ms
+  Unpatched, NFS file system:   43ms
+  Patched, NFS file system:     18ms
+
+In addition, we used JProfiler to profile patched and unpatched versions of Eclipse on a project with ~4200 jars, where the jars are stored on a file system with performance similar to NFS, using the following test:
+
+1) Open Java editor tabs for a file in each of projects A and B
+2) Disable Project &gt; Build Automatically
+3) Turn on &apos;Link with Editor&apos; in the Package Explorer
+4) Collapse all in the Package Explorer
+5) Select project A&apos;s Java editor tab, edit and save the file
+6) Start profiling
+7) Select project B&apos;s editor tab, wait for the Package Explorer to populate,
+   expand and select the file
+8) Stop profiling
+
+AbstractTreeViewer.internalExpand is the entry point for the work of populating
+the Package Explorer tree view.
+
+In the unpatched version, profiling showed that
+AbstractTreeViewer.internalExpand execution times were dominated by I/O
+in JavaProject.findPackageFragmentRoots. The average of 5 runs showed
+JavaProject.findPackageFragmentRoots taking ~3.0 seconds
+(3.2, 2.6, 3.2, 3.5, 2.8).
+
+In the patched version, JavaProject.findPackageFragmentRoots goes from ~3.0
+seconds to ~.053 seconds (.050, .058, .056, .040, .059). That is a ~56x speedup.
+Total AbstractTreeViewer.internalExpand time took on average ~.0283 seconds,
+throwing out one run where DecoratingStyledCellLabelProvider.getImage made a
+gtk call that took over a second to return. Of the five runs, no single
+function took a dominant amount of time, unlike the unpatched Eclipse, where I/O to repopulate the JavaModel caches was completely dominant.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2327313</commentid>
+    <comment_count>1</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2013-11-06 14:20:50 -0500</bug_when>
+    <thetext>Pushed to Gerrit as https://git.eclipse.org/r/#/c/18152/</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2327479</commentid>
+    <comment_count>2</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-11-07 04:29:23 -0500</bug_when>
+    <thetext>Jay, please have someone review this during M4. Thanks.
+
+See also bug 106202 and bug 108665.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2336794</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-12-02 23:06:15 -0500</bug_when>
+    <thetext>I ran the newly added performance test FullSourceWorkspaceModelTests#getExternalPath locally and thought I saw tremendous improvement. But on subsequent runs, the test results were inconsistent.
+
+Terry, can you try this in your environment and let me know what you find?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2337351</commentid>
+    <comment_count>4</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2013-12-03 21:02:53 -0500</bug_when>
+    <thetext>Hi Jay, thanks for looking at this. 
+
+FullSourceWorkspaceModelTests#testGetAllPackageFragmentRoots is the new performance test and with the unmodified FullSourceWorkspaceModelTests#getExternalPath that creates jars on local disk (an ext4 file system), I was seeing no improvement between unpatched and patched versions of Eclipse. In both cases the tests consistently took 17-18ms. However, performance was markedly better when I overrode FullSourceWorkspaceModelTests#getExternalPath to create and access the jars on a slower file system (NFS in my case), where the patched version still took 17-18ms and the unpatched version consistently look 42-43ms.
+
+What file system were you using when you ran the test? Was the variability in the unpatched or patched version? Given how dependent the unpatched version is on file system caching, I&apos;m guessing the former.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2337367</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-12-03 23:17:27 -0500</bug_when>
+    <thetext>Sorry, it&apos;s a copy paste mistake. I meant FullSourceWorkspaceModelTests#testGetAllPackageFragmentRoots() and here is my test result. The test was run on an idle machine. But can&apos;t be sure if there wouldn&apos;t be any other activity on the hard disk as it&apos;s the same local drive I used.
+
+Here is what I got for Elapsed Process time during my runs:
+Without patch (in ms):
+  75, 74, 91, 80, 84
+
+With patch (in ms):
+  40, 66, 66, 64, 5, 38, 74
+
+With the fix, the timings are in invariable better, but inconsistent.
+
+Let me try with an external drive and see what result I get.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2337412</commentid>
+    <comment_count>6</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2013-12-04 03:16:26 -0500</bug_when>
+    <thetext>I did a git fetch and cherry picked the change into master and reran the tests again five more times. Here are the results:
+
+Elapsed process time (same as system time): 17ms, 18ms, 17ms, 19ms, 18ms
+
+I&apos;m not sure why you see more variability than I do. The caches that are changed by this patch are fully warmed up by the time the measuring part of the test is executed, and in a quick look at JavaModel#computePackageFragmentRoots, I don&apos;t see any other I/O.  Here is the full output from the last run:
+
+Used default compliance: 1.4
+Unzipping /usr/local/google/home/tparker/jdt2/eclipse.jdt.core.binaries/org.eclipse.jdt.core.tests.binaries/full-source-R3_0.zip
+	in /usr/local/google/users/tparker/workspace/junit-workspace... done in 1838ms.
+Create and open projects in environment...(3460ms)
+Create lib entries for the JDKs...5 found (0ms)
+Set projects classpaths...(849ms)
+================================================================================
+Running FullSourceWorkspaceModelTests#testGetAllPackageFragmentRoots...
+Create project BigProject in /usr/local/google/users/tparker/workspace/junit-workspace:
+	- create 200 folders x 200 packages...
+		=&gt; global time = 15.236 seconds)
+	- add project to full source workspace...(2012ms)
+	- Create compilation unit with secondary type...(3ms)
+Scenario &apos;org.eclipse.jdt.core.tests.performance.FullSourceWorkspaceModelTests#testGetAllPackageFragmentRoots()&apos; (average over 10 samples):
+  System Time:              18ms        (95% in [9ms, 27ms])           Measurable effect: 15ms (1.3 SDs) (required sample size for an effect of 5% of mean: 2661)
+  Used Java Heap:         1.78M         (95% in [1.2M, 2.35M])         Measurable effect: 1.01M (1.3 SDs) (required sample size for an effect of 5% of mean: 1298)
+  Working Set:             409          (95% in [-516, 1.3K])          Measurable effect: 1.6K (1.3 SDs) (required sample size for an effect of 5% of stdev: 6400)
+  Elapsed Process:          18ms        (95% in [9ms, 27ms])           Measurable effect: 15ms (1.3 SDs) (required sample size for an effect of 5% of mean: 2661)
+  Kernel time:               1ms        (95% in [-1ms, 3ms])           Measurable effect: 4ms (1.3 SDs) (required sample size for an effect of 5% of stdev: 6400)
+  CPU Time:                 16ms        (95% in [9ms, 22ms])           Measurable effect: 10ms (1.3 SDs) (required sample size for an effect of 5% of mean: 1778)
+  Hard Page Faults:          0          (95% in [0, 0])               
+  Soft Page Faults:         20          (95% in [14, 25])              Measurable effect: 9 (1.3 SDs) (required sample size for an effect of 5% of mean: 890)
+  Text Size:                 0          (95% in [0, 0])               
+  Data Size:                 0          (95% in [0, 0])               
+  Library Size:              0          (95% in [0, 0])</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2337447</commentid>
+    <comment_count>7</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-12-04 04:37:39 -0500</bug_when>
+    <thetext>(In reply to Terry Parker from comment #6)
+&gt; I&apos;m not sure why you see more variability than I do. 
+
+Different disk? Different JRE?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2337852</commentid>
+    <comment_count>8</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2013-12-04 16:30:18 -0500</bug_when>
+    <thetext>The initial timings were on an Ubuntu 12.04.3 LTS system running under a 64-bit Java7 VM (OpenJDK Server VM build 22.0-b10, mixed mode).
+
+I set up my MacBook Pro running under a Java8 VM (Java HotSpot(TM) 64-Bit Server VM build 25.0-b23, mixed mode) and got the following results:
+
+Unpatched, local disk:
+17, 13, 12, 10, 12ms
+
+Patched:
+12, 12, 11, 11, 12ms
+
+It could be that the JVM and garbage collection are causing your variability. Maybe you can try changing those to see if you get a consistent result out of the patched tests. Or it might be something machine-specific.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2337919</commentid>
+    <comment_count>9</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-12-04 23:03:00 -0500</bug_when>
+    <thetext>(In reply to Terry Parker from comment #8)
+&gt; Unpatched, local disk:
+&gt; 17, 13, 12, 10, 12ms
+&gt; 
+&gt; Patched:
+&gt; 12, 12, 11, 11, 12ms
+
+This is interesting. Take the first one (17ms) out and the numbers are same !</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2337927</commentid>
+    <comment_count>10</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-12-04 23:42:16 -0500</bug_when>
+    <thetext>I have finished one round of review of the patch. While the patch itself looks alright, we are still wondering why the fix is not producing performance improvement consistently. Guess this will have to be moved to M5.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2339181</commentid>
+    <comment_count>11</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2013-12-09 01:49:20 -0500</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #10)
+&gt; I have finished one round of review of the patch. While the patch itself
+&gt; looks alright, we are still wondering why the fix is not producing
+&gt; performance improvement consistently. Guess this will have to be moved to M5.
+
+The performance test I added creates 100 small jars (containing only a MANIFIEST.MF file with a single line in it) and places them on the classpath. That isn&apos;t a realistic environment to see the performance gains -- in many cases the efficiency of local disk caching matches the performance gains provided by the caching in the patch. And as one of my coworkers pointed out, the local drive on my Mac is SSD, so it wasnt expected that caching in memory would show much improvement over the SSD.
+
+Outside of using a slower file system, a couple of ways to attempt to defeat the effectiveness of disk caching are to run with more jars or with larger jars.  Trying each of these things, I got the following results on my Linux box:
+Without the patch, 10k tiny jars: 354, 437, 410, 450, 354 (avg 401ms)
+With the patch, 10k tiny jars: 337, 334, 334, 357, 327 (avg 337ms)
+Without the patch, 100 ~830k jars: 20, 20, 66, 20, 18ms
+With the patch, 100 ~830k jars: 16, 18, 18, 18, 18ms
+
+A much more interesting benchmark is how many file stat operations are avoided by the patch. I added local instrumentation to the code in this patch to determine that.  For this bug, 1000 stats are avoided (the test loops 10 times over a classpath containing 100 jars.) I briefly looked at a way to add this stat to the performance test framework but it doesn&apos;t look like there is an easy way to do it.
+
+FYI, currently the method of jar creation in the performance test makes for extremely slow setup.  I created a new Util.copyFile() function to make the setup of 10k jars much faster. I can upload a patch that changes only the testing code for that if you are interested.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2350926</commentid>
+    <comment_count>12</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-01-17 02:25:59 -0500</bug_when>
+    <thetext>Terry, I haven&apos;t had a chance to try out the performance tests with your suggestion in comment #11. Let me take this up in M6.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2369596</commentid>
+    <comment_count>13</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-28 03:16:04 -0500</bug_when>
+    <thetext>I did the experiment that Terry suggested in comment #11 and saw more or less saw similar results, although I must admit the results were bit more inconsistent on my machine. But even with the numbers posted in comment #11, I don&apos;t it&apos;s worth the revamp we are talking about, because practically we will not see noticeable improvement. 
+
+I know we should have been been more responsive than this. But blame it on the hectic Java 8 schedule.
+
+Terry, I am inclined to close this bug unless you still believe (and convince us) that it&apos;s worth it.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2369784</commentid>
+    <comment_count>14</comment_count>
+      <attachid>240402</attachid>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-02-28 09:36:31 -0500</bug_when>
+    <thetext>Created attachment 240402
+SecurityManager-based measurement of checkRead calls
+
+Running the test with this measurement enabled to estimate file reads performed in a worse case scenario gives me following results: 
+
+Without the patch: File reads at end:156488
+With the patch: File reads at end:153790
+
+Either the patch no longer works or those accesses in the difference are special in some way only under certain circumstances that my setup doesn&apos;t trigger, because I don&apos;t see any clear difference.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2370047</commentid>
+    <comment_count>15</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2014-02-28 19:17:07 -0500</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #13)
+&gt; I did the experiment that Terry suggested in comment #11 and saw more or
+&gt; less saw similar results, although I must admit the results were bit more
+&gt; inconsistent on my machine. But even with the numbers posted in comment #11,
+&gt; I don&apos;t it&apos;s worth the revamp we are talking about, because practically we
+&gt; will not see noticeable improvement. 
+&gt; 
+&gt; I know we should have been been more responsive than this. But blame it on
+&gt; the hectic Java 8 schedule.
+&gt; 
+&gt; Terry, I am inclined to close this bug unless you still believe (and
+&gt; convince us) that it&apos;s worth it.
+
+@Jayaprakash 
+Yes, the value of this patch is indicated by test that I detail at the bottom of comment #1. When running versions of Eclipse without and with the patch, we see a speed up for JavaProject.findPackageFragmentRoots from ~3.0 seconds to ~.053 seconds when expanding the Package Explorer tree, an improvement of ~56 times. We see that speedup for a project that has &gt; 4000 jars that are being accessed on a file system that has performance similar to NFS. If you could stop by my workstation, it would be very easy to show this patchs value. :-)
+
+This patch exchanges file stat operations for a cache lookups. Internal file system caching can make it difficult to recreate real world conditions in a small test, and explains some of the variability in the numbers. 
+
+What kind of convincing do you need? Can we agree that it is preferable to avoid file stats when not needed? We should be able to measure file access counts reliably.
+
+I briefly looked at what it would take to update the profiling framework to gather file access counts. It looks like the best way to do that is using the Java Virtual Machine Tool Interface, but that would require native code for every platform, so I didnt pursue it. To see how many file accesses this patch saved, I inserted instrumentation code that verified that this patch did remove all file stat calls in the measure performance loop.
+
+@Timo
+Can you give me more details on how you set up your test?  java.lang.SecurityManager.checkRead() checks permission, so how are you using it to check file access counts? When configured with 100 jars, this test only avoids 1000 file stat calls (not file reads). Did you test with 100 jars or 10k jars? Does your test only capture the file access in the &quot;measure performance&quot; loop, and not any test setup/teardown, which could vary from run-to-run?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2370053</commentid>
+    <comment_count>16</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-02-28 20:24:05 -0500</bug_when>
+    <thetext>(In reply to comment #15)
+
+&gt; Can you give me more details on how you set up your test?
+&gt; java.lang.SecurityManager.checkRead() checks permission, so how are you using it
+&gt; to check file access counts?
+
+I am not, I am using the measured checkAccess call counts as an estimation of the maximum impact that the patch could have, assuming checkRead calls correlate well with actual file accesses. The reason for not measuring file accesses is that I can&apos;t, not in any meaningful way. For one, I have an SSD, but more importantly I have more free RAM than I know what to do with, and so that unused RAM gets used as a file cache. Any measurements made would end up being merely estimates of the real impact in a worse case scenario, again.
+
+&gt; When configured with 100 jars, this test only
+&gt; avoids 1000 file stat calls (not file reads). Did you test with 100 jars or 10k
+&gt; jars? Does your test only capture the file access in the &quot;measure performance&quot;
+&gt; loop, and not any test setup/teardown, which could vary from run-to-run?
+
+I ran the testGetAllPackageFragmentRoots test without changing any default values as a JUnit Plugin Test from inside the IDE. The measurements exclude anything outside the end of setUp and start of tearDown. Please see the patch I included earlier for the precise changes made, for recreating the test.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2371945</commentid>
+    <comment_count>17</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-03-05 11:36:34 -0500</bug_when>
+    <thetext>While I appreciate the effort put in by everyone involved, I am afraid I don&apos;t see significant performance improvement, esp. considering the changes involved.
+
+Closing the bug as WONTFIX.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2371970</commentid>
+    <comment_count>18</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2014-03-05 11:55:34 -0500</bug_when>
+    <thetext>I trust Terry that it greatly improves his scenario. Even if it&apos;s a corner case (for us), we should fix this, especially since he provided a patch.
+
+Jay, please work with Terry to fix this for M7, thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372010</commentid>
+    <comment_count>19</comment_count>
+    <who name="Sergey Prigogin">eclipse.sprigogin</who>
+    <bug_when>2014-03-05 13:12:05 -0500</bug_when>
+    <thetext>(In reply to Dani Megert from comment #18)
+Thank you, Dani. Much appreciated.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372130</commentid>
+    <comment_count>20</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2014-03-05 19:23:40 -0500</bug_when>
+    <thetext>Yes, thank you Dani.
+
+For more context in understanding the patch and the code that it is changing, please consider the following:
+
+The patch consolidates three file existence caches, saving both memory and duplicated file existence checks.
+
+The JavaModelManager externalFilesCache was recently added for bug 411423. It previously contained the union of all classpath entries that were confirmed files (i.e., that returned true to isFile()) or looked like files rather than folders. This patch splits that cache into two, one for confirmed external files (still called the externalFilesCache), and a second &quot;assumedExternalFiles&quot; cache for those files that return false to isFile() but that have a non-null extension.
+
+The JavaModel existingExternalConfirmedFiles cache corresponds exactly to the updated JavaModelManager externalFilesCache. This patch replaces that cache with the JavaModelManager cache.
+
+The JavaModel existingExternalFiles cache also corresponds exactly to the updated JavaModelManager externalFilesCache. This patch replaces that cache with the JavaModelManager cache.
+
+The majority of the code in the patch deals with consolidating these three caches and the helper functions which access them.
+
+In addition this patch does the following:
+1) Updates the DeltaProcessor so that instead of unconditionally clearing the entire cache on any Java-related change, it only removes individual cache entries corresponding to changed archive files.
+
+2) Updates the DeltaProcessor so that instead of unconditionally clearing the cache on every PREBUILD, it only clears the cache if the Java builder is not the first builder (see the code comments for the explanation).
+
+3) Removes a duplicate clearing of the cache from JavaBuilder.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2384670</commentid>
+    <comment_count>21</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-04-04 07:03:25 -0400</bug_when>
+    <thetext>Went through the patch again. As already said, patch is good.
+
+Terry, just one comment: Is the TODO in JavaModel.java still applicable? If it is no longer an issue, let me know so I can remove it. A new patch is not required for this.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2384868</commentid>
+    <comment_count>22</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2014-04-04 13:36:56 -0400</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #21)
+&gt; Went through the patch again. As already said, patch is good.
+&gt; 
+&gt; Terry, just one comment: Is the TODO in JavaModel.java still applicable? If
+&gt; it is no longer an issue, let me know so I can remove it. A new patch is not
+&gt; required for this.
+
+You can remove that TODO. Thanks Jay.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2385009</commentid>
+    <comment_count>23</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-04-05 04:31:52 -0400</bug_when>
+    <thetext>Released the patch in master via:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=051572f99b6a73010e844cbf76e196d479c1689d
+
+Thanks for your patience, Terry!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394525</commentid>
+    <comment_count>24</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-04-29 05:16:49 -0400</bug_when>
+    <thetext>Verified for 4.4 M7 using I20140427-2030 build.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>240402</attachid>
+            <date>2014-02-28 09:36:00 -0500</date>
+            <delta_ts>2014-02-28 09:36:31 -0500</delta_ts>
+            <desc>SecurityManager-based measurement of checkRead calls</desc>
+            <filename>a-eclipse.jdt.core.patch</filename>
+            <type>text/plain</type>
+            <size>8856</size>
+            <attacher name="Timo Kinnunen">timo.kinnunen</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZS50
+ZXN0cy5wZXJmb3JtYW5jZQpkaWZmIC0tZ2l0IHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0
+cy9wZXJmb3JtYW5jZS9GdWxsU291cmNlV29ya3NwYWNlTW9kZWxUZXN0cy5qYXZhIHNyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9wZXJmb3JtYW5jZS9GdWxsU291cmNlV29ya3NwYWNlTW9k
+ZWxUZXN0cy5qYXZhCmluZGV4IDJjZDEwYWEuLjExZGZjZjEgMTAwNjQ0Ci0tLSBzcmMvb3JnL2Vj
+bGlwc2UvamR0L2NvcmUvdGVzdHMvcGVyZm9ybWFuY2UvRnVsbFNvdXJjZVdvcmtzcGFjZU1vZGVs
+VGVzdHMuamF2YQorKysgc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL3BlcmZvcm1hbmNl
+L0Z1bGxTb3VyY2VXb3Jrc3BhY2VNb2RlbFRlc3RzLmphdmEKQEAgLTgsNiArOCw3IEBACiAgKiBD
+b250cmlidXRvcnM6CiAgKiAgICAgSUJNIENvcnBvcmF0aW9uIC0gaW5pdGlhbCBBUEkgYW5kIGlt
+cGxlbWVudGF0aW9uCiAgKiAgICAgVGhpcnVtYWxhIFJlZGR5IE11dGNodWtvdGEgPHRoaXJ1bWFs
+YUBnb29nbGUuY29tPiAtIENvbnRyaWJ1dGlvbiB0byBidWc6IGh0dHBzOi8vYnVncy5lY2xpcHNl
+Lm9yZy9idWdzL3Nob3dfYnVnLmNnaT9pZD00MTE0MjMKKyAqICAgICBUZXJyeSBQYXJrZXIgPHRw
+YXJrZXJAZ29vZ2xlLmNvbT4gLSBbcGVyZm9ybWFuY2VdIExvdyBoaXQgcmF0ZXMgaW4gSmF2YU1v
+ZGVsIGNhY2hlcyAtIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy80MjExNjUKICAqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqLwogcGFja2FnZSBvcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5wZXJmb3Jt
+YW5jZTsKIApAQCAtMTIyLDYgKzEyMywxMCBAQAogCXN1cGVyLnNldFVwKCk7CiAJc2V0VXBCaWdQ
+cm9qZWN0KCk7CiAJc2V0VXBCaWdKYXJzKCk7CisJU2VjdXJpdHlNYW5hZ2VyVXRpbC5wcmV2ZW50
+U3lzdGVtRXhpdEZhc3RGaWxlUmVhZCgwKTsKKyAgICAgICAgU3lzdGVtLm91dC5wcmludGxuKCIt
+LS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tIik7CisgICAgICAgIFN5c3RlbS5v
+dXQucHJpbnRsbigiRmlsZSByZWFkcyBhdCBzdGFydDoiK1NlY3VyaXR5TWFuYWdlclV0aWwuZ2V0
+RmlsZVJlYWREZWxheXNDb3VudCgpKTsKKyAgICAgICAgU3lzdGVtLm91dC5wcmludGxuKCItLS0t
+LS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tXG4iKTsKIH0KIHByaXZhdGUgdm9pZCBz
+ZXRVcEJpZ1Byb2plY3QoKSB0aHJvd3MgQ29yZUV4Y2VwdGlvbiwgSU9FeGNlcHRpb24gewogCXRy
+eSB7CkBAIC0yNDcsNiArMjUyLDEwIEBACiAKIAkvLyBFbmQgb2YgZXhlY3V0aW9uID0+IG9uZSB0
+ZXN0IGxlc3MKIAlURVNUU19DT1VOVC0tOworICAgICAgICBTeXN0ZW0ub3V0LnByaW50bG4oIi0t
+LS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0iKTsKKyAgICAgICAgU3lzdGVtLm91
+dC5wcmludGxuKCJGaWxlIHJlYWRzIGF0IGVuZDoiK1NlY3VyaXR5TWFuYWdlclV0aWwuZ2V0Rmls
+ZVJlYWREZWxheXNDb3VudCgpKTsKKyAgICAgICAgU3lzdGVtLm91dC5wcmludGxuKCItLS0tLS0t
+LS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tXG4iKTsKKyAgICAgICAgU2VjdXJpdHlNYW5h
+Z2VyVXRpbC5hbGxvd1N5c3RlbUV4aXQoKTsKIAogCS8vIExvZyBwZXJmIHJlc3VsdAogCWlmIChM
+T0dfRElSICE9IG51bGwpIHsKQEAgLTE1MDEsNiArMTUxMCw2NiBAQAogCX0KIH0KIAorLyoKKyAq
+IE92ZXJyaWRpbmcgZ2V0RXh0ZXJuYWxQYXRoKCkgdG8gYmUgb24gYSBub24tbG9jYWwgZGlzayAo
+ZS5nLiwgTkZTKSBzaG93cyB0aGUgYWR2YW50YWdlcworICogb2YgY2FjaGluZyBmaWxlIGV4aXN0
+ZW5jZSBjaGVja3MgaW4gdGhlIHRlc3RKYXZhTW9kZWxNYW5hZ2VyRXh0ZXJuYWxGaWxlc0NhY2hl
+KCkgdGVzdC4KKyAqLworcHJvdGVjdGVkIFN0cmluZyBnZXRFeHRlcm5hbFBhdGgoKSB7CisJLy8g
+Tk9URTogRG8gc29tZXRoaW5nIHNpbWlsYXIgdG8gdGhpcyBjb21tZW50ZWQtb3V0IGNvZGUgdG8g
+c2V0IHVwIHRoZSB0ZXN0cyB0bworCS8vIHVzZSBhIG5vbi1sb2NhbCBmaWxlIHN5c3RlbS4KKy8v
+CXJldHVybiAiL2hvbWUvIiArIFN5c3RlbS5nZXRQcm9wZXJ0eSgidXNlci5uYW1lIikgKyAiL3Bl
+cmZvcm1hbmNlX3Rlc3QvIjsKKwlyZXR1cm4gc3VwZXIuZ2V0RXh0ZXJuYWxQYXRoKCk7Cit9CisK
+Ky8vaHR0cHM6Ly9idWdzLmVjbGlwc2Uub3JnL2J1Z3Mvc2hvd19idWcuY2dpP2lkPTQyMTE2NQor
+cHVibGljIHZvaWQgdGVzdEdldEFsbFBhY2thZ2VGcmFnbWVudFJvb3RzKCkgdGhyb3dzIEV4Y2Vw
+dGlvbiB7CisJaW50IGphckNvdW50ID0gMTAwOworCUlDbGFzc3BhdGhFbnRyeVtdIG9sZENsYXNz
+cGF0aCA9IEJJR19QUk9KRUNULmdldFJhd0NsYXNzcGF0aCgpOworCXRyeSB7CisJICAgIElDbGFz
+c3BhdGhFbnRyeVtdIGNsYXNzcGF0aCA9IG5ldyBJQ2xhc3NwYXRoRW50cnlbamFyQ291bnRdOwor
+CSAgICBmb3IgKGludCBpbmRleCA9IDA7IGluZGV4IDwgamFyQ291bnQ7IGluZGV4KyspIHsKKwkg
+ICAgICAgIFN0cmluZyBmaWxlUGF0aCA9IGdldEV4dGVybmFsUmVzb3VyY2VQYXRoKCJsaWIiKyBp
+bmRleCArIi5qYXIiKTsKKwkgICAgICAgIG9yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLnV0aWwu
+VXRpbC5jcmVhdGVKYXIobmV3IFN0cmluZ1swXSwKKwkgICAgICAgICAgICBuZXcgU3RyaW5nW10g
+eworCSAgICAgICAgICAgICAgICAiTUVUQS1JTkYvTUFOSUZFU1QuTUYiLAorCSAgICAgICAgICAg
+ICAgICAiTWFuaWZlc3QtVmVyc2lvbjogMS4wXG4iLAorCSAgICAgICAgICAgIH0sCisJICAgICAg
+ICAgICAgZmlsZVBhdGgsCisJICAgICAgICAgICAgSmF2YUNvcmUuVkVSU0lPTl8xXzQpOworCSAg
+ICAgICAgY2xhc3NwYXRoW2luZGV4XSA9IEphdmFDb3JlLm5ld0xpYnJhcnlFbnRyeShuZXcgUGF0
+aChmaWxlUGF0aCksIG51bGwsIG51bGwpOworCSAgICB9CisJICAgIEJJR19QUk9KRUNULnNldFJh
+d0NsYXNzcGF0aChjbGFzc3BhdGgsIG51bGwpOworCSAgICBJRmlsZSBmaWxlID0gKElGaWxlKSBX
+T1JLSU5HX0NPUFkuZ2V0UmVzb3VyY2UoKTsKKworCSAgICAvLyB3YXJtIHVwCisJICAgIGludCBt
+YXggPSAyMDsKKwkgICAgaW50IHdhcm11cCA9IFdBUk1VUF9DT1VOVCAvIDEwOworCSAgICBmb3Ig
+KGludCBpID0gMDsgaSA8IHdhcm11cDsgaSsrKSB7CisJICAgICAgICBmb3IgKGludCBqID0gMDsg
+aiA8IG1heDsgaisrKSB7CisJICAgICAgICAgICAgZmlsZS50b3VjaChudWxsLypubyBwcm9ncmVz
+cyovKTsKKwkgICAgICAgICAgICBCSUdfUFJPSkVDVC5nZXRBbGxQYWNrYWdlRnJhZ21lbnRSb290
+cygpOworCSAgICAgICAgfQorCSAgICB9CisKKwkgICAgLy8gbWVhc3VyZSBwZXJmb3JtYW5jZQor
+CSAgICBmb3IgKGludCBpID0gMDsgaSA8IE1FQVNVUkVTX0NPVU5UOyBpKyspIHsKKwkgICAgICAg
+IHJ1bkdjKCk7CisJICAgICAgICBzdGFydE1lYXN1cmluZygpOworCSAgICAgICAgZm9yIChpbnQg
+aiA9IDA7IGogPCBtYXg7IGorKykgeworCSAgICAgICAgICBmaWxlLnRvdWNoKG51bGwvKm5vIHBy
+b2dyZXNzKi8pOworCSAgICAgICAgICBCSUdfUFJPSkVDVC5nZXRBbGxQYWNrYWdlRnJhZ21lbnRS
+b290cygpOworCSAgICAgICAgfQorCSAgICAgICAgc3RvcE1lYXN1cmluZygpOworCSAgICB9CisK
+KwkgICAgY29tbWl0TWVhc3VyZW1lbnRzKCk7CisJICAgIGFzc2VydFBlcmZvcm1hbmNlKCk7CisK
+Kwl9IGZpbmFsbHkgeworCSAgICBCSUdfUFJPSkVDVC5zZXRSYXdDbGFzc3BhdGgob2xkQ2xhc3Nw
+YXRoLCBudWxsKTsKKwl9Cit9CisKIHByb3RlY3RlZCB2b2lkIHJlc2V0Q291bnRlcnMoKSB7CiAJ
+Ly8gZG8gbm90aGluZwogfQpkaWZmIC0tZ2l0IHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0
+cy9wZXJmb3JtYW5jZS9TZWN1cml0eU1hbmFnZXJVdGlsLmphdmEgc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL3BlcmZvcm1hbmNlL1NlY3VyaXR5TWFuYWdlclV0aWwuamF2YQpuZXcgZmls
+ZSBtb2RlIDEwMDY0NAppbmRleCAwMDAwMDAwLi4xZjk5MjRjCi0tLSAvZGV2L251bGwKKysrIHNy
+Yy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9wZXJmb3JtYW5jZS9TZWN1cml0eU1hbmFnZXJV
+dGlsLmphdmEKQEAgLTAsMCArMSwxNDkgQEAKKy8qKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioKKyAqIENv
+cHlyaWdodCAoYykgMjAxMywgMjAxNCBUaW1vIEtpbm51bmVuLgorICogQWxsIHJpZ2h0cyByZXNl
+cnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVyaWFscworICogYXJl
+IG1hZGUgYXZhaWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0aGUgRWNsaXBzZSBQdWJsaWMgTGlj
+ZW5zZSB2MS4wCisgKiB3aGljaCBpcyBhdmFpbGFibGUgYXQgaHR0cDovL3d3dy5lY2xpcHNlLm9y
+Zy9sZWdhbC9lcGwtdjEwLmh0bWwKKyAqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKi8KK3BhY2thZ2Ugb3Jn
+LmVjbGlwc2UuamR0LmNvcmUudGVzdHMucGVyZm9ybWFuY2U7CisKK2ltcG9ydCBqYXZhLmlvLklP
+RXhjZXB0aW9uOworaW1wb3J0IGphdmEubmlvLmNoYXJzZXQuQ2hhcnNldDsKK2ltcG9ydCBqYXZh
+Lm5pby5maWxlLkZpbGVzOworaW1wb3J0IGphdmEubmlvLmZpbGUuUGF0aDsKK2ltcG9ydCBqYXZh
+LnNlY3VyaXR5LkFjY2Vzc0NvbnRyb2xFeGNlcHRpb247CitpbXBvcnQgamF2YS51dGlsLmNvbmN1
+cnJlbnQuYXRvbWljLkF0b21pY0ludGVnZXI7CisKK3B1YmxpYyBjbGFzcyBTZWN1cml0eU1hbmFn
+ZXJVdGlsIHsKKyAgcHJpdmF0ZSBzdGF0aWMgY2xhc3MgRXhpdFByZXZlbnRpbmdTZWN1cml0eW1h
+bmFnZXIgZXh0ZW5kcyBTZWN1cml0eU1hbmFnZXIgeworICAgIEBPdmVycmlkZQorICAgIHB1Ymxp
+YyB2b2lkIGNoZWNrRXhpdChpbnQgc3RhdHVzKSB7CisgICAgICBzdXBlci5jaGVja0V4aXQoc3Rh
+dHVzKTsKKyAgICAgIHRocm93IG5ldyBBY2Nlc3NDb250cm9sRXhjZXB0aW9uKCJDYWxsaW5nIFN5
+c3RlbS5leGl0KCkgbm90IGFsbG93ZWQiKTsKKyAgICB9CisgIH0KKworICBwcml2YXRlIHN0YXRp
+YyBjbGFzcyBGaWxlQWNjZXNzU2xvd2luZ0FuZEV4aXRQcmV2ZW50aW5nU2VjdXJpdHlNYW5hZ2Vy
+IGV4dGVuZHMKKyAgICBFeGl0UHJldmVudGluZ1NlY3VyaXR5bWFuYWdlciB7CisgICAgcHJpdmF0
+ZSBmaW5hbCBsb25nIGRlbGF5OworICAgIHByaXZhdGUgZmluYWwgQXRvbWljSW50ZWdlciBkZWxh
+eXNDb3VudCA9IG5ldyBBdG9taWNJbnRlZ2VyKCk7CisgICAgVGhyZWFkTG9jYWw8RmlsZUFjY2Vz
+c1Nsb3dpbmdBbmRFeGl0UHJldmVudGluZ1NlY3VyaXR5TWFuYWdlcj4gZGVsYXllZCA9IG5ldyBU
+aHJlYWRMb2NhbDw+KCk7CisKKyAgICBGaWxlQWNjZXNzU2xvd2luZ0FuZEV4aXRQcmV2ZW50aW5n
+U2VjdXJpdHlNYW5hZ2VyKGxvbmcgZGVsYXkpIHsKKyAgICAgIHRoaXMuZGVsYXkgPSBkZWxheTsK
+KyAgICB9CisKKyAgICBwdWJsaWMgaW50IGdldERlbGF5c0NvdW50KCkgeworICAgICAgcmV0dXJu
+IGRlbGF5c0NvdW50LmdldCgpOworICAgIH0KKworICAgIEBPdmVycmlkZQorICAgIHB1YmxpYyB2
+b2lkIGNoZWNrUmVhZChqYXZhLmlvLkZpbGVEZXNjcmlwdG9yIGZkKSB7CisgICAgICBkZWxheSgp
+OworICAgICAgc3VwZXIuY2hlY2tSZWFkKGZkKTsKKyAgICB9CisKKyAgICBAT3ZlcnJpZGUKKyAg
+ICBwdWJsaWMgdm9pZCBjaGVja1JlYWQoU3RyaW5nIGZpbGUpIHsKKyAgICAgIGRlbGF5KCk7Cisg
+ICAgICBzdXBlci5jaGVja1JlYWQoZmlsZSk7CisgICAgfQorCisgICAgcHJpdmF0ZSB2b2lkIGRl
+bGF5KCkgeworICAgICAgZGVsYXlzQ291bnQuZ2V0QW5kSW5jcmVtZW50KCk7CisgICAgICBpZihk
+ZWxheWVkLmdldCgpICE9IG51bGwpIHsKKyAgICAgICAgcmV0dXJuOworICAgICAgfQorICAgICAg
+dHJ5IHsKKyAgICAgICAgZGVsYXllZC5zZXQodGhpcyk7CisgICAgICAgIGlmKGRlbGF5ID4gMCkg
+eworICAgICAgICAgIHRyeSB7CisgICAgICAgICAgICBUaHJlYWQuc2xlZXAoZGVsYXkpOworICAg
+ICAgICAgIH0gY2F0Y2goSW50ZXJydXB0ZWRFeGNlcHRpb24gZSkgeworICAgICAgICAgICAgVGhy
+ZWFkLmN1cnJlbnRUaHJlYWQoKS5pbnRlcnJ1cHQoKTsKKyAgICAgICAgICB9CisgICAgICAgIH0K
+KyAgICAgIH0gZmluYWxseSB7CisgICAgICAgIGRlbGF5ZWQuc2V0KG51bGwpOworICAgICAgfQor
+ICAgIH0KKyAgfQorCisgIHByaXZhdGUgc3RhdGljIGNsYXNzIEZpbGVBY2Nlc3NBbmRFeGl0UHJl
+dmVudGluZ1NlY3VyaXR5TWFuYWdlciBleHRlbmRzCisgICAgRXhpdFByZXZlbnRpbmdTZWN1cml0
+eW1hbmFnZXIgeworICAgIHByaXZhdGUgZmluYWwgU3RyaW5nW10gYWxsb3dlZDsKKworICAgIEZp
+bGVBY2Nlc3NBbmRFeGl0UHJldmVudGluZ1NlY3VyaXR5TWFuYWdlcihTdHJpbmcuLi4gYWxsb3dz
+KSB7CisgICAgICBhbGxvd2VkID0gYWxsb3dzLmNsb25lKCk7CisgICAgfQorCisgICAgQE92ZXJy
+aWRlCisgICAgcHVibGljIHZvaWQgY2hlY2tSZWFkKFN0cmluZyBmaWxlKSB7CisgICAgICBjaGVj
+ayhmaWxlKTsKKyAgICB9CisKKyAgICBAT3ZlcnJpZGUKKyAgICBwdWJsaWMgdm9pZCBjaGVja1dy
+aXRlKFN0cmluZyBmaWxlKSB7CisgICAgICBjaGVjayhmaWxlKTsKKyAgICB9CisKKyAgICBAT3Zl
+cnJpZGUKKyAgICBwdWJsaWMgdm9pZCBjaGVja0RlbGV0ZShTdHJpbmcgZmlsZSkgeworICAgICAg
+Y2hlY2soZmlsZSk7CisgICAgfQorCisgICAgcHVibGljIHZvaWQgY2hlY2soU3RyaW5nIGZpbGUp
+IHsKKyAgICAgIGZvcihTdHJpbmcgYWxsb3cgOiBhbGxvd2VkKSB7CisgICAgICAgIGlmKGZpbGUu
+c3RhcnRzV2l0aChhbGxvdykpIHsgcmV0dXJuOyB9CisgICAgICB9CisgICAgICB0aHJvdyBuZXcg
+QWNjZXNzQ29udHJvbEV4Y2VwdGlvbigiQWNjZXNzIG5vdCBhbGxvd2VkIHRvICIgKyBmaWxlKTsK
+KyAgICB9CisgIH0KKworICBwdWJsaWMgc3RhdGljIHZvaWQgcHJldmVudFN5c3RlbUV4aXQoKSB7
+CisgICAgaW5pdGlhbGl6ZVNlY3VyaXR5KG5ldyBFeGl0UHJldmVudGluZ1NlY3VyaXR5bWFuYWdl
+cigpKTsKKyAgfQorCisgIHB1YmxpYyBzdGF0aWMgdm9pZCBwcmV2ZW50U3lzdGVtRXhpdEZhc3RG
+aWxlUmVhZChsb25nIGZpbGVSZWFkRGVsYXlNaWxsaXMpIHsKKyAgICBpbml0aWFsaXplU2VjdXJp
+dHkobmV3IEZpbGVBY2Nlc3NTbG93aW5nQW5kRXhpdFByZXZlbnRpbmdTZWN1cml0eU1hbmFnZXIo
+CisgICAgICBmaWxlUmVhZERlbGF5TWlsbGlzKSk7CisgIH0KKworICBwdWJsaWMgc3RhdGljIHZv
+aWQgcHJldmVudFN5c3RlbUV4aXRGaWxlQWNjZXNzKFN0cmluZy4uLiBhbGxvd2VkKSB7CisgICAg
+aW5pdGlhbGl6ZVNlY3VyaXR5KG5ldyBGaWxlQWNjZXNzQW5kRXhpdFByZXZlbnRpbmdTZWN1cml0
+eU1hbmFnZXIoYWxsb3dlZCkpOworICB9CisKKyAgcHVibGljIHN0YXRpYyB2b2lkIGFsbG93U3lz
+dGVtRXhpdCgpIHsKKyAgICBTeXN0ZW0uc2V0U2VjdXJpdHlNYW5hZ2VyKG51bGwpOworICB9CisK
+KyAgcHVibGljIHN0YXRpYyBpbnQgZ2V0RmlsZVJlYWREZWxheXNDb3VudCgpIHsKKyAgICBTZWN1
+cml0eU1hbmFnZXIgc2VjdXJpdHlNYW5hZ2VyID0gU3lzdGVtLmdldFNlY3VyaXR5TWFuYWdlcigp
+OworICAgIGlmKCEoc2VjdXJpdHlNYW5hZ2VyIGluc3RhbmNlb2YgRmlsZUFjY2Vzc1Nsb3dpbmdB
+bmRFeGl0UHJldmVudGluZ1NlY3VyaXR5TWFuYWdlcikpIHsgcmV0dXJuIC0xOyB9CisgICAgcmV0
+dXJuICgoRmlsZUFjY2Vzc1Nsb3dpbmdBbmRFeGl0UHJldmVudGluZ1NlY3VyaXR5TWFuYWdlcikg
+c2VjdXJpdHlNYW5hZ2VyKQorICAgICAgLmdldERlbGF5c0NvdW50KCk7CisgIH0KKworICBwcml2
+YXRlIHN0YXRpYyB2b2lkIGluaXRpYWxpemVTZWN1cml0eShTZWN1cml0eU1hbmFnZXIgbWFuYWdl
+cikKKyAgICB0aHJvd3MgQXNzZXJ0aW9uRXJyb3IgeworICAgIHRyeSB7CisgICAgICBQYXRoIHBh
+dGggPSBGaWxlcy5jcmVhdGVUZW1wRmlsZSgiYWxsIiwgIi5wb2xpY3kiKTsKKyAgICAgIENoYXJz
+ZXQgYXNjaWkgPSBDaGFyc2V0LmZvck5hbWUoIkFTQ0lJIik7CisgICAgICBieXRlW10gYnl0ZXMg
+PQorICAgICAgICAoImdyYW50IHtcbiIgKyAiICBwZXJtaXNzaW9uIGphdmEuc2VjdXJpdHkuQWxs
+UGVybWlzc2lvbjtcbiIgKyAifTsiKQorICAgICAgICAgIC5nZXRCeXRlcyhhc2NpaSk7CisgICAg
+ICBGaWxlcy53cml0ZShwYXRoLCBieXRlcyk7CisgICAgICBTeXN0ZW0uc2V0UHJvcGVydHkoImph
+dmEuc2VjdXJpdHkucG9saWN5IiwgcGF0aC50b1N0cmluZygpKTsKKyAgICAgIFN5c3RlbS5zZXRT
+ZWN1cml0eU1hbmFnZXIobWFuYWdlcik7CisgICAgICB0cnkgeworICAgICAgICBtYW5hZ2VyLmNo
+ZWNrRXhpdCgwKTsKKyAgICAgIH0gY2F0Y2goRXhjZXB0aW9uIGV4cGVjdGVkKSB7CisgICAgICAg
+IHJldHVybjsKKyAgICAgIH0gZmluYWxseSB7CisgICAgICAgIEZpbGVzLmRlbGV0ZUlmRXhpc3Rz
+KHBhdGgpOworICAgICAgfQorICAgIH0gY2F0Y2goSU9FeGNlcHRpb24gZSkgeworICAgICAgdGhy
+b3cgbmV3IEFzc2VydGlvbkVycm9yKCJDYW5ub3QgcHJldmVudCBTeXN0ZW0uZXhpdCgpIiwgZSk7
+CisgICAgfQorICAgIHRocm93IG5ldyBBc3NlcnRpb25FcnJvcigiQ2Fubm90IHByZXZlbnQgU3lz
+dGVtLmV4aXQoKSIpOworICB9Cit9
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

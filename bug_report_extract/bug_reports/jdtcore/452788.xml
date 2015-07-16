@@ -1,0 +1,454 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>452788</bug_id>
+          
+          <creation_ts>2014-11-22 10:59:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler] Type not correctly inferred in lambda expression</short_desc>
+          <delta_ts>2014-12-09 04:24:40 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M4</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Daniel Dietrich">daniel.dietrich</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>manpalat</cc>
+    
+    <cc>mohan.kiran</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2487457</commentid>
+    <comment_count>0</comment_count>
+    <who name="Daniel Dietrich">daniel.dietrich</who>
+    <bug_when>2014-11-22 10:59:21 -0500</bug_when>
+    <thetext>Hi,
+
+using Eclipse Mars M3 and jdk1.8.0_25, the following does not compile in Eclipse (but with jdk).
+
+This may be the same reason as in Bug 451677.
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+import java.util.function.Function;
+
+interface Test&lt;A&gt; {
+
+	&lt;B&gt; Test&lt;B&gt; create(B b);
+
+	&lt;B&gt; Test&lt;B&gt; transform(Function&lt;? extends A, Test&lt;B&gt;&gt; f);
+
+	default &lt;B&gt; Test&lt;B&gt; wrap(Function&lt;? super A, ? extends B&gt; f) {
+		// THIS WORKS WITH ECJ: return transform(a -&gt; create((B) f.apply(a)));
+		return transform(a -&gt; create(f.apply(a)));
+	}
+}
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - 
+
+Thanks,
+
+Daniel</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487460</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-22 11:08:03 -0500</bug_when>
+    <thetext>Thanks for the report, I can reproduce in HEAD.
+
+
+(In reply to Daniel Dietrich from comment #0)
+&gt; This may be the same reason as in Bug 451677.
+
+I don&apos;t thinks so. In bug 451677 I think the problem relates to auto-boxing whereas the current issue has nothing of that in the picture.
+
+Interestingly, at M2 we did accept the program, only since M3 we report:
+
+        return transform(a -&gt; create(f.apply(a)));
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Type mismatch: cannot convert from Test&lt;Object&gt; to Test&lt;B&gt;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487465</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-22 12:24:04 -0500</bug_when>
+    <thetext>For clarity let&apos;s rename the two type parameters B to
+ B1 for wrap&apos;s type parameter
+ B2 for transform&apos;s type parameter
+
+We have two conflicting type bounds for B2#0 (inference variable representing B2):
+
+From the target type Test&lt;B1&gt;:
+  B2#0 = B1
+
+From the inner create call:
+  B2#0 = capture#2-of ? extends B1
+
+This lets invocation type inference fail.
+
+We fall back to the result of applicability inference, where
+  B2#0 = j.o.Object
+which makes transform return Test&lt;Object&gt;
+
+Hence the error:
+  Type mismatch: cannot convert from Test&lt;Object&gt; to Test&lt;B1&gt;
+
+
+From all I&apos;ve seen so far, I could not see any wrong in our inference.
+
+OTOH, the following version compiles fine:
+
+//----
+import java.util.function.Function;
+
+interface Test&lt;A&gt; {
+
+    &lt;B&gt; Test&lt;B&gt; create(B b);
+
+    &lt;B&gt; Test&lt;B&gt; transform(Function&lt;? extends A, Test&lt;B&gt;&gt; f);
+
+    default &lt;B&gt; Test&lt;? extends B&gt; wrap(Function&lt;? super A, ? extends B&gt; f) {
+        return transform(a -&gt; create(f.apply(a)));
+    }
+}
+//----
+
+So does this:
+
+//----
+import java.util.function.Function;
+
+interface Test&lt;A&gt; {
+
+    &lt;B&gt; Test&lt;B&gt; create(B b);
+
+    &lt;B&gt; Test&lt;B&gt; transform(Function&lt;? extends A, Test&lt;B&gt;&gt; f);
+
+    default &lt;B&gt; Test&lt;B&gt; wrap(Function&lt;? super A, B&gt; f) {
+        return transform(a -&gt; create(f.apply(a)));
+    }
+}
+//----
+
+Read this as: it is illegal to ignore an incoming wildcard.
+
+To guess a reason, why ecj behavior has changed from M2 to M3:
+Previously, we probably failed to see the constraint from the inner call.
+The corresponding spec change would then be
+  https://bugs.openjdk.java.net/browse/JDK-8038747
+We should check with the spec author, if our new behavior in this case is indeed the intended behavior, despite javac still answering differently.
+
+I&apos;ll let it sink in a little more, but I don&apos;t see a JDT bug, currently.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487476</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-22 13:36:11 -0500</bug_when>
+    <thetext>Questioning: is it correct to resolve create to
+   Test&lt;capture#2-of ? extends B1&gt; create(capture#2-of ? extends B1 b)
+?
+
+Answering
+   Test&lt;B1&gt; create(B1 b)
+should be legal, too, and probably produce the desired final outcome.
+
+This resolving happens when reducing the following contraint:
+  (&lt;no type&gt; a) -&gt; create(f.apply(a))  java.util.function.Function&lt;? extends A,Test&lt;B2#0&gt;&gt;
+
+The lambda is resolved with target type 
+  Function&lt;A,Test&lt;B2#0&gt;&gt;
+
+The inner create-call is resolved with target type
+  Test&lt;B2#0&gt;
+
+The argument f.apply(a) produces this type bound:
+  B3#0 :&gt; capture#2-of ? extends B1
+
+Matching target type against return type of f yields:
+  Test&lt;B3#0&gt;  Test&lt;B2#0&gt;
+  B3#0 = B2#0
+which together with the above produces:
+  B2#0 :&gt; capture#2-of ? extends B1
+resolved to:
+  B2#0 = capture#2-of ? extends B1
+
+Given that all this happens in the context of still inferring B2#0 this last resolve step seems premature.
+
+Experiment: avoid full resolution of create() and answer its type as
+  Test&lt;B2#0&gt; create(B2#0)
+
+Then the lambda would resolve to
+  Function&lt;A,Test&lt;B2#0&gt;&gt;
+
+This would completely avoid the use of the capture and allow outer inference to equate B2#0 with B1, thus accepting the program.
+
+
+To be investigated: does JLS provide the necessary device for binding an inference variable to an unresolved inference variable from outer inference?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487480</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-22 14:31:57 -0500</bug_when>
+    <thetext>Disregarding the spec for a second, I checked technical feasibility of the idea in comment 3.
+
+Two challenges:
+(1) can we somehow connect inner and outer InferenceContext18?
+
+(2) can we faithfully recognize which inference variables can/should be answered from IC18.getSolutions()?
+
+
+Ad 1: Interestingly, at the point when we need it, there is no connection whatsoever from what we have at hand when resolving create(..), back to the inference for the enclosing lambda.
+This information would have to be actively pushed down. I&apos;ve drafted a solution by
+- storing an &apos;InferenceContext18 inferenceContext&apos; in LambdaExpression:
+  - assign it during IC18.addConstraintsToC_OneExpr()
+  - propagate it in LE.copy()
+- storing an &apos;InferenceContext18 outerInferenceContext&apos; in MessageSend
+  (would have to be duplicated in other Invocations)
+  - assign during MS.findMethodBinding()
+    - lookup the LE via the methodScope() and fetch its inferenceContext
+  - attach it as outerContext in MS.freshInferenceContext()
+
+
+Ad 2: given IC18.getSolutions() has access to an outerContext, we can
+- fetch the inference variables of the outer context
+- ask the BoundSet if any of the outer variables are equivalent to a given inner inference variable
+  - do this by searching a sameBound mentioning inner &amp; outer variable
+- if an equivalent outer variable is found prefer this over any exact solution
+
+Ergo: Feasibility is established.
+
+Also: RunAllJava8Tests has nothing to complain.
+
+Remains to be seen: is this solution correct / within the bounds of JLS?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487481</commentid>
+    <comment_count>5</comment_count>
+    <who name="Daniel Dietrich">daniel.dietrich</who>
+    <bug_when>2014-11-22 14:36:07 -0500</bug_when>
+    <thetext>Wow, that was fast! :-)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487489</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-22 15:12:02 -0500</bug_when>
+    <thetext>(In reply to Daniel Dietrich from comment #5)
+&gt; Wow, that was fast! :-)
+
+We&apos;re not done yet :) the legalese part is still to come - hold on ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487490</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-22 15:21:32 -0500</bug_when>
+    <thetext>Let&apos;s try to match the implementation change against JLS plus pending amendment from https://bugs.openjdk.java.net/browse/JDK-8038747
+
+Pivot is this new spec sentence:
+ &quot;For a lambda expression, the search is applied recursively to the lambda body&quot;
+
+This is implemented by IC18.addConstraintsToC_OneExpr inside &quot;if (expri instanceof LambdaExpression)&quot;
+
+
+Current candidate is this lambda:
+  a -&gt; create(f.apply(a))
+
+Goal is to add more constraints wrt
+  create(f.apply(a))
+against an appropriate target type, where we take the return type of the lambdas function type, OK.
+
+
+The recursion seems to do the right thing in the block between enterPolyInvocation() and resumeSuspendedInference().
+Problem is, that all this recursive work needs a bunch of resolved types, like the lambda&apos;s function type, the applicable binding of the inner invocation etc.
+
+Now, the goal of recursion is in feeding more constraints into the IC18, but in preparation we need to call
+  lambda = lambda.resolveExpressionExpecting(t, this.scope)
+which is what triggers the unwanted final resolve of the inner inference!
+
+OTOH, the recursion doesn&apos;t seem well defined in the JLS amendment:
+- we are supposed to loop over ei &amp; Fi, where 
+  - ei are the arguments of the current invocation
+  - Fi are the formal parameters of the most specific applicable method
+While recurring, only ei is strictly defined, we aren&apos;t told what types to use for Fi, this requires a fair bit of reading between the lines.
+
+Given that lambda.resolveExpressionExpecting() is invoked basically with the purpose to fill this spec gap, it seems fair to be careful not to let this have the effect of over-eager resolution, finalizing any bit of the inference. IOW: we&apos;re left to our interpretation and judgment anyway, so we shouldn&apos;t be shy in this judgment.
+
+
+Keeping a few unresolved inference variables in this context certainly isn&apos;t a crime, the context being outlined by this call stack:
+
+BoundSet.getEquivalentOuterVariable(InferenceVariable, InferenceVariable[]) line: 1100	
+InferenceContext18.getSolutions(TypeVariableBinding[], InvocationSite, BoundSet) line: 862	
+ParameterizedGenericMethodBinding.computeCompatibleMethod18(MethodBinding, TypeBinding[], Scope, InvocationSite) line: 229	
+ParameterizedGenericMethodBinding.computeCompatibleMethod(MethodBinding, TypeBinding[], Scope, InvocationSite) line: 80	
+ClassScope(Scope).computeCompatibleMethod(MethodBinding, TypeBinding[], InvocationSite, boolean) line: 731	
+ClassScope(Scope).computeCompatibleMethod(MethodBinding, TypeBinding[], InvocationSite) line: 688	
+ClassScope(Scope).findMethod0(ReferenceBinding, char[], TypeBinding[], InvocationSite, boolean) line: 1620	
+ClassScope(Scope).findMethod(ReferenceBinding, char[], TypeBinding[], InvocationSite, boolean) line: 1521	
+MethodScope(Scope).getImplicitMethod(char[], TypeBinding[], InvocationSite) line: 2481	
+MessageSend.findMethodBinding(BlockScope) line: 883	
+MessageSend.resolveType(BlockScope) line: 702	
+ReturnStatement.resolve(BlockScope) line: 335	
+LambdaExpression.resolveType(BlockScope) line: 424	
+LambdaExpression.cachedResolvedCopy(TypeBinding, boolean, boolean) line: 853	
+LambdaExpression.resolveExpressionExpecting(TypeBinding, Scope) line: 883	
+InferenceContext18.addConstraintsToC_OneExpr(Expression, Set&lt;ConstraintFormula&gt;, TypeBinding, TypeBinding, MethodBinding, boolean) line: 461	
+
+For this particular call chain I&apos;m comfortable with the change.
+
+Next chapter: can the tweak leak outside this situation, spilling into situations that *are* well defined and shouldn&apos;t be &quot;cheated&quot;?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487492</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-22 15:43:30 -0500</bug_when>
+    <thetext>For posterity: within GRT_1_8, one more test triggers the new code path, which is the test for bug 442916, which is an indirect duplicate of bug 444891, leading us back to https://bugs.openjdk.java.net/browse/JDK-8038747 :)
+
+That test, however, passes with or without the pending change alike.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487514</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-22 19:51:57 -0500</bug_when>
+    <thetext>Hudson gave +1 to what I have so far, see https://git.eclipse.org/r/36882
+
+Remaining tasks:
+
+Answer this question:
+
+(In reply to Stephan Herrmann from comment #7)
+&gt; Next chapter: can the tweak leak outside this situation, spilling into
+&gt; situations that *are* well defined and shouldn&apos;t be &quot;cheated&quot;?
+
+
+And add more tests, at least covering the addition on AllocationExpression.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487566</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-23 06:53:41 -0500</bug_when>
+    <thetext>When challenging AllocationExpression, this test already works in M3:
+
+//----
+import java.util.function.Function;
+
+public interface Test2&lt;A&gt; {
+	&lt;B&gt; Test2&lt;B&gt; transform(Function&lt;? extends A, Test2&lt;B&gt;&gt; f);
+
+	default &lt;B&gt; Test2&lt;B&gt; wrap(Function&lt;? super A, ? extends B&gt; f) {
+		return transform(a -&gt; new TestImpl&lt;&gt;(f.apply(a)));
+	}
+}
+
+class TestImpl&lt;A&gt; implements Test2&lt;A&gt; {
+
+	public TestImpl(A a) { }
+
+	@Override
+	public &lt;B&gt; Test2&lt;B&gt; transform(Function&lt;? extends A, Test2&lt;B&gt;&gt; f) {
+		return null;
+	}	
+}
+//----
+
+All I changed was replace the generic method create() with a constructor, invoked as diamond.
+
+Two things to take home:
+
+- a hint, that the wildcard should not prevent us from finding a solution
+
+- follow-up task in bug 452806</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487578</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-23 08:17:40 -0500</bug_when>
+    <thetext>The patch increases the risk of leaking inference variables into the wild.
+
+In fact it is *intended* that a lambda&apos;s result expression (synthetically wrapped in a ReturnExpression) may have an improper type.
+
+To prevent this from failing resolve on the ReturnExpression I had to make sure that isCompatibleWith() can understand inference variables.
+OTOH, we *need* other places like IC18.getReturnProblemMethodIfNeeded() to answer false on inference variables.
+To make the necessary change context sensitive, I inserted it into isCompatibleWith0(TypeBinding,Scope) and search the scope to see if we are inside lambda resolving. Callers not passing a scope will never get the new behavior. This is more a heuristic than a provably correct solution.
+
+Other means for delimiting the scope affected by the change:
+
+The main change is given by BoundSet.getEquivalentOuterVariable()
+- This method is only called if the current IC18 has an outerContext
+- outerContext is set in 
+  - IC18.addConstraintsToC_OneExpr (old behavior)
+  - when starting inner inference in CExprF.reduce() (old behavior)
+  - when creating an IC18 for an invocation that has an outerInferenceContext
+    - outerInferenceContext is set when findMethodBinding() is called
+      - inside the MethodScope of a lambda, and
+      - if the lambda has an inference context set
+        - which only occurs when working on a copy()
+
+For the last branch we seem to be safe, since everything only happens in the universe of a lambda copy, which is only used for creating new constraints.
+
+Are the two old assignments of outerContext OK? 
+In both cases the immediate situation is to create constraints from inner and lift them into outer, but the IC18 of course lives longer and later it might be inappropriate to answer solutions with improper types.
+For that reason I strengthened the checks in IC18.getSolution to respect an outerContext only if it is not yet completed (TYPE_INFERRED).
+
+
+Some of the scenarios I could never trigger, neither in any of RunAllJava8Tests nor by crafting new tests. I hold the above precautions are good enough. 
+Awaiting just one more test run.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487591</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-23 10:04:01 -0500</bug_when>
+    <thetext>Released for 4.5 M4 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=bac0b688c9760eba84723fa01c9ef8fce3bf0175</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2490006</commentid>
+    <comment_count>13</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-11-28 00:59:40 -0500</bug_when>
+    <thetext>*** Bug 453422 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494344</commentid>
+    <comment_count>14</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-12-09 04:24:40 -0500</bug_when>
+    <thetext>Verified for 4.5M4 using I20141208-2000 build.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

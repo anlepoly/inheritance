@@ -1,0 +1,582 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>424071</bug_id>
+          
+          <creation_ts>2013-12-15 08:57:00 -0500</creation_ts>
+          <short_desc>[1.8][select] cannot select method invoked on a lambda parameter with inferred type</short_desc>
+          <delta_ts>2014-02-21 07:00:34 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          <dependson>424167</dependson>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>sarika.sinha</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2341993</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-15 08:57:10 -0500</bug_when>
+    <thetext>Using the example from bug 419048:
+
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+
+public class Bug419048 {
+	void test1(List&lt;Person&gt; roster) {
+        Map&lt;String, Person&gt; map = 
+                roster
+                    .stream()
+                    .collect(
+                        Collectors.toMap(
+                            p -&gt; p.getLast(), //[1]
+                            p -&gt; p            //[2]
+                        ));
+	}
+}
+
+
+Now that type inference is able to find the correct types for the lambda parameters, I tried to hover or crtl-click on occurrences of p and specifically the message send &quot;getLast()&quot;. Some of these currently fail with
+
+java.lang.NullPointerException
+	at org.eclipse.jdt.internal.core.SelectionRequestor.acceptLocalVariable(SelectionRequestor.java:458)
+	at org.eclipse.jdt.internal.codeassist.SelectionEngine.selectFrom(SelectionEngine.java:1236)
+	at org.eclipse.jdt.internal.codeassist.SelectionEngine.select(SelectionEngine.java:951)
+	at org.eclipse.jdt.internal.core.Openable.codeSelect(Openable.java:162)
+	at org.eclipse.jdt.internal.core.CompilationUnit.codeSelect(CompilationUnit.java:377)
+	at org.eclipse.jdt.internal.core.CompilationUnit.codeSelect(CompilationUnit.java:371)
+
+Note, that hovering over the message receiver &quot;p&quot; in &quot;p.getLast()&quot; says: &quot;Object p - Bug419048.test1(List&lt;Person&gt;)&quot;, i.e., the inferred type Person is not known to code select ...
+
+Is code select working with information from before the type inference kicks in?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2341994</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-15 09:07:36 -0500</bug_when>
+    <thetext>&gt; Using the example from bug 419048:
+
+&gt; Now that type inference is able to find the correct types for the lambda
+&gt; parameters, I tried to hover or crtl-click on occurrences of p and
+&gt; specifically the message send &quot;getLast()&quot;. Some of these currently fail with
+&gt; 
+&gt; java.lang.NullPointerException
+
+&gt; Is code select working with information from before the type inference kicks
+&gt; in?
+
+Afterwards, I&apos;ll take a look later today or tommorrow.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2341996</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-15 09:11:42 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #1)
+
+&gt; &gt; Is code select working with information from before the type inference kicks
+&gt; &gt; in?
+&gt; 
+&gt; Afterwards, I&apos;ll take a look later today or tommorrow.
+
+I meant after type inference kicks in.
+
+Recovered parse tree looks like: 
+
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+public class X {
+  public X() {
+  }
+  void test1(List&lt;Person&gt; roster) {
+    Map&lt;String, Person&gt; map = roster.stream().collect(Collectors.toMap((&lt;no type&gt; p) -&gt; &lt;SelectOnMessageSend:p.getLast()&gt;, (&lt;no type&gt; p) -&gt; p));
+  }
+}
+
+which looks good to me. So bug is not in recovery, but in selection engine 
+somewhere.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2341998</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-15 09:28:09 -0500</bug_when>
+    <thetext>SelectionNodeFound.&lt;init&gt;(Binding, boolean) line: 28	
+SelectionNodeFound.&lt;init&gt;() line: 22	
+SelectionOnMessageSend.resolveType(BlockScope) line: 108	
+ReturnStatement.resolve(BlockScope) line: 321	
+LambdaExpression.resolveType(BlockScope) line: 331	
+ASTNode.updateOtherPolyExpression(BlockScope, Expression, TypeBinding, boolean) line: 750	
+ASTNode.updateExpression(BlockScope, Expression, TypeBinding, TypeBinding, boolean) line: 700	
+ASTNode.resolvePolyExpressionArguments(Invocation, BlockScope, MethodBinding, TypeBinding[]) line: 666	
+MessageSend.findMethodBinding(BlockScope, TypeBinding[], boolean) line: 851	
+MessageSend.resolveType(BlockScope) line: 680	
+LocalDeclaration.resolve(BlockScope) line: 244	
+MethodDeclaration(AbstractMethodDeclaration).resolveStatements() line: 620	
+MethodDeclaration.resolveStatements() line: 303	
+MethodDeclaration(AbstractMethodDeclaration).resolve(ClassScope) line: 531	
+TypeDeclaration.resolve() line: 1209	
+
+
+In this call stack, is the call to LE.resolveType the ultimate resolution ?
+Or is it some sort of a tentative evaluation ? If the latter it should happen
+on a copy and not on the original with attempts to clean up after resolution.
+
+In org.eclipse.jdt.internal.codeassist.select.SelectionOnMessageSend.resolveType(BlockScope) after super.resolveType(), this.binding is a PRB - which breaks
+code select. 
+
+At LE.resolveType I see the descriptor as 
+
+public abstract java.lang.Object apply(java.lang.Object)  
+
+Is that expected ???</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342001</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-15 10:04:00 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #3)
+&gt; SelectionNodeFound.&lt;init&gt;(Binding, boolean) line: 28	
+&gt; SelectionNodeFound.&lt;init&gt;() line: 22	
+&gt; SelectionOnMessageSend.resolveType(BlockScope) line: 108	
+&gt; ReturnStatement.resolve(BlockScope) line: 321	
+&gt; LambdaExpression.resolveType(BlockScope) line: 331	
+&gt; ASTNode.updateOtherPolyExpression(BlockScope, Expression, TypeBinding,
+&gt; boolean) line: 750	
+&gt; ASTNode.updateExpression(BlockScope, Expression, TypeBinding, TypeBinding,
+&gt; boolean) line: 700	
+&gt; ASTNode.resolvePolyExpressionArguments(Invocation, BlockScope,
+&gt; MethodBinding, TypeBinding[]) line: 666	
+&gt; MessageSend.findMethodBinding(BlockScope, TypeBinding[], boolean) line: 851	
+&gt; MessageSend.resolveType(BlockScope) line: 680	
+&gt; LocalDeclaration.resolve(BlockScope) line: 244	
+&gt; MethodDeclaration(AbstractMethodDeclaration).resolveStatements() line: 620	
+&gt; MethodDeclaration.resolveStatements() line: 303	
+&gt; MethodDeclaration(AbstractMethodDeclaration).resolve(ClassScope) line: 531	
+&gt; TypeDeclaration.resolve() line: 1209	
+&gt; 
+&gt; 
+&gt; In this call stack, is the call to LE.resolveType the ultimate resolution ?
+&gt; Or is it some sort of a tentative evaluation ? If the latter it should happen
+&gt; on a copy and not on the original with attempts to clean up after resolution.
+
+The switch is in ASTNode.updateOtherPolyExpression():
+Depending on the last boolean argument (&quot;inferenceFinished&quot;) we call either resolveType() (final solution) or resolveTentatively(), which currently doesn&apos;t (yet) use copy(), but tries to cleanup all that&apos;s relevant.
+However, the call stack should indeed show the final call to resolveType() with a precise target type at hand.
+
+What value for parameterType do you see in updateOtherPolyExpression()?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342003</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-15 10:08:26 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+
+&gt; The switch is in ASTNode.updateOtherPolyExpression():
+&gt; Depending on the last boolean argument (&quot;inferenceFinished&quot;) we call either
+&gt; resolveType() (final solution) or resolveTentatively(), which currently
+&gt; doesn&apos;t (yet) use copy(), but tries to cleanup all that&apos;s relevant.
+&gt; However, the call stack should indeed show the final call to resolveType()
+&gt; with a precise target type at hand.
+&gt; 
+&gt; What value for parameterType do you see in updateOtherPolyExpression()?
+
+:)
+
+I see inferenceFinished == true
+
+But the expected type pushed to LE is:
+
+Function&lt;? super java.lang.Object,? extends java.lang.Object&gt;
+
+Back to https://bugs.eclipse.org/bugs/show_bug.cgi?id=423504 :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342010</commentid>
+    <comment_count>6</comment_count>
+      <attachid>238358</attachid>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-15 10:44:42 -0500</bug_when>
+    <thetext>Created attachment 238358
+Some changes
+
+The changes to the parsers are not integral to the fix.
+
+But the NPE when I hover on the type elided parameter should be fixed by
+this patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342011</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-15 10:46:22 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #6)
+&gt; Created attachment 238358 [details]
+&gt; Some changes
+&gt; 
+&gt; The changes to the parsers are not integral to the fix.
+&gt; 
+&gt; But the NPE when I hover on the type elided parameter should be fixed by
+&gt; this patch.
+
+With this, p shows up as Object in the hover. I think once the function
+type is correctly deduced things should automatically work. See https://bugs.eclipse.org/bugs/show_bug.cgi?id=423504#c3 ff.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342024</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-15 12:27:25 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #5)
+&gt; I see inferenceFinished == true
+&gt; 
+&gt; But the expected type pushed to LE is:
+&gt; 
+&gt; Function&lt;? super java.lang.Object,? extends java.lang.Object&gt;
+
+It seems one ingredient in this game is: we are seeing inferenceFinished too early. A safer variant of MessageSend.hasInferenceFinished() would be:
+
+    return (this.inferenceContext == null &amp;&amp; this.inferenceKind == 0)
+	|| (this.inferenceKind &amp; InferenceContext18.CHECK_FINISHED) != 0;
+
+In the current scenario this would get us into resolveTentatively() which still fires the SelectionNodeFound before we have the full type information.
+This raises the question how can we
+(a) prevent SelectionNodeFound to be thrown during resolveTentatively()? Or,
+(b) let SelectionEngine perform a second round of resolve?
+
+Variant (a) seems easier to me, we could, e.g., set a flag in the scope, but this would require updates in all SelectionOn* nodes.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342031</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-15 13:01:27 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #8)
+&gt; (In reply to Srikanth Sankaran from comment #5)
+&gt; &gt; I see inferenceFinished == true
+&gt; &gt; 
+&gt; &gt; But the expected type pushed to LE is:
+&gt; &gt; 
+&gt; &gt; Function&lt;? super java.lang.Object,? extends java.lang.Object&gt;
+&gt; 
+&gt; It seems one ingredient in this game is: we are seeing inferenceFinished too
+&gt; early. A safer variant of MessageSend.hasInferenceFinished() would be:
+&gt; 
+&gt;     return (this.inferenceContext == null &amp;&amp; this.inferenceKind == 0)
+&gt; 	|| (this.inferenceKind &amp; InferenceContext18.CHECK_FINISHED) != 0;
+&gt; 
+&gt; In the current scenario this would get us into resolveTentatively() which
+&gt; still fires the SelectionNodeFound before we have the full type information.
+&gt; This raises the question how can we
+&gt; (a) prevent SelectionNodeFound to be thrown during resolveTentatively()? Or,
+&gt; (b) let SelectionEngine perform a second round of resolve?
+
+The correct way is to make sure that tentative resolutions do not use the
+original. I still think we should resurrect the resolveTypeExpecting()
+versions added to various poly expressions in https://bugs.eclipse.org/bugs/attachment.cgi?id=237885.
+
+and standardize on some API usages.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342033</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-15 13:06:13 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #9)
+
+Are (a) result expressions (b) thrown exceptions (c) value-void compatibility
+relevant to part G for implicit lambdas ? I think we should first pull up shape
+analysis and gathering of these information to right before returning 
+PolyTypeBinding and start the API usage clean up from there.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342034</commentid>
+    <comment_count>11</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-15 13:15:04 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #9)
+
+&gt; The correct way is to make sure that tentative resolutions do not use the
+&gt; original. 
+
+I also think cleanUpAfterTentativeResolve() is not enough. Lambda body
+resolution would call for the entire body to cleaned up - not just
+SingleNameReferences.
+
+e.g p.x.foo() where p is the lambda parameter 
+
+My earlier investigation showed that pretty much every node type in ASTNode
+hierarchy has to implement a cleanup method - which is why I opted for the
+copy() approach (after also investigating a clone() approach a la DOM/AST)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342035</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-15 13:22:23 -0500</bug_when>
+    <thetext>Easy answer first,
+
+(In reply to Srikanth Sankaran from comment #10)
+&gt; (In reply to Srikanth Sankaran from comment #9)
+&gt; 
+&gt; Are (a) result expressions (b) thrown exceptions (c) value-void compatibility
+&gt; relevant to part G for implicit lambdas ? 
+
+3 times yes.
+
+&gt;  I think we should first pull up shape
+&gt; analysis and gathering of these information to right before returning 
+&gt; PolyTypeBinding and start the API usage clean up from there.
+
+If you&apos;re planning to make changes in LE, may I first push a working version in bug 423504 to avoid heavy conflicts? I&apos;ll give a brief update in that bug in a minute.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342041</commentid>
+    <comment_count>13</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-15 14:14:33 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #12)
+&gt; Easy answer first,
+&gt; 
+&gt; (In reply to Srikanth Sankaran from comment #10)
+&gt; &gt; (In reply to Srikanth Sankaran from comment #9)
+&gt; &gt; 
+&gt; &gt; Are (a) result expressions (b) thrown exceptions (c) value-void compatibility
+&gt; &gt; relevant to part G for implicit lambdas ? 
+&gt; 
+&gt; 3 times yes.
+
+The last one puts us in a bind. As things stand in JDT/Core, we cannot proceed
+to analyze value - void compatibility without a target type in place - 
+sometimes *even* with it - with the basic caveat that if there are resolve 
+errors we should not proceed to analyzeCode().
+
+Which would also mean shape analysis cannot be pulled up conveniently.
+
+Either we have to invent a completely different pass/phase that would avoid
+all land mines and compute what is required
+
+Or,
+
+if it is workable, always go through isCompatibleWith/resolveTypeExpecting
+first - with the proviso that (a) and (b) will be readily available after
+one invocation of isCompatibleWith/resolveTypeExpecting and (c) will be
+available only after isCompatibleWith() returns true.
+
+Internally, we can make isCompatibleWith return false even if the lambda
+is not pertinent to applicability if there are errors in the body upon
+imposition of the target type.
+
+My latest mail to the EG on making void-value compatibility a structural
+property has not elicited any response so far - Hopefully, we will see
+some simplification of the spec there.
+
+&gt; If you&apos;re planning to make changes in LE, may I first push a working version
+&gt; in bug 423504 to avoid heavy conflicts? I&apos;ll give a brief update in that bug
+&gt; in a minute.
+
+Go ahead, I don&apos;t think I can proceed right now since I don&apos;t know how to
+proceed :) Yet.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342044</commentid>
+    <comment_count>14</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-15 14:25:04 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #13)
+
+&gt; &gt; If you&apos;re planning to make changes in LE, may I first push a working version
+&gt; &gt; in bug 423504 to avoid heavy conflicts? I&apos;ll give a brief update in that bug
+&gt; &gt; in a minute.
+
+Now that https://bugs.eclipse.org/bugs/show_bug.cgi?id=423504 is resolved
+with changes in place for 9.8 and 18.5.3, is the present one just a question
+of calling copy() before resolveType in internalResolveTentatively() ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342055</commentid>
+    <comment_count>15</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-15 15:34:07 -0500</bug_when>
+    <thetext>FWIW, I&apos;m seeing good results in calling getResolvedCopyForInferenceTargeting() from inference. Maybe I should do so more consistently. But I, too, experience difficulties getting the required valueCompatible = true, while still errors are detected (due to not-yet-inferred types?).
+
+My current thinking: during inference maybe we should be a bit more optimistic and answer yes rather too much than to little.
+
+Also note, that inference asks isCompatibleWith only once the target type has no more inference variables, i.e., this is the *last* thing we do. I could insert artificial calls, but that sounds strange to me.
+
+Given that getResolvedCopyForInferenceTargeting() is essentially modelled after isCompatibleWith() maybe we can evolve that one to become our magic wand :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342084</commentid>
+    <comment_count>16</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-16 00:45:23 -0500</bug_when>
+    <thetext>Partial fix pushed here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=015d0b5b9a6775327087574a13f05229c708c6c4
+
+This addresses the NPE on hovering on the parameter declaration. Parameter type
+still comes as Object.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342978</commentid>
+    <comment_count>17</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-17 15:47:13 -0500</bug_when>
+    <thetext>On top of the latest (private) state from bug 424167 I see the following hovers over the example from comment 0:
+
+all occurrences of &quot;p&quot;:
+    Person p - Bug419048.test1(List&lt;Person&gt;)
+
+call to getLast():
+    String Person.getLast()
+
+:))</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2360049</commentid>
+    <comment_count>18</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-07 05:43:39 -0500</bug_when>
+    <thetext>When I try the testcase given in comment #0 and try to create the missing type Person, I am getting the following error:
+
+java.lang.UnsupportedOperationException: Breaking a dependency cycle NYI
+	at org.eclipse.jdt.internal.compiler.lookup.InferenceContext18.missingImplementation(InferenceContext18.java:1449)
+
+Is this expected?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2360051</commentid>
+    <comment_count>19</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-07 05:47:02 -0500</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #18)
+&gt; When I try the testcase given in comment #0 and try to create the missing
+&gt; type Person, I am getting the following error:
+&gt; 
+&gt; java.lang.UnsupportedOperationException: Breaking a dependency cycle NYI
+&gt; 	at
+&gt; org.eclipse.jdt.internal.compiler.lookup.InferenceContext18.
+&gt; missingImplementation(InferenceContext18.java:1449)
+&gt; 
+&gt; Is this expected?
+
+No, this looks like a recent regression, because I had tried to cook up
+this test case a couple of days and didn&apos;t see it.
+
+Can you post a test case to bug 427479 and we need to wait for it to make
+progress.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2360585</commentid>
+    <comment_count>20</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-08 13:08:21 -0500</bug_when>
+    <thetext>Released test here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=ed80be792854aeaafe85328a8925218265caeac6</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366527</commentid>
+    <comment_count>21</comment_count>
+    <who name="Sarika Sinha">sarika.sinha</who>
+    <bug_when>2014-02-21 03:29:08 -0500</bug_when>
+    <thetext>Was able to hover.
+
+Verified as working for Eclipse + Java 8 RC1 using Kepler SR2(RC4) +   
+Eclipse Java Development Tools Patch for Java 8 Support (BETA)	
+1.0.0.v20140220-2054</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>238358</attachid>
+            <date>2013-12-15 10:44:00 -0500</date>
+            <delta_ts>2013-12-15 10:44:42 -0500</delta_ts>
+            <desc>Some changes</desc>
+            <filename>select.patch</filename>
+            <type>application/octet-stream</type>
+            <size>2745</size>
+            <attacher name="Srikanth Sankaran">srikanth_sankaran</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvZGVhc3Npc3Qvb3JnL2VjbGlwc2Uv
+amR0L2ludGVybmFsL2NvZGVhc3Npc3QvY29tcGxldGUvQ29tcGxldGlvblBhcnNlci5qYXZhIGIv
+b3JnLmVjbGlwc2UuamR0LmNvcmUvY29kZWFzc2lzdC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwv
+Y29kZWFzc2lzdC9jb21wbGV0ZS9Db21wbGV0aW9uUGFyc2VyLmphdmEKaW5kZXggOTYwMjNjOS4u
+ODFkYzY2ZCAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29kZWFzc2lzdC9vcmcv
+ZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29kZWFzc2lzdC9jb21wbGV0ZS9Db21wbGV0aW9uUGFyc2Vy
+LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29kZWFzc2lzdC9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvY29kZWFzc2lzdC9jb21wbGV0ZS9Db21wbGV0aW9uUGFyc2VyLmphdmEKQEAg
+LTM5ODgsNiArMzk4OCwxMCBAQAogCQl9CiAJfQogfQorcHJvdGVjdGVkIHZvaWQgY29uc3VtZUlu
+dm9jYXRpb25FeHByZXNzaW9uKCkgeyAvLyBvbiBlcnJvciwgYSBtZXNzYWdlIHNlbmQncyBlcnJv
+ciByZWR1Y3Rpb25zIHdpbGwgdGFrZSB0aGUgZXhwcmVzc2lvbiBwYXRoIHJhdGhlciB0aGFuIHRo
+ZSBzdGF0ZW1lbnQgcGF0aCBzaW5jZSB0aGF0IGlzIGEgZGVhZCBlbmQuCisJc3VwZXIuY29uc3Vt
+ZUludm9jYXRpb25FeHByZXNzaW9uKCk7CisJdHJpZ2dlclJlY292ZXJ5VXBvbkxhbWJkYUNsb3N1
+cmUodGhpcy5leHByZXNzaW9uU3RhY2tbdGhpcy5leHByZXNzaW9uUHRyXSwgZmFsc2UpOworfQog
+cHJvdGVjdGVkIHZvaWQgY29uc3VtZUlkZW50aWZpZXJPck5ldyhib29sZWFuIG5ld0Zvcm0pIHsK
+IAl0aGlzLmluUmVmZXJlbmNlRXhwcmVzc2lvbiA9IGZhbHNlOwogCXN1cGVyLmNvbnN1bWVJZGVu
+dGlmaWVyT3JOZXcobmV3Rm9ybSk7CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9j
+b2RlYXNzaXN0L29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb2RlYXNzaXN0L2ltcGwvQXNzaXN0
+UGFyc2VyLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb2RlYXNzaXN0L29yZy9lY2xpcHNl
+L2pkdC9pbnRlcm5hbC9jb2RlYXNzaXN0L2ltcGwvQXNzaXN0UGFyc2VyLmphdmEKaW5kZXggNGQ2
+NjNhYS4uY2Q3NGZkZSAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29kZWFzc2lz
+dC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29kZWFzc2lzdC9pbXBsL0Fzc2lzdFBhcnNlci5q
+YXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvZGVhc3Npc3Qvb3JnL2VjbGlwc2UvamR0
+L2ludGVybmFsL2NvZGVhc3Npc3QvaW1wbC9Bc3Npc3RQYXJzZXIuamF2YQpAQCAtNDc2LDEwICs0
+NzYsNiBAQAogcHJvdGVjdGVkIGJvb2xlYW4gaXNBc3Npc3RQYXJzZXIoKSB7CiAJcmV0dXJuIHRy
+dWU7CiB9Ci1wcm90ZWN0ZWQgdm9pZCBjb25zdW1lSW52b2NhdGlvbkV4cHJlc3Npb24oKSB7IC8v
+IG9uIGVycm9yLCBhIG1lc3NhZ2Ugc2VuZCdzIGVycm9yIHJlZHVjdGlvbnMgd2lsbCB0YWtlIHRo
+ZSBleHByZXNzaW9uIHBhdGggcmF0aGVyIHRoYW4gdGhlIHN0YXRlbWVudCBwYXRoIHNpbmNlIHRo
+YXQgaXMgYSBkZWFkIGVuZC4KLQlzdXBlci5jb25zdW1lSW52b2NhdGlvbkV4cHJlc3Npb24oKTsK
+LQl0cmlnZ2VyUmVjb3ZlcnlVcG9uTGFtYmRhQ2xvc3VyZSh0aGlzLmV4cHJlc3Npb25TdGFja1t0
+aGlzLmV4cHJlc3Npb25QdHJdLCBmYWxzZSk7Ci19CiBwcm90ZWN0ZWQgdm9pZCBjb25zdW1lQmxv
+Y2tTdGF0ZW1lbnQoKSB7CiAJc3VwZXIuY29uc3VtZUJsb2NrU3RhdGVtZW50KCk7CiAJdHJpZ2dl
+clJlY292ZXJ5VXBvbkxhbWJkYUNsb3N1cmUoKFN0YXRlbWVudCkgdGhpcy5hc3RTdGFja1t0aGlz
+LmFzdFB0cl0sIHRydWUpOwpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwv
+b3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvU2VsZWN0aW9uUmVxdWVzdG9yLmphdmEgYi9v
+cmcuZWNsaXBzZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29yZS9T
+ZWxlY3Rpb25SZXF1ZXN0b3IuamF2YQppbmRleCAxYWI2ZmE3Li43YWY5ZjJmIDEwMDY0NAotLS0g
+YS9vcmcuZWNsaXBzZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29y
+ZS9TZWxlY3Rpb25SZXF1ZXN0b3IuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9tb2Rl
+bC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29yZS9TZWxlY3Rpb25SZXF1ZXN0b3IuamF2YQpA
+QCAtNDU1LDcgKzQ1NSw3IEBACiAJCQkJbG9jYWwuZGVjbGFyYXRpb25Tb3VyY2VFbmQsCiAJCQkJ
+bG9jYWwuc291cmNlU3RhcnQsCiAJCQkJbG9jYWwuc291cmNlRW5kLAotCQkJCWxvY2FsLnR5cGUg
+PT0gbnVsbCA/IFNpZ25hdHVyZS5jcmVhdGVUeXBlU2lnbmF0dXJlKGxvY2FsLmJpbmRpbmcudHlw
+ZS5yZWFkYWJsZU5hbWUoKSwgZmFsc2UpIDogVXRpbC50eXBlU2lnbmF0dXJlKGxvY2FsLnR5cGUp
+LAorCQkJCWxvY2FsLnR5cGUgPT0gbnVsbCA/IFNpZ25hdHVyZS5jcmVhdGVUeXBlU2lnbmF0dXJl
+KGJpbmRpbmcudHlwZS5yZWFkYWJsZU5hbWUoKSwgZmFsc2UpIDogVXRpbC50eXBlU2lnbmF0dXJl
+KGxvY2FsLnR5cGUpLAogCQkJCWxvY2FsLmFubm90YXRpb25zLAogCQkJCWxvY2FsLm1vZGlmaWVy
+cywKIAkJCQlsb2NhbC5nZXRLaW5kKCkgPT0gQWJzdHJhY3RWYXJpYWJsZURlY2xhcmF0aW9uLlBB
+UkFNRVRFUik7
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

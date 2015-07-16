@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>433906</bug_id>
+          
+          <creation_ts>2014-04-30 19:40:00 -0400</creation_ts>
+          <short_desc>[compiler][null] unchecked warning with &apos;capture extends T&apos; vs. &apos;T&apos;</short_desc>
+          <delta_ts>2014-05-26 05:53:03 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 RC2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="62432"
+          type_id="1"
+          status="+"
+          setter="jarthana"
+    />
+    <flag name="review"
+          id="62462"
+          type_id="1"
+          status="+"
+          setter="manpalat"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2395693</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-30 19:40:31 -0400</bug_when>
+    <thetext>From bug 433586 comment 8:
+---------------------------------------------------
+this case still shows a warning:
+
+@FunctionalInterface
+public interface ExFunction&lt;T, R, E extends Exception&gt; {
+	R apply(T t1) throws E;
+
+	default &lt;V&gt;  ExFunction&lt;V, R, E&gt; compose(ExFunction&lt;? super V, ? extends T, E&gt; before) {
+		Objects.requireNonNull(before);
+		//warning on before.apply(v):
+		//Null type safety (type annotations): The expression of type &apos;capture#of ? extends T&apos; needs unchecked conversion to conform to &apos;T&apos;
+		return (V v) -&gt; apply(before.apply(v));
+	}
+}
+---------------------------------------------------</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2395699</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-30 19:51:28 -0400</bug_when>
+    <thetext>I should have thought of this when fixing the other bug.
+
+In bug 433586 I implemented that 
+  &apos;T&apos; (a type variable) is accepted as compatible to &apos;capture#of ? super T&apos;,
+   because the required type can only be less specific than the provided type.
+
+This example seems to be the direct inverse:
+  we should accept &apos;capture#of ? extends T&apos; as compatible to &apos;T&apos;,
+  because the provided type can only be more specific than the expected type.
+
+In both cases &quot;less/more specific&quot; includes nullness, provided that we have the same type variable on both sides of the comparison.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2404079</commentid>
+    <comment_count>2</comment_count>
+      <attachid>243284</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-20 07:28:04 -0400</bug_when>
+    <thetext>Created attachment 243284
+proposed patch
+
+Fix contains two parts:
+
+First part inside NullAnnotationMatching.areSameTypes(..):
+Assuming one of providedType / requiredType is a capture:
+We already checked identity between
+   ((Capture)requireType).lowerBound vs. providedType
+In direct analogy I&apos;m adding comparison between
+   requireType vs. ((Capture)providedType).upperBound
+
+
+
+Second part inside NullAnnotationMatching.analyse(..):
+The first part alone would cause regression in NullTypeAnnotationTest.testDefault07(), which reveals a simple omission in NullAnnotationMatching.analyse(..):
+This method has an early exit controlled by areSameTypes(), where we need to give a more precise answer than unconditionally answering NULL_ANNOTATIONS_OK.
+
+Further down in this method, when we inspected the null tagbits on both types, we distinguish between answering NULL_ANNOTATIONS_OK and NULL_ANNOTATIONS_OK_NONNULL. The same distinction must be made also at the early exit.
+
+This is needed independent of the current fix, but surfaced because the change in areSameTypes() for the first time brought us into this situation, where answering NULL_ANNOTATIONS_OK triggered undesired further analysis at the call site (here: NullAnnotationMatching.checkAssignment(..)).
+By answering NULL_ANNOTATIONS_OK_NONNULL, the caller has all required information and can directly return the appropriate nullStatus.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2404080</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-20 07:30:44 -0400</bug_when>
+    <thetext>Jay, this one is ready for review, too.
+
+So far I only null-related tests. I&apos;ll do a full test run after one or two more fixes. I&apos;ll report the result back here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2404286</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-20 10:51:49 -0400</bug_when>
+    <thetext>RunJDTCoreTests is green.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2404481</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-05-20 14:56:24 -0400</bug_when>
+    <thetext>+1 for the patch</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2404786</commentid>
+    <comment_count>6</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-05-21 07:30:32 -0400</bug_when>
+    <thetext>+1 for review</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2405100</commentid>
+    <comment_count>7</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-05-21 13:56:55 -0400</bug_when>
+    <thetext>Thanks Stephan and Manoj, released the fix via:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=7d530ea80eaf0c8a945cfb41d1521a9832dec42f</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2406981</commentid>
+    <comment_count>8</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-05-26 05:53:03 -0400</bug_when>
+    <thetext>Verified for 4.4 RC3 with build I20140524-1500</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>243284</attachid>
+            <date>2014-05-20 07:28:00 -0400</date>
+            <delta_ts>2014-05-20 07:28:04 -0400</delta_ts>
+            <desc>proposed patch</desc>
+            <filename>Bug-433906--compilernull-unchecked-warning-with-capt.patch</filename>
+            <type>text/plain</type>
+            <size>4494</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5ub3Rh
+dGlvblRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5u
+b3RhdGlvblRlc3QuamF2YQppbmRleCA1YmUxMjY1Li5kYzdhYmQ2IDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsVHlwZUFubm90YXRpb25UZXN0LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbFR5cGVBbm5vdGF0aW9uVGVzdC5q
+YXZhCkBAIC0zNzU3LDYgKzM3NTcsMjYgQEAKIAkJCSJOdWxsIHR5cGUgbWlzbWF0Y2ggKHR5cGUg
+YW5ub3RhdGlvbnMpOiByZXF1aXJlZCBcJ1RcJyBidXQgdGhpcyBleHByZXNzaW9uIGhhcyB0eXBl
+IFwnQE51bGxhYmxlIFRcJywgd2hlcmUgJ1QnIGlzIGEgZnJlZSB0eXBlIHZhcmlhYmxlXG4iICsg
+CiAJCQkiLS0tLS0tLS0tLVxuIik7CiAJfQorCS8vIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy80
+MzM5MDYKKwlwdWJsaWMgdm9pZCB0ZXN0VHlwZVZhcmlhYmxlNSgpIHsKKwkJcnVuQ29uZm9ybVRl
+c3RXaXRoTGlicygKKwkJCW5ldyBTdHJpbmdbXSB7CisJCQkJIkV4RnVuY3Rpb24uamF2YSIsCisJ
+CQkJIkBGdW5jdGlvbmFsSW50ZXJmYWNlXG4iICsgCisJCQkJInB1YmxpYyBpbnRlcmZhY2UgRXhG
+dW5jdGlvbjxULCBSLCBFIGV4dGVuZHMgRXhjZXB0aW9uPiB7XG4iICsgCisJCQkJIglSIGFwcGx5
+KFQgdDEpIHRocm93cyBFO1xuIiArIAorCQkJCSJcbiIgKyAKKwkJCQkiCWRlZmF1bHQgPFY+ICBF
+eEZ1bmN0aW9uPFYsIFIsIEU+IGNvbXBvc2UoRXhGdW5jdGlvbjw/IHN1cGVyIFYsID8gZXh0ZW5k
+cyBULCBFPiBiZWZvcmUpIHtcbiIgKyAKKwkJCQkiCQlqYXZhLnV0aWwuT2JqZWN0cy5yZXF1aXJl
+Tm9uTnVsbChiZWZvcmUpO1xuIiArIAorCQkJCSIJCS8vd2FybmluZyBvbiBiZWZvcmUuYXBwbHko
+dik6XG4iICsgCisJCQkJIgkJLy9OdWxsIHR5cGUgc2FmZXR5ICh0eXBlIGFubm90YXRpb25zKTog
+VGhlIGV4cHJlc3Npb24gb2YgdHlwZSAnY2FwdHVyZSNvZiA/IGV4dGVuZHMgVCcgbmVlZHMgdW5j
+aGVja2VkIGNvbnZlcnNpb24gdG8gY29uZm9ybSB0byAnVCdcbiIgKyAKKwkJCQkiCQlyZXR1cm4g
+KFYgdikgLT4gYXBwbHkoYmVmb3JlLmFwcGx5KHYpKTtcbiIgKyAKKwkJCQkiCX1cbiIgKyAKKwkJ
+CQkifVxuIgorCQkJfSwKKwkJCWdldENvbXBpbGVyT3B0aW9ucygpLAorCQkJIiIpOworCX0KIAlw
+dWJsaWMgdm9pZCB0ZXN0U0U3QW5ub3RhdGlvbkNvcHkoKSB7IC8vIHdlIHdlcmUgZHJvcHBpbmcg
+YW5ub3RhdGlvbnMgaGVyZSwgYnV0IG51bGwgYW5hbHlzaXMgd29ya2VkIGFscmVhZHkgc2luY2Ug
+dGhlIHRhZ2JpdHMgd2VyZSBub3QgImRyb3BwZWQiLCBqdXN0IHRoZSBzYW1lIGNhcHR1cmluZyBp
+biBhIHRlc3QKIAkJcnVuTmVnYXRpdmVUZXN0V2l0aExpYnMoCiAJCQluZXcgU3RyaW5nW10gewpk
+aWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0
+L2ludGVybmFsL2NvbXBpbGVyL2FzdC9OdWxsQW5ub3RhdGlvbk1hdGNoaW5nLmphdmEgYi9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGls
+ZXIvYXN0L051bGxBbm5vdGF0aW9uTWF0Y2hpbmcuamF2YQppbmRleCBiN2M5Y2Q1Li5hYTlkNDAw
+IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L051bGxBbm5vdGF0aW9uTWF0Y2hpbmcuamF2YQorKysg
+Yi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwv
+Y29tcGlsZXIvYXN0L051bGxBbm5vdGF0aW9uTWF0Y2hpbmcuamF2YQpAQCAtMTMxLDggKzEzMSwx
+MSBAQAogCQlpbnQgc2V2ZXJpdHkgPSAwOwogCQlUeXBlQmluZGluZyBzdXBlclR5cGVIaW50ID0g
+bnVsbDsKIAkJTnVsbEFubm90YXRpb25NYXRjaGluZyBva1N0YXR1cyA9IE51bGxBbm5vdGF0aW9u
+TWF0Y2hpbmcuTlVMTF9BTk5PVEFUSU9OU19PSzsKLQkJaWYgKGFyZVNhbWVUeXBlcyhyZXF1aXJl
+ZFR5cGUsIHByb3ZpZGVkVHlwZSwgcHJvdmlkZWRTdWJzdGl0dXRlKSkgLy8gZm9yIHR5cGUgdmFy
+aWFibGUgaWRlbnRpdHkgKGFuZCBhcyBzaG9ydGN1dCBmb3Igb3RoZXJzKQorCQlpZiAoYXJlU2Ft
+ZVR5cGVzKHJlcXVpcmVkVHlwZSwgcHJvdmlkZWRUeXBlLCBwcm92aWRlZFN1YnN0aXR1dGUpKSB7
+CisJCQlpZiAoKHJlcXVpcmVkVHlwZS50YWdCaXRzICYgVGFnQml0cy5Bbm5vdGF0aW9uTm9uTnVs
+bCkgIT0gMCkKKwkJCQlyZXR1cm4gTnVsbEFubm90YXRpb25NYXRjaGluZy5OVUxMX0FOTk9UQVRJ
+T05TX09LX05PTk5VTEw7CiAJCQlyZXR1cm4gb2tTdGF0dXM7CisJCX0KIAkJaWYgKHJlcXVpcmVk
+VHlwZSBpbnN0YW5jZW9mIEFycmF5QmluZGluZykgewogCQkJbG9uZ1tdIHJlcXVpcmVkRGltc1Rh
+Z0JpdHMgPSAoKEFycmF5QmluZGluZylyZXF1aXJlZFR5cGUpLm51bGxUYWdCaXRzUGVyRGltZW5z
+aW9uOwogCQkJaWYgKHJlcXVpcmVkRGltc1RhZ0JpdHMgIT0gbnVsbCkgewpAQCAtMTk5LDcgKzIw
+Miw3IEBACiAJCXJldHVybiBuZXcgTnVsbEFubm90YXRpb25NYXRjaGluZyhzZXZlcml0eSwgbnVs
+bFN0YXR1cywgc3VwZXJUeXBlSGludCk7CiAJfQogCi0JLyoqIEFyZSBib3RoIHR5cGVzIGlkZW50
+aWNhbCB3cnQgdGhlIHVuYW5ub3RhdGVkIHR5cGUgYW5kIGFueSBudWxsIHR5cGUgYW5ub3RhdGlv
+bnM/IE9ubHkgdW5zdHJ1Y3R1cmVkIHR5cGVzIGFyZSBjb25zaWRlcmVkLiAqLworCS8qKiBBcmUg
+Ym90aCB0eXBlcyBpZGVudGljYWwgd3J0IHRoZSB1bmFubm90YXRlZCB0eXBlIGFuZCBhbnkgbnVs
+bCB0eXBlIGFubm90YXRpb25zPyBPbmx5IHVuc3RydWN0dXJlZCB0eXBlcyBhbmQgY2FwdHVyZXMg
+YXJlIGNvbnNpZGVyZWQuICovCiAJcHJvdGVjdGVkIHN0YXRpYyBib29sZWFuIGFyZVNhbWVUeXBl
+cyhUeXBlQmluZGluZyByZXF1aXJlZFR5cGUsIFR5cGVCaW5kaW5nIHByb3ZpZGVkVHlwZSwgVHlw
+ZUJpbmRpbmcgcHJvdmlkZWRTdWJzdGl0dXRlKSB7CiAJCWlmIChyZXF1aXJlZFR5cGUgPT0gcHJv
+dmlkZWRUeXBlKSAgLy8kSURFTlRJVFktQ09NUEFSSVNPTiQgLy8gc2hvcnQgY3V0IGZvciByZWFs
+bHktcmVhbGx5LXNhbWUgdHlwZXMKIAkJCXJldHVybiB0cnVlOwpAQCAtMjA3LDEyICsyMTAsMTcg
+QEAKIAkJCXJldHVybiBmYWxzZTsgLy8gbm90IGFuYWx5c2luZyBkZXRhaWxzIGhlcmUKIAkJaWYg
+KFR5cGVCaW5kaW5nLm5vdEVxdWFscyhyZXF1aXJlZFR5cGUsIHByb3ZpZGVkVHlwZSkpIHsKIAkJ
+CWlmIChyZXF1aXJlZFR5cGUgaW5zdGFuY2VvZiBDYXB0dXJlQmluZGluZykgewotCQkJCS8vIHdo
+ZW4gcHJvdmlkaW5nIHRoZSBsb3dlciBib3VuZCBvZiB0aGUgcmVxdWlyZWQgdHlwZSB3aGVyZSBk
+ZWZpbml0ZWx5IGZpbmU6CisJCQkJLy8gd2hlbiBwcm92aWRpbmcgZXhhY3RseSB0aGUgbG93ZXIg
+Ym91bmQgb2YgdGhlIHJlcXVpcmVkIHR5cGUgd2UncmUgZGVmaW5pdGVseSBmaW5lOgogCQkJCVR5
+cGVCaW5kaW5nIGxvd2VyQm91bmQgPSAoKENhcHR1cmVCaW5kaW5nKXJlcXVpcmVkVHlwZSkubG93
+ZXJCb3VuZDsKIAkJCQlpZiAobG93ZXJCb3VuZCAhPSBudWxsICYmIGFyZVNhbWVUeXBlcyhsb3dl
+ckJvdW5kLCBwcm92aWRlZFR5cGUsIHByb3ZpZGVkU3Vic3RpdHV0ZSkpCiAJCQkJCXJldHVybiB0
+cnVlOwogCQkJfSBlbHNlIGlmIChyZXF1aXJlZFR5cGUua2luZCgpID09IEJpbmRpbmcuVFlQRV9Q
+QVJBTUVURVIgJiYgcmVxdWlyZWRUeXBlID09IHByb3ZpZGVkU3Vic3RpdHV0ZSkgeyAvLyRJREVO
+VElUWS1DT01QQVJJU09OJAogCQkJCXJldHVybiB0cnVlOworCQkJfSBlbHNlIGlmIChwcm92aWRl
+ZFR5cGUgaW5zdGFuY2VvZiBDYXB0dXJlQmluZGluZykgeworCQkJCS8vIHdoZW4gcmVxdWlyaW5n
+IGV4YWN0bHkgdGhlIHVwcGVyIGJvdW5kIG9mIHRoZSBwcm92aWRlZCB0eXBlIHdlJ3JlIGZpbmUs
+IHRvbzoKKwkJCQlUeXBlQmluZGluZyB1cHBlckJvdW5kID0gKChDYXB0dXJlQmluZGluZylwcm92
+aWRlZFR5cGUpLnVwcGVyQm91bmQoKTsKKwkJCQlpZiAodXBwZXJCb3VuZCAhPSBudWxsICYmIGFy
+ZVNhbWVUeXBlcyhyZXF1aXJlZFR5cGUsIHVwcGVyQm91bmQsIHByb3ZpZGVkU3Vic3RpdHV0ZSkp
+CisJCQkJCXJldHVybiB0cnVlOwogCQkJfQogCQkJcmV0dXJuIGZhbHNlOwogCQl9
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

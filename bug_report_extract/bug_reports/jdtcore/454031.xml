@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>454031</bug_id>
+          
+          <creation_ts>2014-12-03 10:35:00 -0500</creation_ts>
+          <short_desc>[compiler][null][loop] bug in null analysis; wrong &quot;dead code&quot; detection</short_desc>
+          <delta_ts>2014-12-09 04:48:02 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M4</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Markus Keller">markus_keller</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>shankhba</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2492282</commentid>
+    <comment_count>0</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-12-03 10:35:18 -0500</bug_when>
+    <thetext>I20141202-0800 and master; was OK in I20141125-0800
+
+There&apos;s a new bug in null analysis that leads to a wrong &quot;dead code&quot; problem.
+
+I get two wrong errors in my workspace:
+
+- Dead code	LocalCorrectionsSubProcessor.java	/org.eclipse.jdt.ui/ui/org/eclipse/jdt/internal/ui/text/correction	line 196
+- Dead code	UpdateManagerUtils.java	/org.eclipse.update.core/src/org/eclipse/update/internal/core	line 149
+
+
+Example to reproduce:
+
+package xy;
+
+public class Try {
+    public static void main(String[] args) {
+        foo(new Node());
+    }
+    static void foo(Node n) {
+        Node selectedNode= n;
+        if (selectedNode == null) {
+            return;
+        }
+        while (selectedNode != null &amp;&amp; !(selectedNode instanceof Cloneable)) {
+            selectedNode= selectedNode.getParent();
+        }
+        if (selectedNode == null) { //wrong problem: Null comparison always yields false: The variable selectedNode cannot be null at this location
+            // wrong problem: dead code
+            System.out.println(selectedNode.hashCode());
+        }
+    }
+}
+
+class Node {
+    Node getParent() {
+        return null;
+    }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2492470</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-03 20:48:59 -0500</bug_when>
+    <thetext>Thanks for catching this + the convenient repro.
+
+I have a fix under test, which, however, requires to remaster 4 existing tests. Need more investigation whether the new outcome is good.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2492630</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-04 06:29:31 -0500</bug_when>
+    <thetext>The four tests with changing outcome represent only two different situations:
+
+NRT.testBug291418a():
+A sequence of different loops was operating on the same variables, to check that all loop kinds give the same warnings. The outcome changed, because with the fix for this bug the null information for those variables changed after a do{}while() loop:
+
+   if(array == null) return;
+   // here we know that array is nonnull
+   ...
+   do {
+      if (array == null);
+   } while (...);
+   // here we have doubt about nullness of array,
+   // since user saw a need for checking
+
+It is consistent with the general design of our analysis to propagate the doubt raised within the do-while-loop into the code after the loop. Only do-while-loops exhibit this effect.
+The test is fixed by re-establishing nonnull-ness of &apos;array&apos; after this loop, thus restoring test isolation at the micro level.
+
+
+NRT.testBug336428d():
+We were expecting a warning re redundant null check at (1) in:
+  
+    void test(boolean b1) {
+        Object o1 = null;
+        Object o2 = null;
+        do {
+          if (b1)
+                o1 = null;
+          if ((o2 = o1) == null) break; // (1)
+        } while (true);
+    }
+
+In this particular case the warning was OK, but the test could easily be extended to show that the warning was not well founded:
+
+    void test(boolean b1) {
+        Object o1 = null;
+        Object o2 = null;
+        do {
+          if (b1)
+                o1 = null;
+          if ((o2 = o1) == null) System.out.println();
+          o1 = new Object();
+        } while (true);
+    }
+
+The old implementation would still issue the warning, although in the second iteration o1 may be nonnull and hence the check is *not* redundant.
+
+Hence the behavioral change is an improvement, as we no longer wrongly assume to know the nullness of &apos;o1&apos; in the assignment to &apos;o2&apos;.
+
+To fully and safely analyse this situation, we would need to create a dependency graph between variables and perform one iteration of null analysis for one variable at a time. Neither would this suggest a solution for cyclic dependencies, nor would it fit into the design of 1-AST-traversal-flow-analysis.
+
+Since this is clearly beyond the scope of JDT, the current implementation, which is a bit shy for loop flows involving several variables, looks good to me; probably the best we can achieve within the current design.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2492680</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-04 07:48:16 -0500</bug_when>
+    <thetext>The bug is fixed by improving the logic introduced via bug 453483:
+The effect of the new null bits must be applied *before* the merge, not after.
+
+Released for 4.5 M4 via commit 462fdbe66c95fe469d26ca4c9a495870e5915168</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2492710</commentid>
+    <comment_count>4</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-12-04 08:43:57 -0500</bug_when>
+    <thetext>Thanks for the quick fix. I can confirm that http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=462fdbe66c95fe469d26ca4c9a495870e5915168 fixes the two problems in my workspace, and it correctly reports a &quot;Null pointer access&quot; for the given snippet.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494363</commentid>
+    <comment_count>5</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-12-09 04:48:02 -0500</bug_when>
+    <thetext>Verified for 4.5M4 using I20141208-2000 build.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

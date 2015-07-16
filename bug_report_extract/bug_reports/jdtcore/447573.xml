@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>447573</bug_id>
+          
+          <creation_ts>2014-10-16 10:23:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler] Rename IntersectionCastTypeBinding as IntersectionTypeBinding18</short_desc>
+          <delta_ts>2014-12-09 03:40:59 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M4</target_milestone>
+          
+          <blocked>448791</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2466556</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-16 10:23:07 -0400</bug_when>
+    <thetext>ICTB is used for two purposes in JDT/Core:
+
+1. To support the special intersection cast introduced for lambda serialization
+2. In type inference.
+
+While this abstraction serves the purposes for (1) fairly adequately[*], it is
+not hooked up properly into various type compatibility APIs (isCompatibleWith
+isEquivalentTo, findSuperTypeOriginatingFrom etc) and as a result does not
+serve well the requirements of (2)
+
+For 1.7 we use a modified wildcard binding that serves as an intersection
+type. Either we should move all uses of ICTB to that or factor out the
+intersection type part of wildcard into a separate abstraction and start
+using that. 
+
+[*] Even there we have problems: See https://bugs.eclipse.org/bugs/show_bug.cgi?id=424410</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472083</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-26 21:35:55 -0400</bug_when>
+    <thetext>OK, my understanding of how G uses ICTB is improving and I need to
+re-evaluate my earlier observations to see if they are right.
+
+In particular, the Java 7 intersection type abstracted under WildcardBinding
+with no real wildcard is really meant for the case of an intersection
+of a single class with multiple interfaces.
+
+On the other hand some of uses of ICTB in G are for wrapping up things
+like:
+
+? super capture#1-of ? super E &amp; capture#2-of ?
+
+I don&apos;t think WildcardBinding&apos;s INTERSECTION_TYPE may work well for that.
+
+I&apos;ll look into this for M4, but the title claim may not be correct.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472616</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-27 15:18:21 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #1)
+
+&gt; On the other hand some of uses of ICTB in G are for wrapping up things
+&gt; like:
+&gt; 
+&gt; ? super capture#1-of ? super E &amp; capture#2-of ?
+&gt; 
+&gt; I don&apos;t think WildcardBinding&apos;s INTERSECTION_TYPE may work well for that.
+&gt; 
+&gt; I&apos;ll look into this for M4, but the title claim may not be correct.
+
+In this program:
+
+// --
+public final class X {
+    static interface Predicate&lt;T&gt; { boolean test(T object); }
+    public static &lt;T&gt; Predicate&lt;T&gt; in(Predicate&lt;? extends T&gt; arg) { return null; }
+    public static &lt;T&gt; Predicate&lt;T&gt; and(Predicate&lt;? super T&gt;... arg) { return null; }
+    public static &lt;T&gt; Predicate&lt;T&gt; and(Predicate&lt;? super T&gt; arg0, Predicate&lt;? super T&gt; arg1) { return null; }
+    static class FilteredCollection&lt;E&gt; {
+        Predicate&lt;? super E&gt; predicate;
+        public void error(Predicate&lt;?&gt; arg) { and(predicate, in(arg)); } // no compile
+    }
+}
+ 
+we infer the call to be:
+
+Predicate&lt;capture#1-of ? super E &amp; capture#2-of ?&gt; and(Predicate&lt;? super capture#1-of ? super E &amp; capture#2-of ?&gt;, Predicate&lt;? super capture#1-of ? super E &amp; capture#2-of ?&gt;) 
+
+OIOW &lt;T&gt; of and() is inferred to be 
+&lt;capture#1-of ? super E &amp; capture#2-of ?&gt;
+
+It almost *feels* like what we need in this case is a Union type and
+not an intersection type ? Given capture is a type, the intersection of
+these two is necessarily the empty set ? 
+
+The Java 7 intersection type and Java 8 intersection cast for lambda
+serialization both allow utmost one class type and multiple interfaces.
+
+Just thinking aloud.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472626</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-27 15:43:07 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #2)
+
+&gt; we infer the call to be:
+&gt; 
+&gt; Predicate&lt;capture#1-of ? super E &amp; capture#2-of ?&gt; and(Predicate&lt;? super
+&gt; capture#1-of ? super E &amp; capture#2-of ?&gt;, Predicate&lt;? super capture#1-of ?
+&gt; super E &amp; capture#2-of ?&gt;) 
+&gt; 
+&gt; OIOW &lt;T&gt; of and() is inferred to be 
+&gt; &lt;capture#1-of ? super E &amp; capture#2-of ?&gt;
+&gt; 
+&gt; It almost *feels* like what we need in this case is a Union type and
+&gt; not an intersection type ? Given capture is a type, the intersection of
+&gt; these two is necessarily the empty set ? g
+
+Seeing that the two concerned wildcard types are unknown types from the
+same hierarchy, ICTB&apos;s use in this case looks legitimate - it is just
+a representation of the unknown type that is the glb - ok, so good.
+
+Stephan, could there be a situation where the wildcards could be of types
+of different hierarchy - i.e where the intersection would really be empty ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2473250</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-29 04:05:20 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #3)
+&gt; (In reply to Srikanth Sankaran from comment #2)
+
+&gt; Stephan, could there be a situation where the wildcards could be of types
+&gt; of different hierarchy - i.e where the intersection would really be empty ?
+
+OK, I realize that if the types input to glb computation belonged to a 
+different hierarchy and so shared no subtype, supertype relationship, we would
+have ended up with jlO as the glb. That we ended up with a non-singleton set
+shows they share a relationship - so good.
+
+I am still having mild discomfort at the the notion of intersection used
+here - we really want an abstraction that carries along multiple &quot;unknown&quot;
+types - one of which is a super type of the other - except their exact 
+identities unknown we are not able to pinpoint which is the super type (the
+glb) - but somehow intersection conveys the notion of a type being both at 
+the same time.
+
+Does this rambling make sense ? Or I am overlooking something ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2473252</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-29 04:09:42 -0400</bug_when>
+    <thetext>5.1.10:
+
+glb(V1,...,Vm) is defined as V1 &amp; ... &amp; Vm.
+
+It is a compile-time error if, for any two classes (not interfaces) Vi and Vj, 
+Vi is not a subclass of Vj or vice versa.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2473459</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-29 06:28:57 -0400</bug_when>
+    <thetext>Stephan, please ignore the stream of comments in this bug - I need to
+(a) address the huge sleep debt I have accumulated over the last month
+(b) start thinking more and ask questions less :)
+
+Sorry about the traffic.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475194</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-02 01:35:52 -0500</bug_when>
+    <thetext>With ICTB hooked into isCompatibleWith(), fSOF(), isTACB() etc, I don&apos;t
+see any major open issues. swapUnresolved is still unimplemented, but
+thinking about this, I don&apos;t think we will ever hit that situation, so
+we are good. uncapture() is mostly gone away, I see only one use of it
+in our code base, perhaps that one should go too.
+
+As such, I think we can live with these dual abstractions (1.7- implementing
+intersections through WildcardBindings and 1.8 using both that and ICTB) unless
+someone has the time to merge them which involves a fair amount of
+perturbation.
+
+I&apos;ll content myself with simply renaming ICTB to be IntersectionTypeBinding18
+and Binding.INTERSECTION_CAST_TYPE to be Binding.INTERSECTION_TYPE18.
+
+Changes are here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=ac33227f5aefea8ca107e0dff1e50be7a78ccf5b</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494310</commentid>
+    <comment_count>8</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-12-09 03:40:59 -0500</bug_when>
+    <thetext>Verified for 4.5M4 by code inspection</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,173 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>418580</bug_id>
+          
+          <creation_ts>2013-10-03 07:27:00 -0400</creation_ts>
+          <short_desc>Asynchronous access to BindingTables, infinite loop on HashMap.getEntry</short_desc>
+          <delta_ts>2013-12-10 05:05:22 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3.1</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>4.4 M4</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Przemysaw Walski">pwalski</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>manpalat</cc>
+    
+    <cc>mczyzyk</cc>
+    
+    <cc>pwalski</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2313780</commentid>
+    <comment_count>0</comment_count>
+    <who name="Przemysaw Walski">pwalski</who>
+    <bug_when>2013-10-03 07:27:03 -0400</bug_when>
+    <thetext>#####
+Bug explanation
+#####
+
+Usage of 
+ASTParser.createASTs(String[] sourceFilePaths, String[] encodings, String[]
+bindingKeys, FileASTRequestor requestor, IProgressMonitor monitor)
+with option
+ASTParser.setResolveBindings( true )
+produce many org.eclipse.jdt.core.dom.CompilationUnit objects.
+Each of them contains its own AST object, 
+with own DefaultBindingResolver object, 
+which shares SINGLE DefaultBindingResolver.BindingTables
+with every other DefaultBindingResolver (and so AST, 
+and CompilationUnit objects) created during 
+single &quot;createASTs&quot; batch parsing call.
+
+DefaultBindinResolver Javadoc says:
+&quot;* IMPORTANT: The methods on this class are synchronized. This is required
+ * because there may be multiple clients in separate threads concurrently
+ * reading an AST and asking for bindings for its nodes. These requests all
+ * end up invoking instance methods on this class. There are various internal
+ * tables and caches which are built and maintained in the course of looking
+ * up bindings. To ensure that they remain coherent in the presence of multiple
+ * threads, the methods are synchronized on the DefaultBindingResolver instance.&quot;
+
+Unfortunately parsing (performed as described above) creates many 
+DefaultBindingResolvers with shared single BindingTables object
+so all those synchronisations on methods do nothing to prevent asynchronous
+modifications of this maps. Such events do happen during any of various
+&quot;resolveBinding()&quot;-like method calls performed by multiple threads.
+
+########
+Errors the bug causes
+########
+
+In case of our project the bug often cause a damage of
+DefaultBindingResolver.BindingTables.compilerBindingsToASTBindings HashMap,
+which makes our threads constantly running on HashMap.getEntry on 
+INFINITE LOOP, which looks like following:
+
+java.lang.Thread.State: RUNNABLE
+at java.util.HashMap.getEntry(HashMap.java:446)
+at java.util.HashMap.get(HashMap.java:405)
+at org.eclipse.jdt.core.dom.DefaultBindingResolver.getTypeBinding
+(DefaultBindingResolver.java:526)
+- locked &lt;0x00000000b6da8bb0&gt; 
+(a org.eclipse.jdt.core.dom.DefaultBindingResolver)
+at org.eclipse.jdt.core.dom.MethodBinding.getDeclaringClass
+(MethodBinding.java:131)
+...
+
+We use ASTParser.createASTs(..) instead of multiple ASTParser.createAST(..) 
+because the amount of used memory drop is quite significant (we had to store
+part of IBinding objects in memory).
+
+
+########
+Proposed solution
+########
+
+The solution may be as simple as using ConcurrentHashMap in 
+DefaultBindingResolver.BindingTables.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2314142</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-10-03 22:46:35 -0400</bug_when>
+    <thetext>(In reply to Przemysaw Walski from comment #0)
+&gt; The solution may be as simple as using ConcurrentHashMap in 
+&gt; DefaultBindingResolver.BindingTables.
+
+Sounds good but just that we will have to use Collections.synchronizedMap(...) since we are still on 1.4 compliance level. We will also need to see if there&apos;s a risk of any deadlock.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2323138</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-10-25 06:51:53 -0400</bug_when>
+    <thetext>Sorry, but this one will have to wait till M4. The explanation looks plausible, but I can&apos;t quite come up with a reproducing test case. Early M4, I will post a plug-in patch with the fix and see if it addresses the bug reported and take it from there.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2336804</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-12-03 00:00:58 -0500</bug_when>
+    <thetext>Now that jdt.core has moved to 1.6, we can use ConcurrentHashMap. I will release this shortly.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2336835</commentid>
+    <comment_count>4</comment_count>
+    <who name="Przemysaw Walski">pwalski</who>
+    <bug_when>2013-12-03 03:31:51 -0500</bug_when>
+    <thetext>Thanks for response.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2336842</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-12-03 03:53:27 -0500</bug_when>
+    <thetext>Released in master for M4:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=c4b36d06173d8e97d900cc6848a6ef22d1e840e1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2339764</commentid>
+    <comment_count>6</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2013-12-10 05:05:22 -0500</bug_when>
+    <thetext> Verified for Eclipse Luna (4.4M4 ) Build id: I20131209-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

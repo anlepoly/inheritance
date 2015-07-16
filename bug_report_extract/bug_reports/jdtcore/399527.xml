@@ -1,0 +1,243 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>399527</bug_id>
+          
+          <creation_ts>2013-01-30 13:19:00 -0500</creation_ts>
+          <short_desc>Type inference problem</short_desc>
+          <delta_ts>2014-05-19 02:54:16 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords>test</keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 RC1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Terry Parker">tparker</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2210033</commentid>
+    <comment_count>0</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2013-01-30 13:19:09 -0500</bug_when>
+    <thetext>The following issue came up in a JUnit test that uses EasyMock. OpenJDK 6 and 7
+do not have problems inferring the type, but Eclipse 3.8 does. Here is a
+condensed version of the code:
+
+public class TypeInferenceProblem {
+  interface HeaderAccess&lt;T&gt; {
+    T getHeader();
+  }
+
+  interface IExpectationSetters&lt;T&gt; {
+    IExpectationSetters&lt;T&gt; andReturn(T value);
+  }
+
+  static class MocksControl implements IExpectationSetters&lt;Object&gt; {
+    @Override
+    public IExpectationSetters&lt;Object&gt; andReturn(Object value) {
+      return null;
+    }
+  }
+
+  @SuppressWarnings(&quot;unchecked&quot;)
+  public static &lt;T&gt; IExpectationSetters&lt;T&gt; expect(final T value) {
+    return (IExpectationSetters&lt;T&gt;) new MocksControl();
+  }
+
+  private HeaderAccess&lt;Object&gt; mockHeaderAccess;
+  private HeaderAccess&lt;?&gt; unboundedMockHeaderAccess;
+
+  public void test() {
+    // No error
+    expect(mockHeaderAccess.getHeader()).andReturn(new Object());
+    /*
+     * Error: The method andReturn(capture#1-of ?) in the type
+     * TypeInferenceProblem.IExpectationSetters&lt;capture#1-of ?&gt; 
+     * is not applicable for the arguments (Object)
+     */
+    expect(unboundedMockHeaderAccess.getHeader()).andReturn(new Object());
+  }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211295</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-01 16:23:18 -0500</bug_when>
+    <thetext>Here&apos;s an even simpler version for discussion:
+
+public class TypeInferenceProblemMin {
+  interface HeaderAccess&lt;T&gt; {
+    T getHeader();
+  }
+
+  interface IExpectationSetters&lt;T&gt; {
+  }
+
+  public static &lt;T&gt; IExpectationSetters&lt;T&gt; expect(final T value) {
+	  return null;
+  }
+
+  private HeaderAccess&lt;?&gt; unboundedMockHeaderAccess;
+  
+  public void test() {
+    // no error:
+    Object header = unboundedMockHeaderAccess.getHeader();
+    IExpectationSetters&lt;Object&gt; exp1 = expect(header);
+
+    // Type mismatch: cannot convert from TypeInferenceProblemMin.IExpectationSetters&lt;capture#2-of ?&gt; to TypeInferenceProblemMin.IExpectationSetters&lt;Object&gt;
+    IExpectationSetters&lt;Object&gt; exp2 = expect(unboundedMockHeaderAccess.getHeader());
+  }
+}
+
+This shows: ecj does not consider to convert the intermediate capture type to Object before continuing with the inference. When given this hint by way of an intermediate assignment (header), ecj finds this path of compatibility, too.
+
+Question: does the JLS mandate this intermediate conversion, or should the capture be kept during inference? (Knowing that a solution for inference exists doesn&apos;t necessarily mean that the JLS defines a strategy that would find this solution).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2386355</commentid>
+    <comment_count>2</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2014-04-08 12:09:52 -0400</bug_when>
+    <thetext>&gt; This shows: ecj does not consider to convert the intermediate capture type
+&gt; to Object before continuing with the inference. When given this hint by way
+&gt; of an intermediate assignment (header), ecj finds this path of
+&gt; compatibility, too.
+&gt; 
+&gt; Question: does the JLS mandate this intermediate conversion, or should the
+&gt; capture be kept during inference? (Knowing that a solution for inference
+&gt; exists doesn&apos;t necessarily mean that the JLS defines a strategy that would
+&gt; find this solution).
+
+Stephan, has your deep dive into the JLS for the Java8 work given you any more insight into this issue?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2386360</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-08 12:27:20 -0400</bug_when>
+    <thetext>(In reply to Terry Parker from comment #2)
+&gt; Stephan, has your deep dive into the JLS for the Java8 work given you any
+&gt; more insight into this issue?
+
+Are you asking about JLS 7 or JLS 8?
+
+I don&apos;t readily have an answer, but in JLS 8 I&apos;d be confident to find a sufficiently precise answer. For JLS 7 I&apos;d be less confident...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2386366</commentid>
+    <comment_count>4</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2014-04-08 12:42:37 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #3)
+&gt; (In reply to Terry Parker from comment #2)
+&gt; &gt; Stephan, has your deep dive into the JLS for the Java8 work given you any
+&gt; &gt; more insight into this issue?
+&gt; 
+&gt; Are you asking about JLS 7 or JLS 8?
+&gt; 
+&gt; I don&apos;t readily have an answer, but in JLS 8 I&apos;d be confident to find a
+&gt; sufficiently precise answer. For JLS 7 I&apos;d be less confident...
+
+Do the two specifications vary much the area of dealing with captured types? (Pardon my ignorance.) We are standardized on Java 7 now, so that is of more immediate interest.
+
+The issue here is an identified difference between the behavior of javac and ecj, requiring close parsing of the specification to determine if and where there is a bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2386372</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-08 12:52:06 -0400</bug_when>
+    <thetext>(In reply to Terry Parker from comment #4)
+&gt; Do the two specifications vary much the area of dealing with captured types?
+
+The specification for type inference has been re-written from scratch in JLS 8 :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2388488</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-13 17:12:09 -0400</bug_when>
+    <thetext>For the records: ecj -1.8 does accept the example from comment 1 but not the full example from comment 0. At -1.7 we still reject both.
+
+Tentatively pulling into 4.4</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2401290</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-13 18:08:49 -0400</bug_when>
+    <thetext>For 1.8 I&apos;m pretty sure that both ecj results are correct:
+- accept comment 1 due to target typing
+- reject comment 0 because inference for expect() cannot be influenced by the Object argument to the subsequent method call andReturn().
+
+Regarding comment 1 at source level 1.8 both compilers agree, good.
+
+
+The original problem in comment 0 is the same issue as in bug 432603 (see bug 432603 comment 6 for final reasoning).
+
+Diagnosis in a nutshell: 
+  javac illegally ignores capture types.
+Canonical solution to make it legal java code accepted by both compilers:
+  this.&lt;Object&gt;expect(unboundedMockHeaderAccess.getHeader()).andReturn(new Object());
+
+
+Remaining question: is the behavioral difference between 1.7 vs. 1.8 at comment 1 justified?
+
+- at 1.8 we leverage target typing whereby the type of &quot;exp2&quot; drives inference into a solution where T=Object.
+
+- at 1.7 we don&apos;t have such a rule, inference is driven only by actual vs. formal arguments.
+
+=&gt; Difference seems to justified.
+
+Again the deviating behavior of javac is most likely covered by https://bugs.openjdk.java.net/browse/JDK-8016207</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2401291</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-13 18:16:58 -0400</bug_when>
+    <thetext>Regression tests in variants have been added via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=299c63114977fb41c44f086c7b4cf110448a0c23
+
+That seems to be all we can do here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2403417</commentid>
+    <comment_count>9</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-05-19 02:54:16 -0400</bug_when>
+    <thetext>Verified for 4.4 RC1</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

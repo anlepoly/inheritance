@@ -1,0 +1,427 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>385415</bug_id>
+          
+          <creation_ts>2012-07-18 10:31:00 -0400</creation_ts>
+          <short_desc>Incorrect resource leak detection</short_desc>
+          <delta_ts>2012-09-18 11:15:42 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.2</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows XP</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M2</target_milestone>
+          <dependson>345305</dependson>
+          <blocked>386665</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Radim Kolar">hsn</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>gary_shank</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+    
+    <cc>ted.hopp</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2138554</commentid>
+    <comment_count>0</comment_count>
+    <who name="Radim Kolar">hsn</who>
+    <bug_when>2012-07-18 10:31:22 -0400</bug_when>
+    <thetext>Build Identifier: Build Id: 201207050802 -&gt; Eclipse Juno
+
+Resource leak detection fails on following simple case:
+
+
+Reproducible: Always
+
+Steps to Reproduce:
+final FileSystem fs = FileSystem.get(getConf());
+[.....]
+
+try {
+	fs.close();
+	update(new Path(args[0]), dirs.toArray(new Path[dirs.size()]), normalize, filter, additionsAllowed, force);
+	return 0;
+} catch (Exception e) {
+	LOG.error(&quot;CrawlDb update:&quot;, e);
+	return -1; &lt;!-- here error is reported fs may not be closed
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138663</commentid>
+    <comment_count>1</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-07-18 14:07:19 -0400</bug_when>
+    <thetext>This is expected behaviour. The exception can be thrown while invoking fs.close() and so the file may actually end up in an unclosed state. 
+Closing as INVALID.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138667</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-18 14:14:33 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; This is expected behaviour. The exception can be thrown while invoking
+&gt; fs.close() and so the file may actually end up in an unclosed state. 
+
+Yes, that analysis is quite likely, but to be perfectly sure I&apos;d
+like to know:
+- which class FileSystem is this? java.io.FileSystem is not a resource.
+- which exception(s) is that catch catching (from close or from update)?
+
+But then, if close throws, how to you close the resource?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138669</commentid>
+    <comment_count>3</comment_count>
+    <who name="Radim Kolar">hsn</who>
+    <bug_when>2012-07-18 14:21:49 -0400</bug_when>
+    <thetext>its org.apache.hadoop.fs.FileSystem
+
+your leak detection is incorrect because if it fails during calling close() then you have nothing else left to do with that. Its way different from not calling close() at all.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138670</commentid>
+    <comment_count>4</comment_count>
+    <who name="Radim Kolar">hsn</who>
+    <bug_when>2012-07-18 14:31:10 -0400</bug_when>
+    <thetext>You expect ppl to code double close? Its not different from single close.
+
+try {
+    fs.close();
+    update(new Path(args[0]), dirs.toArray(new Path[dirs.size()]), normalize,
+filter, additionsAllowed, force);
+    return 0;
+} catch (Exception e) {
+    try {
+      fs.close()
+    }
+    catch (Exception e) {}
+    LOG.error(&quot;CrawlDb update:&quot;, e);
+    return -1; &lt;!-- here error is reported fs may not be closed
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138704</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-18 16:02:17 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; its org.apache.hadoop.fs.FileSystem
+
+thanks
+
+(In reply to comment #2)
+&gt; - which exception(s) is that catch catching (from close or from update)?
+
+Any answer to this? Since I don&apos;t have hadoop installed, what&apos;s the
+declaration of its close() method? What is the declaration of update()?
+TIA</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138724</commentid>
+    <comment_count>6</comment_count>
+    <who name="Radim Kolar">hsn</who>
+    <bug_when>2012-07-18 16:33:21 -0400</bug_when>
+    <thetext>http://hadoop.apache.org/common/docs/current/api/</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138729</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-18 16:43:23 -0400</bug_when>
+    <thetext>(In reply to comment #6)
+&gt; http://hadoop.apache.org/common/docs/current/api/
+
+Even if I dig through that API (which you seem to have at your finger tips)
+it still doesn&apos;t answer my question regarding update().
+Please provide sufficient context, so I can analyze this in exact the
+same situation.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138736</commentid>
+    <comment_count>8</comment_count>
+    <who name="Radim Kolar">hsn</who>
+    <bug_when>2012-07-18 17:06:46 -0400</bug_when>
+    <thetext>	public void update(Path crawlDb, Path[] segments, boolean normalize, boolean filter) throws IOException {
+		boolean additionsAllowed = getConf().getBoolean(CRAWLDB_ADDITIONS_ALLOWED, true);
+		update(crawlDb, segments, normalize, filter, additionsAllowed, false);
+	}
+
+public void update(Path crawlDb, Path[] segments, boolean normalize, boolean filter, boolean additionsAllowed, boolean force) throws IOException {
+		FileSystem fs = FileSystem.get(getConf());
+		Path lock = new Path(crawlDb, LOCK_NAME);
+		LockUtil.createLockFile(fs, lock, force);
+
+but update is irrelevant. If close() is FIRST in block. It is always executed.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138756</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-18 19:24:23 -0400</bug_when>
+    <thetext>I have a minimal reproducing test case.
+
+Unfortunately, the way flow analysis is done for Java, even this very simple issue doesn&apos;t have an easy fix.
+
+Compare to this snippet:
+
+    void bar() {
+        final Object var;
+        try {
+            tryit(var = new Object());
+        } catch (Exception e) {
+	    System.out.println(var);
+        }
+    }
+    void tryit(Object in) throws Exception {  }
+
+The compiler must report against the println:
+
+&quot;The local variable var may not have been initialized&quot;
+
+Intuitively this is wrong, but the JLS requires the error to be reported.
+
+Since the resource analysis uses much the same infrastructure as the analysis for definite assignment it inherits this overcautious behavior. IOW, our resource analysis is not &quot;more wrong&quot; than definite assignment analysis as specified by the JLS.
+
+This bug is also closely related to bug 370424. The latter talks about null analysis, but the algorithms are the same.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138762</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-18 20:14:16 -0400</bug_when>
+    <thetext>Some words of advice:
+
+The initial motivation behind this analysis is to alert users that the safest way to deal with resources is the new try-with-resource statement (since Java 7). This should always be the first option when encountering a resource warning, be it intuitively right or intuitively wrong.
+
+So this example
+
+    boolean foo1() throws FileNotFoundException {
+        FileReader fileReader = new FileReader(&quot;somefile&quot;);
+        // stuff here
+        try {
+            fileReader.close();
+            update();
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false; // warning here
+        }
+    }
+
+should optimally be rewritten as
+
+    boolean foo2() throws FileNotFoundException {
+        try {
+           try (FileReader fileReader = new FileReader(&quot;someFile&quot;)) {
+              // stuff here
+              fileReader.close();
+              update();
+              return true;
+           }
+        } catch (IOException ioex) {
+            return false;
+        }
+    }
+
+As a workaround in Java 6-, this slight variant can be used:
+
+    boolean foo3() throws FileNotFoundException {
+        FileReader fileReader;
+        try {
+            fileReader = new FileReader(&quot;somefile&quot;);
+            // stuff here
+            fileReader.close();
+            update();
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false; // no warning
+        }
+    }
+
+Sorry, that&apos;s the best I can offer for now.
+
+
+I&apos;m wondering what makes the example in this bug different from the hundreds of patterns we have looked at so far. I guess most examples only catch exceptions from opening and using (read/write) a resource, and let the IOException from close() just bubble up to the caller. I can&apos;t even recall a single example where a programmer tried to make any sense from an exception thrown by close. Nobody seems to seriously expect this to happen.
+
+Related to the above, the scoping of the initial example is different from &quot;normal&quot; style: people don&apos;t usually work with a resource in a &quot;less protected&quot; scope than the close(). The unexpected warning is triggered by the close happening in a try block that finds an open resource already at its entry.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138764</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-18 20:24:20 -0400</bug_when>
+    <thetext>foo2() was too complicated, just say:
+
+    boolean foo2() throws FileNotFoundException {
+        try (FileReader fileReader = new FileReader(&quot;someFile&quot;)) {
+            // stuff here
+            fileReader.close();
+            update();
+            return true;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2141954</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-25 18:18:09 -0400</bug_when>
+    <thetext>x-ref: in bug 345305 I started experiments which *might* also resolve this
+issue.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2144754</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-08-03 10:42:44 -0400</bug_when>
+    <thetext>*** Bug 386534 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2144944</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-08-04 10:19:48 -0400</bug_when>
+    <thetext>See bug 361073 comment 7 for another test case.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2152426</commentid>
+    <comment_count>15</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-08-25 17:39:44 -0400</bug_when>
+    <thetext>Update:
+- this bug is indeed trivially fixed on top of bug 345305
+- the test case from bug 361073 comment 7 is also fixed by my patch-under-test
+- bug 386534 is actually *not* a duplicate and thus reopened</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2152428</commentid>
+    <comment_count>16</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-08-25 18:22:17 -0400</bug_when>
+    <thetext>Released for 4.3M2 via commit ece2c7d1e79ad27366573b24052e580dddc3afec</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2154251</commentid>
+    <comment_count>17</comment_count>
+    <who name="Gary Shank">gary_shank</who>
+    <bug_when>2012-08-30 09:01:18 -0400</bug_when>
+    <thetext>Sorry if this is a dumb question but my current &quot;Available Software Sites&quot; has (running Juno):
+The Eclipse Project Updates http://download.eclipse.org/eclipse/updates/3.8
+The Eclipse Project Updates http://download.eclipse.org/eclipse/updates/4.2
+Should I add http://download.eclipse.org/eclipse/updates/4.3 to pickup this fix or do I just need one entry pointed to 4.3?
+Gary</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2154269</commentid>
+    <comment_count>18</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-08-30 09:31:52 -0400</bug_when>
+    <thetext>(In reply to comment #17)
+&gt; Sorry if this is a dumb question but my current &quot;Available Software Sites&quot;
+&gt; has (running Juno):
+&gt; The Eclipse Project Updates http://download.eclipse.org/eclipse/updates/3.8
+&gt; The Eclipse Project Updates http://download.eclipse.org/eclipse/updates/4.2
+&gt; Should I add http://download.eclipse.org/eclipse/updates/4.3 to pickup this
+&gt; fix or do I just need one entry pointed to 4.3?
+&gt; Gary
+
+Since 4.3M2 hasn&apos;t been released yet, you&apos;d need this site:
+  http://download.eclipse.org/eclipse/updates/4.3-I-builds
+(&quot;I&quot; for integration builds).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161070</commentid>
+    <comment_count>19</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-09-18 02:24:42 -0400</bug_when>
+    <thetext>Verified for 4.3 M2 using Build id: I20120917-0800</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161162</commentid>
+    <comment_count>20</comment_count>
+    <who name="Gary Shank">gary_shank</who>
+    <bug_when>2012-09-18 06:00:42 -0400</bug_when>
+    <thetext>When will this fix be available for Juno?  I even tried that 4.3-I builds but still no update.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161241</commentid>
+    <comment_count>21</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-09-18 09:00:51 -0400</bug_when>
+    <thetext>The fix has been verified for I20120917-0800.
+
+To understand why you say differently, we&apos;d need to know which build exactly you&apos;re using and what problem remains.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161249</commentid>
+    <comment_count>22</comment_count>
+    <who name="Gary Shank">gary_shank</who>
+    <bug_when>2012-09-18 09:24:00 -0400</bug_when>
+    <thetext>Here&apos;s the info from &quot;About Eclipse&quot; - Eclipse IDE for Java Developers
+Version: Juno Release
+Build id: 20120614-1722
+
+Under &quot;Installed Software&quot;, most everything is version 3.3.10 except for the Eclipse IDE for Java Developers - which is 1.5.0.20120614-1633
+
+For update sites, I have:
+Juno - http://download.eclipse.or/releases/juno
+The Eclipse Project Updates - http://download.eclipse.org/eclipse/updates/3.8
+The Eclipse Project Updates - http://download.eclipse.org/eclipse/updates/4.2
+I also tried adding: http://download.eclipse.org/eclipse/updates/4.3-I-builds but all I get is &quot;No updates were found&quot;.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161262</commentid>
+    <comment_count>23</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-09-18 09:48:05 -0400</bug_when>
+    <thetext>(In reply to comment #22)
+&gt; Here&apos;s the info from &quot;About Eclipse&quot; - Eclipse IDE for Java Developers
+&gt; Version: Juno Release
+&gt; Build id: 20120614-1722
+
+So you&apos;re still at the Juno Release.
+
+&gt; I also tried adding:
+&gt; http://download.eclipse.org/eclipse/updates/4.3-I-builds but all I get is
+&gt; &quot;No updates were found&quot;.
+
+I see, that&apos;s because your package Eclipse IDE for Java Developers cannot be updated to become the Eclipse SDK, these are different packages. You&apos;ll have to wait until Kepler M2 becomes available from http://www.eclipse.org/downloads/index-developer.php or start by freshly installing a recent Eclipse SDK integration build.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161281</commentid>
+    <comment_count>24</comment_count>
+    <who name="Gary Shank">gary_shank</who>
+    <bug_when>2012-09-18 10:07:44 -0400</bug_when>
+    <thetext>Ah, I think my confusion is due to the original bug I commented on - Bug 361073 - and that was linked to this one.  Will this fix be put into Juno?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161331</commentid>
+    <comment_count>25</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-09-18 11:15:42 -0400</bug_when>
+    <thetext>(In reply to comment #24)
+&gt; Will this fix be put into Juno?
+
+I don&apos;t think so. This fix is based on changes in bug 345305 which are too broad for inclusion in a maintenance release, I&apos;d say.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

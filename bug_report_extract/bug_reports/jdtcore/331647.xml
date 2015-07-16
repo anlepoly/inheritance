@@ -1,0 +1,742 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>331647</bug_id>
+          
+          <creation_ts>2010-12-02 06:14:00 -0500</creation_ts>
+          <short_desc>[compiler][null] support flexible default mechanism for null-annotations</short_desc>
+          <delta_ts>2011-12-05 05:00:34 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.7</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>3.8 M4</target_milestone>
+          <dependson>186342</dependson>
+    
+    <dependson>337868</dependson>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>chalin</cc>
+    
+    <cc>deepakazad</cc>
+    
+    <cc>jawr</cc>
+    
+    <cc>loskutov</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>mernst</cc>
+    
+    <cc>Sebastian.Zarnekow</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>1851214</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2010-12-02 06:14:01 -0500</bug_when>
+    <thetext>Applying the annotations introduced in bug 186342 for inter-procedural 
+null checking would require tremendous efforts if no smart defaults
+can be selected.
+
+A mechanism for defaults should have these properties:
+- be configurable at all levels of granularity: method, class, package, project.
+- be applicable to
+  - just method parameters, or
+  - method return, or
+  - both
+- support cancellation of defaults from an outer scope.
+- work well with inheritance.
+NB, that canceling defaults from a super class is not a sound option.
+
+Just as in bug 186342, any annotation names used for this mechanism should
+be configurable.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1852382</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2010-12-04 04:21:43 -0500</bug_when>
+    <thetext>Some more words on why I believe those defaults should be configurable,
+despite the fact that research indicates that non-null should actually
+be *the* default and exceptions can be expressed with a combination of
+explicit @Nullable and @SuppressWarnings:
+
+The basic question is: should nullness be a *boolean* property of each 
+reference type or do we support a three-valued logic (including an 
+&apos;unknown&apos; value)? This seems to be a fundamental difference between the 
+approaches of FindBugs and Checkers (correct me if I&apos;m wrong, Mike).
+
+Rather than deciding one of those approaches is right and the other one
+wrong, I&apos;d like to support both. In bug 186342 I&apos;m proposing only two
+annotations (@NonNull and @Nullable), which serves the boolean approach.
+For those who want the three-valued logic we&apos;d admit reference types
+*without* any null-annotation.
+
+The question now is, how can a project select between the two approaches?
+I propose to introduce a configurable warning for missing null-annotations.
+When configured to &quot;ignore&quot; we have the three-valued approach: missing
+annotation is one of the three values. When configured to &quot;error&quot; we have
+the boolean approach where every reference type must have a null-annotation.
+Choose &quot;warning&quot; while migrating from one approach to the other.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1852386</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2010-12-04 05:05:42 -0500</bug_when>
+    <thetext>CCing Markus in case he wants to comment on the refactorings proposed below.
+
+Here&apos;s why I believe defaults at different levels of granularity are
+important: I envision many projects to adopt null-annotations in a long
+process of migration. If, e.g., &quot;all parameters are considered non-null
+by default&quot; is switched on globally for a large project, the number of
+new warnings will be overwhelming and after a few false positives the
+developers may quickly change back, i.e., disable the default and continue
+with the customary uncertainty about nullness.
+
+With per-package defaults we could support that a project enables the 
+default for one package at a time. So developers could add @Nullable and 
+@SuppressWarnings annotations for one package at a time, which helps to
+restrict the size of the backlog of warnings requiring investigation.
+
+Still within that package there could be (large) classes that are just
+different in some respect. E.g., a class produced by a generator that
+doesn&apos;t know about our annotations. You&apos;d just want to exclude this class
+from the default. Note that this is different from adding @SuppressWarnings
+to the class header: With saying null-defaults=none you would express that
+clients may not make assumptions about the contract of this class&apos;s methods.
+This is weaker than saying all types in signatures are nullable.
+
+With per-package defaults we should be careful to choose whether or not to
+apply these defaults to &quot;sub-packages&quot;, knowing that Java has no concept
+of sub-packages but developers may want to use namespace prefixes as a
+grouping mechanism.
+
+&quot;Inheriting&quot; defaults from various levels may make code more difficult to
+read. Firstly, I hope that the tool will be able to help (e.g., show the
+effective null-annotation in all hovers). More importantly, any non-global
+defaults should be seen as transitory means to support gradual migration.
+
+This is where I see refactoring come into the picture: When a project team
+is done annotating a package/project, it would be great if the effective
+annotations could be spelled out into the code, something like an
+&quot;Inline Null-Annotations&quot; refactoring, which would replace all non-global
+default settings with explicit null-annotations at individual type references.
+Also the opposite made by cool: given a class with no applicable default,
+but with many @NonNull annotations I may want to extract @NonNull as the new
+default. Or for a class within a scope of @NonNull-by-default but with many
+@Nullable annotations, there might be situations where extracting those to
+a class-wide @Nullable-by-default makes sense.
+
+The end of migration would be marked by the point where a project switches
+to &quot;Missing Null-Annotation=Error&quot;. Some projects may then choose to also
+disallow any non-global configuration of defaults.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1852685</commentid>
+    <comment_count>3</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2010-12-06 07:09:11 -0500</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; CCing Markus in case he wants to comment on the refactorings proposed below.
+&gt; [..]
+
+Perhaps, it will also be good to have a refactoring option to remove all these annotations from the source code, so that the code can also be easily compiled with javac/others?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1856046</commentid>
+    <comment_count>4</comment_count>
+    <who name="Michael Ernst">mernst</who>
+    <bug_when>2010-12-13 16:19:44 -0500</bug_when>
+    <thetext>&gt; The basic question is: should nullness be a *boolean* property of each 
+&gt; reference type or do we support a three-valued logic (including an 
+&gt; &apos;unknown&apos; value)? This seems to be a fundamental difference between the 
+&gt; approaches of FindBugs and Checkers (correct me if I&apos;m wrong, Mike).
+
+Yes, this is a difference.  There are also other, more important differences.
+
+For example, the Checker Framework is complete (it finds all errors) while
+FindBugs is not (even if it issues no warnings, the program may suffer a
+null pointer exception)
+
+As another example, the Checker Framework requires a small number of user
+annotations whereas FindBugs does the best it can without any user
+annotations at all.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1856049</commentid>
+    <comment_count>5</comment_count>
+    <who name="Michael Ernst">mernst</who>
+    <bug_when>2010-12-13 16:23:56 -0500</bug_when>
+    <thetext>&gt; You&apos;d just want to exclude this class
+&gt; from the default. Note that this is different from adding @SuppressWarnings
+&gt; to the class header: With saying null-defaults=none you would express that
+&gt; clients may not make assumptions about the contract of this class&apos;s methods.
+&gt; This is weaker than saying all types in signatures are nullable.
+
+I suspect that if you do not want to annotate a particular class, then you
+also do not want to typecheck uses of that class.  Typechecking its uses
+would lead to a huge number of warnings.  For the most part, if a class is
+not annotated, then you want to not only suppress warnings in it, but
+suppress warnings at all of its uses.  You probably want to separate those
+two notions, though.  If a class has its public signatures annotated (but
+not its private ones or its bodies), then it makes sense to typecheck uses
+of the class but not the class itself.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1867731</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-01-15 19:00:28 -0500</bug_when>
+    <thetext>(In reply to comment #4)
+&gt; Yes, this is a difference.  There are also other, more important differences.
+
+Sure, my point was not to give a full comparison of tools, which I probably
+cannot :)
+ 
+&gt; For example, the Checker Framework is complete (it finds all errors) while
+&gt; FindBugs is not (even if it issues no warnings, the program may suffer a
+&gt; null pointer exception)
+
+So, traditionally the JDT is closer to FindBugs than to the Checker Framework.
+I&apos;m really curious how far we can push the tool towards complete analysis.
+For the final step we certainly need JSR 308, which we can&apos;t yet include
+in a release, but I hope we&apos;ll get there eventually.
+
+
+(In reply to comment #5)
+&gt; I suspect that if you do not want to annotate a particular class, then you
+&gt; also do not want to typecheck uses of that class.  Typechecking its uses
+&gt; would lead to a huge number of warnings.  For the most part, if a class is
+&gt; not annotated, then you want to not only suppress warnings in it, but
+&gt; suppress warnings at all of its uses.  You probably want to separate those
+&gt; two notions, though.  If a class has its public signatures annotated (but
+&gt; not its private ones or its bodies), then it makes sense to typecheck uses
+&gt; of the class but not the class itself.
+
+This is what I was referring to in my recent comment bug 186342 comment 50.
+Warnings due to the use of unannotated methods/variables can be configured 
+(as one of ignore/warning/error) separately from all other diagnostics.
+
+As bug 186342 is converging towards an initial release I hope it doesn&apos;t
+block any future coolness, and I&apos;ll soon move towards this bug.
+
+Do any solutions already provide a default mechanism as requested in this 
+bug? What should we learn from others?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1870361</commentid>
+    <comment_count>7</comment_count>
+    <who name="Michael Ernst">mernst</who>
+    <bug_when>2011-01-20 15:46:45 -0500</bug_when>
+    <thetext>The premise of this feature request is:
+
+&gt; Applying the annotations introduced in bug 186342 for inter-procedural 
+&gt; null checking would require tremendous efforts if no smart defaults
+&gt; can be selected.
+
+Where is the evidence regarding the &quot;tremendous efforts&quot;, and the need for
+configuration at all levels of granularity?
+
+The Checker Framework has such a mechanism (@DefaultQualifier) that can be
+applied at a variety of granularities.  Based on a poll of users
+(http://groups.google.com/group/checker-framework-discuss/browse_thread/thread/eb47b1c6ce406fa7),
+few or no developers use this mechanism.  So, the mechanism wasn&apos;t really
+necessary.  At least, that is the experience with the Checker Framework.
+
+For libraries that are not yet annotated, suppressing warnings seems more
+appropriate than writing annotations or defaults that are known not to be
+correct.
+
+So, I propose that this issue be closed, at least until there is evidence
+that the feature is needed.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1886410</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-02-21 08:20:41 -0500</bug_when>
+    <thetext>I have a prototype implementation of this feature, by supporting two
+additional annotations, say @NonNullByDefault and @NullableByDefault.
+As in bug 186342 the concrete (qualified) names of these annotations
+are configurable.
+
+The annotations can be applied to types and packages (using package-info.java).
+The meaning is that any type reference missing an annotation will be considered
+as NonNull if the former annotation is used or as Nullable using the latter.
+Currently, only type references in method signatures are affected.
+
+Semantically, the following precedence rules are relevant:
+- Explicit annotation has precedence over default.
+- Inner default has precedence over outer (e.g., type over package,
+  inner type over outer type).
+- Inheritance has precedence over default, i.e., when overriding a method
+  with existing null contracts this contracts also apply to the overriding
+  method, regardless of any defaults specified in scope.
+  - in this rule the contract of the overridden method may be established
+    by using a default applicable in the scope of the super type.
+    No difference is made, whether the super contract is explicit or via
+    default, it will always apply to the overridden method, too.
+    (this doesn&apos;t preclude compatible explicit redefintions)
+
+When playing with my prototype on annotating the source code of JDT/Core
+the default mechanism is very helpful for working, e.g., on one package at 
+a time, since enabling NonNullByDefault for the whole project would create
+thousands of new errors and warnings - too much to resolve in one step!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1886418</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-02-21 08:35:58 -0500</bug_when>
+    <thetext>Some technical issues of my prototype:
+
+Using package-info.java for annotating a package works fine inside the 
+compiler, but I found that model and dom explicitly exclude package-info.java
+from conversions.
+
+This is problematic, e.g, for quickfixes, which convert types from model
+elements. In this situation, the package annotations are not visible and thus
+any errors/warnings caused by package level defaults will not be visible, too.
+As a result, quickfixes can be applied only in the editor, not from the 
+Problems view. 
+This could easily be solved by including package-info.java in conversion.
+
+The AST has another problem regarding calls to methods with null contracts:
+Consider class A with a call
+   someB.someMethod(null)
+and classes B and C:
+  class C {
+     void someMethod(@NonNull arg) { }
+  }
+  class B extends C {
+     void someMethod(arg) {} // null contract is inherited
+  }
+
+When creating the AST for class A, we currently don&apos;t see that someMethod
+has a null contract. My current implementation transfers the null contract
+from super to sub during verifyMethods(), however, the class B is accepted
+calling only completeTypeBindings(), but with no further processing.
+OTOH, the inherited contract is actually stored in the .class file for B,
+which is, however, not used during AST creation.
+
+At this point I&apos;m unsure what is the best approach with minimal impact on
+performance to create AST for A with knowledge about B&apos;s null contract.
+I wouldn&apos;t want to rebuild override-analysis already during resolveTypesFor,
+hence my approach of extending verifyMethods().</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1886961</commentid>
+    <comment_count>10</comment_count>
+    <who name="Patrice Chalin">chalin</who>
+    <bug_when>2011-02-22 09:07:33 -0500</bug_when>
+    <thetext>(In reply to comment #9)
+&gt; Some technical issues of my prototype: ...
+
+You can eliminate the problems that you mention by trimming down on the number of ways that can be used for controlling default nullity. (Not only will this simplify the tooling implementation but it will also make it easier on end users who have to remember the rules for resolving what the default nullity is).
+
+E.g., JmlEclipse has only two mechanisms for controlling default nullity:
+
+ - A compiler option (which can be project specific).
+ - @NonNullByDefault and @NullableByDefault but these can _only_
+   be applied to top-level types.
+
+These two have been sufficient for our purposes, including when we went through the exercise of annotating part of the JDT core a few years back. Note that, in particular, there is no inheritance of defaults. 
+
+With these rules, a developer (end-user) need only keep in mind what the compiler (project) default nullity is and then, for any specific file under investigation look at the annotations of the top-level type. This means that there is always an *explicit visual cue* in a .java file if the nullity for top-level types is any different from the compiler (project) default.
+
+Hence, we have found that restricting default nullity annotations to top-level types offers just the right level of granularity in controlling the default.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1887143</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-02-22 12:19:35 -0500</bug_when>
+    <thetext>Hi Patrice,
+
+thanks for commenting.
+
+(In reply to comment #10)
+&gt; (In reply to comment #9)
+&gt; &gt; Some technical issues of my prototype: ...
+&gt; 
+&gt; You can eliminate the problems that you mention
+
+thanks, but the issue with package level annotations should be fixed
+anyway (it also applies to @Deprecated annotations), and I do have a 
+patch almost ready for that part, so technical reasons should be no real
+hindrance :)
+
+&gt; by trimming down on the number
+&gt; of ways that can be used for controlling default nullity. (Not only will this
+&gt; simplify the tooling implementation but it will also make it easier on end
+&gt; users who have to remember the rules for resolving what the default nullity
+&gt; is).
+
+I was thinking about visibility, too. Frankly, for large classes the class-
+level annotation can also be quite far away from your focus of work.
+I think it would actually be great to let the hover of any method show
+the *effective null contract*, taking into account defaults &amp; inheritance.
+Wouldn&apos;t that be the most effective visualization?
+ 
+&gt; E.g., JmlEclipse has only two mechanisms for controlling default nullity:
+&gt; 
+&gt;  - A compiler option (which can be project specific).
+&gt;  - @NonNullByDefault and @NullableByDefault but these can _only_
+&gt;    be applied to top-level types.
+&gt; 
+&gt; These two have been sufficient for our purposes, including when we went through
+&gt; the exercise of annotating part of the JDT core a few years back.
+
+But in your article you wrote that you also used a script to apply the
+default annotations to a set of classes, didn&apos;t you?
+
+Would you say, package level annotations are bad and should be avoided,
+or is it more like saying they&apos;re not strictly necessary?
+
+During my very first experiments I was quite courageous and turned on
+nonnull-by-default for the whole project jdt.core. The number of errors
+and warnings was overwhelming. In my current experiments I actually applied
+the default to a (large) package and just by automatically applying some
+quickfixes to all occurrences of a particular problem I could reduce
+errors/warnings to a manageable number. To me this feels like package
+level *could* be the right level of granularity for migration, at least
+in some situations.
+
+&gt; Note that, in particular, there is no inheritance of defaults.
+
+To double check I understand you correctly, let&apos;s use an example:
+
+@NonNullByDefault class A {
+    Object foo(Object arg) { ... }
+}
+
+class B extends A {
+    @Override
+    Object foo(Object arg) { ... }
+    Object bar(Object arg) { ... }
+}
+
+@NullableByDefault class C extends B {
+    Object bar(Object arg) { ... }
+}
+
+I&apos;d interpret this spelled out as follows:
+A
+  @NonNull Object foo(@NonNull Object arg)
+B
+  @NonNull Object foo(@NonNull Object arg)
+  Object bar(Object arg)
+C
+  @Nullable Object bar(@Nullable Object arg)
+
+I.e., in my understanding, the @NonNullByDefault annotation is not inherited
+(so B#bar has no null-contract), but the effect it has on foo() must be 
+inherited to ensure compatibility, right?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1887431</commentid>
+    <comment_count>12</comment_count>
+    <who name="Patrice Chalin">chalin</who>
+    <bug_when>2011-02-22 17:24:28 -0500</bug_when>
+    <thetext>Hi Stephan,
+
+(In reply to comment #11)
+&gt; ...
+&gt; thanks, but the issue with package level annotations should be fixed
+&gt; anyway (it also applies to @Deprecated annotations), and I do have a 
+&gt; patch almost ready for that part, so technical reasons should be no real
+&gt; hindrance :)
+
+Ok.
+
+&gt; I was thinking about visibility, too. Frankly, for large classes the class-
+&gt; level annotation can also be quite far away from your focus of work.
+&gt; I think it would actually be great to let the hover of any method show
+&gt; the *effective null contract*, taking into account defaults &amp; inheritance.
+&gt; Wouldn&apos;t that be the most effective visualization?
+
+A hover would be a great idea. (Though the hover / default-nullity issues are somewhat orthogonal: we still sometimes review Java code outside of Eclipse -- though it maybe more rare nowadays).
+
+&gt; But in your article you wrote that you also used a script to apply the
+&gt; default annotations to a set of classes, didn&apos;t you?
+
+Yes. One could image a quick-fix-like feature in Eclipse to help emulate such a script. The advantage of such a script/quick-fix is that it helps keep the semantics (rules) related to default nullity as simple as possible.
+
+&gt; Would you say, package level annotations are bad and should be avoided,
+&gt; or is it more like saying they&apos;re not strictly necessary?
+
+Use of package-level annotations isn&apos;t common (as is partly confirmed by the fact that you are working on a bug related to this :) so I would shy away from their use (more below).
+
+&gt; During my very first experiments I was quite courageous and turned on
+&gt; nonnull-by-default for the whole project jdt.core. The number of errors
+&gt; and warnings was overwhelming.
+
+Yes, I can imagine.
+
+&gt; In my current experiments I actually applied
+&gt; the default to a (large) package and just by automatically applying some
+&gt; quickfixes to all occurrences of a particular problem I could reduce
+&gt; errors/warnings to a manageable number. To me this feels like package
+&gt; level *could* be the right level of granularity for migration, at least
+&gt; in some situations.
+
+It could be, and in support of this why not instead have a quick-fix which adds top-level nullity annotations to the types in a package? Our reasoning in JML was that there are enough complexities in Java, that our prime objective was to keep the semantics related to default nullity as simple as possible.
+
+In the end, I am not *against* package-level annotations, I am just in favor of a simpler default nullity semantics ;).
+
+&gt; &gt; Note that, in particular, there is no inheritance of defaults.
+&gt; 
+&gt; To double check I understand you correctly, let&apos;s use an example:
+&gt; 
+&gt; @NonNullByDefault class A {
+&gt;     Object foo(Object arg) { ... }
+&gt; }
+&gt; 
+&gt; class B extends A {
+&gt;     @Override
+&gt;     Object foo(Object arg) { ... }
+&gt;     Object bar(Object arg) { ... }
+&gt; }
+&gt; 
+&gt; @NullableByDefault class C extends B {
+&gt;     Object bar(Object arg) { ... }
+&gt; }
+&gt; 
+&gt; I&apos;d interpret this spelled out as follows:
+&gt; A
+&gt;   @NonNull Object foo(@NonNull Object arg)
+&gt; B
+&gt;   @NonNull Object foo(@NonNull Object arg)
+&gt;   Object bar(Object arg)
+&gt; C
+&gt;   @Nullable Object bar(@Nullable Object arg)
+&gt; 
+&gt; I.e., in my understanding, the @NonNullByDefault annotation is not inherited
+&gt; (so B#bar has no null-contract), but the effect it has on foo() must be 
+&gt; inherited to ensure compatibility, right?
+
+No. Nullity annotations are not inherited in JML, be they regular or the ByDefault annotations --- and this has been the case for as long as I can remember (and possibly adopted from Larch/C++ during JML&apos;s inception). In JML, we prefer to force the need for an explicit visual cue in the file by requiring either explicit annotations in B#bar or B itself.
+
+If you choose to support &quot;inheritance&quot; of default nullity annotations, would it not then become natural for end-users to feel that normal nullity annotations would be inherited too (for sake of uniformity)? (Of course, I feel that neither inheritance should be allowed. :)
+
+Returning to your example, in JmlEclipse we would apply the two rules mentioned in comment #10. Thus assuming that the default nullity is nullable, then the absence of any nullity annotations in B would leave B#foo as @Nullable Object Foo(@Nullable Object).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1887470</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-02-22 19:02:28 -0500</bug_when>
+    <thetext>(In reply to comment #12)
+
+&gt; Yes. One could image a quick-fix-like feature in Eclipse to help emulate
+&gt; such a script.
+
+Would you (or anyone reading this) have an idea what gesture should start
+that operation? For a quick-fix we need an element requiring a fix.
+A quick-assist works without a problem but still: where?
+
+Would it be OK to make this a quick-assist of a package declaration?
+Or what?
+
+&gt; The advantage of such a script/quick-fix is that it helps keep the
+&gt; semantics (rules) related to default nullity as simple as possible.
+
+Only on second reading of comment 10 I see the other simplification:
+No defaults per nested types.
+
+Given that Mike suggested to completely drop this issue, the simpler 
+approach might actually be fine. Let&apos;s see if others, too, have a say
+on this.
+
+&gt; Our reasoning in JML
+&gt; was that there are enough complexities in Java, that our prime objective was
+&gt; to keep the semantics related to default nullity as simple as possible.
+
+Sounds almost like lexical scoping were a horribly complex issue :)
+but I got your point.
+
+&gt; No. Nullity annotations are not inherited in JML, [...]
+
+Oops? Given that other contract elements are inherited in JML (correct me
+if I&apos;m wrong) this looks rather odd to me, and I actually assumed otherwise.
+
+&gt; If you choose to support &quot;inheritance&quot; of default nullity annotations, would it
+&gt; not then become natural for end-users to feel that normal nullity annotations
+&gt; would be inherited too (for sake of uniformity)?
+
+Sure, sure. In my implementation all null annotations are inherited.
+I was essentially motivated from my Eiffel background (which is similar
+to how I remember requires/ensures in JML).
+
+Forcing people to repeat contracts from the super-method sounds like 
+a waste of their time, to me. I&apos;m not against a refactoring for making
+inherited contracts visible, but I would consider that as optional.
+ 
+&gt; Returning to your example, in JmlEclipse we would apply the two rules mentioned
+&gt; in comment #10. Thus assuming that the default nullity is nullable, then the
+&gt; absence of any nullity annotations in B would leave B#foo as @Nullable Object
+&gt; Foo(@Nullable Object).
+
+I.e., in JmlEclipse my example would be illegal, because B#foo tries to
+redefine the return type from @NonNull Object to @Nullable Object,
+even without mentioning @Nullable?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1888007</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-02-23 15:08:21 -0500</bug_when>
+    <thetext>(In reply to comment #12)
+
+&gt; Yes. One could image a quick-fix-like feature in Eclipse to help emulate
+&gt; such a script.
+
+For the time being the following patterns work sufficiently well
+when applied to a selected resource, like a package or a source folder:
+
+Replace: ^public (.*)class\b
+With: @myannotationpackage.NonNullByDefault\npublic \1class
+[x] Regular expression
+
+Not extremely user-friendly, but allows us to go on and to defer 
+ease of use considerations till later.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2021039</commentid>
+    <comment_count>15</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-11-03 18:12:52 -0400</bug_when>
+    <thetext>After discussions at EclipseCon Europe Markus and me agreed on the
+following approach:
+
+1. The option to set @NonNull as the default is essential for the approach.
+
+2. we don&apos;t want to recommend @Nullable as the default, so we drop this
+option for now; discussion will only be re-opened when we see evidence
+that this is a useful thing to have in real life.
+
+3. we do want to ease the combination with legacy (unannotated) code.
+When subclassing a legacy class (or implementing a legacy interface)
+neither @NonNullByDefault nor @NullableByDefault are useful for overriding
+and implementing methods. The former makes parameters incompatible with
+the super declaration, the latter will cause undesirable warnings regarding
+the method return.
+We conclude that the most consistent way for such methods is to use the
+same legacy (unannotated) signature as the super declaration. This also
+allows the method implementation to handle nulls as *intended* by the
+super method, allowing the method implementation to remain unchanged
+when the super-method will eventually be annotated accordingly.
+If, however, this code sits within a scope where @NonNull is the default,
+the only way to declare a legacy signature is by cancelling the default.
+
+In order to support the above we agreed on:
+
+  @NullableByDefault is no longer part of our strategy.
+
+  @NonNullByDefault (or @NonNullByDefault(true)) to support 1.
+  
+  @NonNullByDefault(false) to support 3 (i.e., cancelling a default).
+  i.e., the annotation has a boolean parameter which defaults to true.
+
+To enable the minimal useful scope for @NonNulByDefault(false) I suggest 
+that this annotation be applicable also to individual methods (useful for 
+those methods overriding/implementing a legacy method). Ie.:
+@Target({PACKAGE,TYPE,METHOD})
+
+Accordingly, a compiler preference will support to define @NonNull as the
+global (project) default, but not the opposite.
+
+Additionally still, defaults may cause annotations to be redundant either
+when an explicit annotation repeats the default or when default-annotations
+are nested. 
+We will raise a warning against these redundant annotations to provide a 
+handle for quickfix/cleanup for removing all redundant annotations.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2021108</commentid>
+    <comment_count>16</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-11-04 01:24:07 -0400</bug_when>
+    <thetext>(In reply to comment #15)
+&gt; After discussions at EclipseCon Europe Markus and me agreed on the
+&gt; following approach:
+Sounds good!
+ 
+&gt; Additionally still, defaults may cause annotations to be redundant either
+&gt; when an explicit annotation repeats the default or when default-annotations
+&gt; are nested. 
+&gt; We will raise a warning against these redundant annotations to provide a 
+&gt; handle for quickfix/cleanup for removing all redundant annotations.
+
+We can take this into a separate bug. Redundant annotations may not be just because of repeating a default, but also when they&apos;re applied to a method with return type &apos;void&apos; or any base type like int, char, etc., no?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2022072</commentid>
+    <comment_count>17</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-11-07 09:44:48 -0500</bug_when>
+    <thetext>(In reply to comment #16)
+&gt; &gt; Additionally still, defaults may cause annotations to be redundant either
+&gt; &gt; when an explicit annotation repeats the default or when default-annotations
+&gt; &gt; are nested. 
+&gt; &gt; We will raise a warning against these redundant annotations to provide a 
+&gt; &gt; handle for quickfix/cleanup for removing all redundant annotations.
+&gt; 
+&gt; We can take this into a separate bug. Redundant annotations may not be just
+&gt; because of repeating a default, but also when they&apos;re applied to a method with
+&gt; return type &apos;void&apos; or any base type like int, char, etc., no?
+
+I already implemented the better part of detecting redundancy 
+on the train back home from EclipseCon :)
+
+As for &apos;@Nullable void&apos; and friends I wouldn&apos;t call the annotation redundant,
+but rather misplaced or not-applicable, right? 
+I can easily add a check for that, too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2033681</commentid>
+    <comment_count>18</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-11-30 01:28:45 -0500</bug_when>
+    <thetext>Stephan, I think the proposals here have already been implemented in the patch part of the bug 186342. So, unless you want to extract the part relevant to this bug and put in a separate patch, we should just close it as a dup of 186342.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2034180</commentid>
+    <comment_count>19</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-11-30 16:49:21 -0500</bug_when>
+    <thetext>Released for 3.8 M4 as part of commit 
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=305123b230bcfd1f733969b7cd2c687b75857ff0
+on behalf of bug 186342.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2035550</commentid>
+    <comment_count>20</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-12-05 05:00:34 -0500</bug_when>
+    <thetext>Verified for 3.8 M4 using Build id: I20111202-0800</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

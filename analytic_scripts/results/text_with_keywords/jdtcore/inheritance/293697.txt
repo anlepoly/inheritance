@@ -1,0 +1,86 @@
+BUG REPORT COMMENTS:
+JavaSearchBugTests.testBug286379c is failing randomly while running build tests:
+
+build I20091028-0100:
+====================
+
+Linux box:
+---------
+Index file should be changed!!!
+
+junit.framework.AssertionFailedError: Index file should be changed!!!
+at org.eclipse.jdt.core.tests.model.JavaSearchBugsTests.testBug286379c(JavaSearchBugsTests.java:10980)
+
+Windows boxes (2):
+-----------------
+No search results expected. ----------- Expected ------------ ------------ but was ------------ Xtorem (not open) [in Xtorem.torem [in p [in <project root> [in P]]]] --------- Difference is ---------- expected:<[]> but was:<[Xtorem (not open) [in Xtorem.torem [in p [in <project root> [in P]]]]]>
+
+junit.framework.ComparisonFailure: No search results expected.
+----------- Expected ------------
+
+------------ but was ------------
+Xtorem (not open) [in Xtorem.torem [in p [in <project root> [in P]]]]
+--------- Difference is ----------
+expected:<[]> but was:<[Xtorem (not open) [in Xtorem.torem [in p [in <project root> [in P]]]]]>
+at org.eclipse.jdt.core.tests.junit.extension.TestCase.assertStringEquals(TestCase.java:230)
+at org.eclipse.jdt.core.tests.junit.extension.TestCase.assertEquals(TestCase.java:206)
+at org.eclipse.jdt.core.tests.model.AbstractJavaModelTests.assertSearchResults(AbstractJavaModelTests.java:358)
+at org.eclipse.jdt.core.tests.model.JavaSearchBugsTests.testBug286379c(JavaSearchBugsTests.java:10951)
+
+
+build I20091028-1300:
+====================
+
+Linux box:
+---------
+Index file should be changed!!!
+
+junit.framework.AssertionFailedError: Index file should be changed!!!
+at org.eclipse.jdt.core.tests.model.JavaSearchBugsTests.testBug286379c(JavaSearchBugsTests.java:10980)
+Created an attachment (id=150855)
+Proposed patch
+
+The failure on linux box comes from the fact that the last modified time may be not modified inside a second on this OS, hence may explain that the assertion fails if the simulate exit/restart + reindexing last less than one second (which should be surely the case) and the index file was created in the same second...
+So, to fix this issue, I just added a sleep over one second (1.5) between the exit and the restart simulation, then we should not face this problem again.
+
+The failure on windows machine is a little bit more tricky. I strongly suspect that it's due to the fact that the resource creation event comes to the DeltaProcessor after the Java Source content type has been created. So, as the indexing is triggered for a resource creation, in this case, the search succeeds... So, to fix it, I force a refresh of the project and wait for the corresponding event to be sure that the resource creation event is taken into account by the DeltaProcessor before the Java Source content is changed.
+Released for 3.6M3 in HEAD stream.
+Reopened as the tests failed again while running build 200910301201 tests... :-(
+Apparently, it needs more investigation. I'll do it for M4.
+The failure now seems systematic as it occurred in last 2 nightly builds... I disabled the test until I found the real issue there!
+Created an attachment (id=151092)
+New proposed patch
+
+The problem finally came from the fact that even if there's no Platform specific event while modifying the file specification (see bug 118619), there is a POST_CHANGED event for each concerned resources. E.g. for the test case, there's one even per file with the "java" and "torem" extension. So, the indexing will be updated through the DeltaProcessor but the timing seems to depend on the machine where the test is run, hence explains while it fails randomly...
+
+So, I added a resource listener to be sure that resource events have been started to be received by the DeltaProcessor. Then we can be sure that there will be pending indexing and that the search all type names will always succeeds as it waits for the indexes to be ready.
+
+I also removed the test of the index file last modified date and replace it by  the test of the empty search results because it also failed sometimes on my machine... As the search results will not be empty if the corresponding index file is not updated, I think it's enough to validate the fix.
+I've run the tests on several machines and with different speed (e.g. slowing down the machine by running several other concurrent processes) and cannot make it fail. So, I hope this time the fix will be the good one... I cross my fingers!
+
+Released for 3.6M4 in HEAD stream.
+We got a failure on this test in build I20091207-0800 :-(
+
+Unexpected search results!. ----------- Expected ------------ Xtorem (not open) [in Xtorem.torem [in p [in <project root> [in P]]]] ------------ but was ------------ --------- Difference is ---------- expected:<[Xtorem (not open) [in Xtorem.torem [in p [in <project root> [in P]]]]]> but was:<[]>
+
+junit.framework.ComparisonFailure: Unexpected search results!.
+----------- Expected ------------
+Xtorem (not open) [in Xtorem.torem [in p [in <project root> [in P]]]]
+------------ but was ------------
+
+--------- Difference is ----------
+expected:<[Xtorem (not open) [in Xtorem.torem [in p [in <project root> [in P]]]]]> but was:<[]>
+at org.eclipse.jdt.core.tests.junit.extension.TestCase.assertStringEquals(TestCase.java:230)
+at org.eclipse.jdt.core.tests.junit.extension.TestCase.assertEquals(TestCase.java:206)
+at org.eclipse.jdt.core.tests.model.AbstractJavaModelTests.assertSearchResults(AbstractJavaModelTests.java:362)
+at org.eclipse.jdt.core.tests.model.AbstractJavaModelTests.assertSearchResults(AbstractJavaModelTests.java:352)
+at org.eclipse.jdt.core.tests.model.JavaSearchBugsTests.testBug286379c(JavaSearchBugsTests.java:11003)
++1 to release a fix that makes that test more stable.
+Created an attachment (id=154072)
+Last proposed patch
+
+This patch should be hopefully the last one...
+Released for 3.6M4 in HEAD stream.
+Verified for 3.6M4 using Build id: I20091209-0100
+Verified.
+

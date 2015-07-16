@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>406928</bug_id>
+          
+          <creation_ts>2013-04-30 11:59:00 -0400</creation_ts>
+          <short_desc>computation of inherited methods seems damaged (affecting @Overrides)</short_desc>
+          <delta_ts>2013-05-15 03:40:00 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andrew Clement">aclement</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2250603</commentid>
+    <comment_count>0</comment_count>
+    <who name="Andrew Clement">aclement</who>
+    <bug_when>2013-04-30 11:59:33 -0400</bug_when>
+    <thetext>Not strictly a Java8 bug but it is a problem on BETA_JAVA8. Testcase (I had this in MethodVerifyTest):
+
+Map compilerOptions16 = getCompilerOptions();
+compilerOptions16.put(JavaCore.COMPILER_CODEGEN_TARGET_PLATFORM, CompilerOptions.VERSION_1_6);
+compilerOptions16.put(JavaCore.COMPILER_COMPLIANCE, JavaCore.VERSION_1_6);
+compilerOptions16.put(JavaCore.COMPILER_SOURCE, JavaCore.VERSION_1_6);
+this.runConformTest(
+  new String[] {
+    &quot;TestPointcut.java&quot;,
+    &quot;interface MethodMatcher {\n&quot;+
+    &quot;	boolean matches();\n&quot;+
+    &quot;}\n&quot;+
+    &quot;abstract class StaticMethodMatcher implements MethodMatcher { }\n&quot;+
+    &quot;abstract class StaticMethodMatcherPointcut extends StaticMethodMatcher { }\n&quot;+
+    &quot;\n&quot;+
+    &quot;class TestPointcut extends StaticMethodMatcherPointcut {\n&quot;+
+    &quot;	@Override\n&quot;+
+    &quot;	public boolean matches() { return false; } \n&quot;+
+    &quot;}\n&quot;
+  },
+  &quot;&quot;,
+  null,
+  true,
+  null,
+  compilerOptions16,
+  null);
+
+That code should not produce a warning for @Override but it does. It looks like some refactoring was done in MethodVerifier.computeInheritedMethods() in BETA_JAVA8 and the algorithm that collects up the super interfaces fails to collect &apos;MethodMatcher&apos; in the above example (i.e. an interface on the superclass of the superclass of the class we are interested in).  Without knowing about that interface the @Overrides looks like an error.
+
+I&apos;ll attach a patch in a moment containing the test and my fix (you may choose to fix it differently...).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250604</commentid>
+    <comment_count>1</comment_count>
+      <attachid>230308</attachid>
+    <who name="Andrew Clement">aclement</who>
+    <bug_when>2013-04-30 12:01:18 -0400</bug_when>
+    <thetext>Created attachment 230308
+Patch containing test and minimal fix
+
+This patch also passes RunJDTCoreTests too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250617</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-04-30 12:17:44 -0400</bug_when>
+    <thetext>Thanks for the report, &quot;perfect timing&quot;, I just released the back ported
+version of some of those changes to Kepler M7 (bug 395681).
+
+I&apos;ll give it a quick check if this fix should also go into Kepler...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250635</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-04-30 12:35:30 -0400</bug_when>
+    <thetext>Yep, Kepler is also affected.
+
+I have an even simpler fix under test.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250690</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-04-30 13:11:23 -0400</bug_when>
+    <thetext>While re-running RunJDTCoreTests I have the time to document what happened:
+in bug 395681 (and bug 388739 for BETA_JAVA8) I implemented a new strategy 
+for collecting a type&apos;s super interfaces. As a seed we have the method 
+arguments &apos;superclass&apos; and &apos;superInterfaces&apos;.
+
+For that traversal I simply forgot to travel the chain of super classes
+of &apos;superclass&apos;, too. As a result the analysis for TestPointcut couldn&apos;t
+see the super interfaces reachable via the indirect super class
+StaticMethodMatcher.
+
+Andy, the location where you made your changes hits the nail on the head.
+
+Jay: I believe this fix is necessary for M7, too. Any objections?
+The fix is as simple as wrapping one method call in a loop over super classes.
+From the currently running tests I believe the impact is in the range of
+reverting 2 or 3 test changes from bug 395681. I&apos;ll explain once I know better.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250758</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-04-30 15:13:08 -0400</bug_when>
+    <thetext>OK, after a successful test run, I can report that the only test adjustments
+needed along with the fix are basically reverting the changes in
+GenericTypeTest.test0987() f. which are described in bug 388739 comment 1.
+Since this revert makes ECJ behaviour again &apos;more similar&apos; to javac, this
+actually is a good thing, in a way.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250763</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-04-30 15:16:18 -0400</bug_when>
+    <thetext>Test &amp; fix released for 4.3 M7 via commit 97c93635fd2becc366b6b7ff4296a9b379902c15
+
+Andy, please see that I modified also the test: instead of forcing
+compliance to 1.6 we simply return when called at compliance &lt; 1.6
+(as all these tests are called at different compliance levels anyway).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2251416</commentid>
+    <comment_count>7</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2013-05-02 06:30:44 -0400</bug_when>
+    <thetext>Verified for 4.3 M7 Build id: I20130501-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>230308</attachid>
+            <date>2013-04-30 12:01:00 -0400</date>
+            <delta_ts>2013-04-30 12:01:18 -0400</delta_ts>
+            <desc>Patch containing test and minimal fix</desc>
+            <filename>patch.txt</filename>
+            <type>text/plain</type>
+            <size>3278</size>
+            <attacher name="Andrew Clement">aclement</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL01ldGhvZFZlcmlmeVRl
+c3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL01ldGhvZFZlcmlmeVRlc3Qu
+amF2YQppbmRleCA2NTNkMmI5Li40NmUxMDQzIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGls
+ZXIvcmVncmVzc2lvbi9NZXRob2RWZXJpZnlUZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBp
+bGVyL3JlZ3Jlc3Npb24vTWV0aG9kVmVyaWZ5VGVzdC5qYXZhCkBAIC0xMzkxMSw0ICsxMzkxMSwz
+MyBAQCBwdWJsaWMgdm9pZCB0ZXN0QnVnMzg0NTgwKCkgewogCQkiTmFtZSBjbGFzaDogVGhlIG1l
+dGhvZCBtKCkgb2YgdHlwZSBGb28gaGFzIHRoZSBzYW1lIGVyYXN1cmUgYXMgbSgpIG9mIHR5cGUg
+WSBidXQgZG9lcyBub3Qgb3ZlcnJpZGUgaXRcbiIgKyAKIAkJIi0tLS0tLS0tLS1cbiIpOwogfQor
+CisKK3B1YmxpYyB2b2lkIHRlc3Q0MDY5MjgoKSB7CisJTWFwIGNvbXBpbGVyT3B0aW9uczE2ID0g
+Z2V0Q29tcGlsZXJPcHRpb25zKCk7CisJY29tcGlsZXJPcHRpb25zMTYucHV0KEphdmFDb3JlLkNP
+TVBJTEVSX0NPREVHRU5fVEFSR0VUX1BMQVRGT1JNLCBDb21waWxlck9wdGlvbnMuVkVSU0lPTl8x
+XzYpOworCWNvbXBpbGVyT3B0aW9uczE2LnB1dChKYXZhQ29yZS5DT01QSUxFUl9DT01QTElBTkNF
+LCBKYXZhQ29yZS5WRVJTSU9OXzFfNik7CisJY29tcGlsZXJPcHRpb25zMTYucHV0KEphdmFDb3Jl
+LkNPTVBJTEVSX1NPVVJDRSwgSmF2YUNvcmUuVkVSU0lPTl8xXzYpOworCXRoaXMucnVuQ29uZm9y
+bVRlc3QoCisJCW5ldyBTdHJpbmdbXSB7CisJCQkiVGVzdFBvaW50Y3V0LmphdmEiLAorCQkJImlu
+dGVyZmFjZSBNZXRob2RNYXRjaGVyIHtcbiIrCisJCQkiCWJvb2xlYW4gbWF0Y2hlcygpO1xuIisK
+KwkJCSJ9XG4iKworCQkJImFic3RyYWN0IGNsYXNzIFN0YXRpY01ldGhvZE1hdGNoZXIgaW1wbGVt
+ZW50cyBNZXRob2RNYXRjaGVyIHsgfVxuIisKKwkJCSJhYnN0cmFjdCBjbGFzcyBTdGF0aWNNZXRo
+b2RNYXRjaGVyUG9pbnRjdXQgZXh0ZW5kcyBTdGF0aWNNZXRob2RNYXRjaGVyIHsgfVxuIisKKwkJ
+CSJcbiIrCisJCQkiY2xhc3MgVGVzdFBvaW50Y3V0IGV4dGVuZHMgU3RhdGljTWV0aG9kTWF0Y2hl
+clBvaW50Y3V0IHtcbiIrCisJCQkiCUBPdmVycmlkZVxuIisKKwkJCSIJcHVibGljIGJvb2xlYW4g
+bWF0Y2hlcygpIHsgcmV0dXJuIGZhbHNlOyB9IFxuIisKKwkJCSJ9XG4iCisJCX0sCisJCSIiLAor
+CQludWxsLAorCQl0cnVlLAorCQludWxsLAorCQljb21waWxlck9wdGlvbnMxNiwKKwkJbnVsbCk7
+Cit9CisKIH0KZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvTWV0aG9kVmVyaWZpZXIuamF2YSBi
+L29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9j
+b21waWxlci9sb29rdXAvTWV0aG9kVmVyaWZpZXIuamF2YQppbmRleCA3ZWEwNTE3Li5iNzg0MjIz
+IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL01ldGhvZFZlcmlmaWVyLmphdmEKKysrIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2xvb2t1cC9NZXRob2RWZXJpZmllci5qYXZhCkBAIC01NzcsOSArNTc3LDggQEAgdm9pZCBj
+b21wdXRlSW5oZXJpdGVkTWV0aG9kcyhSZWZlcmVuY2VCaW5kaW5nIHN1cGVyY2xhc3MsIFJlZmVy
+ZW5jZUJpbmRpbmdbXSBzdXAKIAogCUxpc3Qgc3VwZXJJZmNMaXN0ID0gbmV3IEFycmF5TGlzdCgp
+OwogCUhhc2hTZXQgc2VlblR5cGVzID0gbmV3IEhhc2hTZXQoKTsKKwljb2xsZWN0QWxsRGlzdGlu
+Y3RTdXBlckludGVyZmFjZXMoc3VwZXJjbGFzcywgc2VlblR5cGVzLCBzdXBlcklmY0xpc3QpOwog
+CWNvbGxlY3RBbGxEaXN0aW5jdFN1cGVySW50ZXJmYWNlcyhzdXBlckludGVyZmFjZXMsIHNlZW5U
+eXBlcywgc3VwZXJJZmNMaXN0KTsKLQlpZiAoc3VwZXJjbGFzcyAhPSBudWxsKQotCQljb2xsZWN0
+QWxsRGlzdGluY3RTdXBlckludGVyZmFjZXMoc3VwZXJjbGFzcy5zdXBlckludGVyZmFjZXMoKSwg
+c2VlblR5cGVzLCBzdXBlcklmY0xpc3QpOwogCWlmIChzdXBlcklmY0xpc3Quc2l6ZSgpID09IDAp
+IHJldHVybjsKIAkKIAlpZiAoc3VwZXJJZmNMaXN0LnNpemUoKSA9PSAxKSB7CkBAIC02MjAsNiAr
+NjE5LDE4IEBAIHZvaWQgY29tcHV0ZUluaGVyaXRlZE1ldGhvZHMoUmVmZXJlbmNlQmluZGluZyBz
+dXBlcmNsYXNzLCBSZWZlcmVuY2VCaW5kaW5nW10gc3VwCiAJfQogfQogCit2b2lkIGNvbGxlY3RB
+bGxEaXN0aW5jdFN1cGVySW50ZXJmYWNlcyhSZWZlcmVuY2VCaW5kaW5nIHN1cGVyVHlwZSwgU2V0
+IHNlZW4sIExpc3QgcmVzdWx0KSB7CisJLy8gdXNlICdzZWVuJyB0byBhdm9pZCBkdXBsaWNhdGVz
+LCB1c2UgcmVzdWx0IHRvIG1haW50YWluIHN0YWJsZSBvcmRlcgorCWlmIChzdXBlclR5cGUgPT0g
+bnVsbCkgeworCQlyZXR1cm47CisJfQorCWNvbGxlY3RBbGxEaXN0aW5jdFN1cGVySW50ZXJmYWNl
+cyhzdXBlclR5cGUuc3VwZXJJbnRlcmZhY2VzKCksIHNlZW4sIHJlc3VsdCk7CisJUmVmZXJlbmNl
+QmluZGluZyBzdXBlclN1cGVyVHlwZSA9IHN1cGVyVHlwZS5zdXBlcmNsYXNzKCk7CisJaWYgKHN1
+cGVyU3VwZXJUeXBlICE9IG51bGwpIHsKKwkJY29sbGVjdEFsbERpc3RpbmN0U3VwZXJJbnRlcmZh
+Y2VzKHN1cGVyU3VwZXJUeXBlLCBzZWVuLCByZXN1bHQpOworCX0KK30KKwogdm9pZCBjb2xsZWN0
+QWxsRGlzdGluY3RTdXBlckludGVyZmFjZXMoUmVmZXJlbmNlQmluZGluZ1tdIHN1cGVySW50ZXJm
+YWNlcywgU2V0IHNlZW4sIExpc3QgcmVzdWx0KSB7CiAJLy8gdXNlICdzZWVuJyB0byBhdm9pZCBk
+dXBsaWNhdGVzLCB1c2UgcmVzdWx0IHRvIG1haW50YWluIHN0YWJsZSBvcmRlcgogCWludCBsZW5n
+dGggPSBzdXBlckludGVyZmFjZXMubGVuZ3RoOwo=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,401 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>461878</bug_id>
+          
+          <creation_ts>2015-03-10 17:17:00 -0400</creation_ts>
+          <short_desc>[1.7][1.8][compiler][null] ECJ compiler does not allow to use null annotations on annotations</short_desc>
+          <delta_ts>2015-04-28 05:18:12 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/46517</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=00e2809bf72b0ef903127f87eda0cb314f3225a1</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andrey Loskutov">loskutov</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>manpalat</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2529675</commentid>
+    <comment_count>0</comment_count>
+      <attachid>251442</attachid>
+    <who name="Andrey Loskutov">loskutov</who>
+    <bug_when>2015-03-10 17:17:45 -0400</bug_when>
+    <thetext>Created attachment 251442
+Example project
+
+Followup on bug 435805 comment 17.
+
+Please see attached example project with reproducer.
+
+The ECJ creates compiler error on the code below (both 1.7/1.8 level) if using custom null annotation type (org.eclipse.jdt.core.compiler.annotation.nonnull=javax.annotation.Nonnull) for NPE analysis.
+
+&quot;The nullness annotation &apos;Nonnull&apos; is not applicable at this location&quot; error is reported on the code below:
+
+----------
+package edu.umd.cs.findbugs.annotations;
+@javax.annotation.Nonnull // &lt;-- error!!!
+public @interface PossiblyNull {
+}
+----------
+
+----------
+package javax.annotation;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+@Retention(RetentionPolicy.RUNTIME)
+public @interface Nonnull {
+}
+----------
+
+eclipse.buildId=4.5.0.I20150224-0800
+java.version=1.8.0_31</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2529678</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-10 17:22:45 -0400</bug_when>
+    <thetext>thanks
+
+The JLS 8 paragraph that needs to be implemented here is (from 9.6.4.1):
+
+&quot;If an annotation of type java.lang.annotation.Target is not present on the declaration of an annotation type T, then T is applicable in all declaration contexts except type parameter declarations, and in no type contexts. 
+
+These contexts are the syntactic locations where annotations were allowed in Java SE 7.&quot;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2544444</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-09 13:19:44 -0400</bug_when>
+    <thetext>I started to debug the situation, just to realize that my previous understanding was wrong: while target-less annotations make analysis more difficult, this isn&apos;t actually the cause here. The compiler *is* telling: we don&apos;t support a *nullness* annotation in this location. The compiler didn&apos;t say the annotation is illegal per JLS (the JLS paragraph quoted in comment 1 has been correctly implemented).
+
+I&apos;m terribly sorry for chasing up the wrong alley in the other bug :(
+
+
+What do you expect the compiler to understand when it sees a @NonNull annotation on a (annotation) type declaration? A type is not a value hence a type declaration can never be null. That&apos;s why we report &quot;The nullness annotation &apos;Nonnull&apos; is not applicable at this location&quot;. Take away the semantics of being a nullness annotation and the code is properly accepted by the compiler.
+
+For JSR 308 annotations we do have plans to interpret a @NonNull declaration annotation on a type declaration X to imply that *all uses* of type X should be interpreted as &apos;@NonNull X&apos;, but since we&apos;re speaking about type use this requires JSR 308.
+
+So, without type annotations I don&apos;t see any reasonable interpretation for the given code. Do you?
+
+
+Speaking about *annotation* type declarations adds another twist to the story, which only means I&apos;m even more at loss to give meaning to such code.
+
+What the *** is expressed by saying &quot;@interface PossiblyNull&quot; is nonnull???</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2544449</commentid>
+    <comment_count>3</comment_count>
+    <who name="Andrey Loskutov">loskutov</who>
+    <bug_when>2015-04-09 13:25:48 -0400</bug_when>
+    <thetext>Please check the full example at https://code.google.com/p/findbugs/source/browse/findbugs/src/java/edu/umd/cs/findbugs/annotations/
+
+Independently of the question why one should put annotation A on annotation B, the ecj compiler should not report errors if such annotations are allowed by JLS.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2544498</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-09 15:01:59 -0400</bug_when>
+    <thetext>(In reply to Andrey Loskutov from comment #3)
+&gt; Please check the full example at
+&gt; https://code.google.com/p/findbugs/source/browse/findbugs/src/java/edu/umd/
+&gt; cs/findbugs/annotations/
+
+Where in there would it answer any of my questions?
+ 
+&gt; Independently of the question why one should put annotation A on annotation
+&gt; B, the ecj compiler should not report errors if such annotations are allowed
+&gt; by JLS.
+
+We are not reporting that the program is illegal wrt JLS. None of the null-related diagnostics are backed by JLS.
+
+We are only reporting: &quot;You told me to interpret javax.annotation.Nonnull as a nullness annotation, but in this position I can&apos;t.&quot;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2544534</commentid>
+    <comment_count>5</comment_count>
+    <who name="Andrey Loskutov">loskutov</who>
+    <bug_when>2015-04-09 17:18:04 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; (In reply to Andrey Loskutov from comment #3)
+&gt; &gt; Please check the full example at
+&gt; &gt; https://code.google.com/p/findbugs/source/browse/findbugs/src/java/edu/umd/
+&gt; &gt; cs/findbugs/annotations/
+&gt; 
+&gt; Where in there would it answer any of my questions?
+
+Sorry, see for example
+https://code.google.com/p/findbugs/source/browse/findbugs/src/java/edu/umd/cs/findbugs/annotations/PossiblyNull.java
+https://code.google.com/p/findbugs/source/browse/findbugs/src/java/edu/umd/cs/findbugs/annotations/CheckForNull.java
+
+and how it is used in:
+
+https://code.google.com/p/findbugs/source/browse/findbugs/src/java/edu/umd/cs/findbugs/ba/jsr305/TypeQualifierResolver.java
+https://code.google.com/p/findbugs/source/browse/findbugs/src/java/edu/umd/cs/findbugs/ba/jsr305/TypeQualifierApplications.java
+
+Basically FB allows various annotations to refine or redefine some other annotations, here in particular also nullness related.
+
+&gt; &gt; Independently of the question why one should put annotation A on annotation
+&gt; &gt; B, the ecj compiler should not report errors if such annotations are allowed
+&gt; &gt; by JLS.
+&gt; 
+&gt; We are not reporting that the program is illegal wrt JLS. None of the
+&gt; null-related diagnostics are backed by JLS.
+
+Yes, but the end user just don&apos;t know it. The compiler issues a *fatal compiler error* with the error message &quot;The nullness annotation &apos;Nonnull&apos; is not applicable at this location&quot; which hardly differs from &quot;standard&quot; fatal compiler error &quot;The annotation @Blup is disallowed for this location&quot;, and one cannot &quot;mute&quot; the *error* by changing any &quot;Null-related&quot; compiler options to &quot;warning&quot; level - as soon as compiler NP analysis is turned on, one get those errors.
+
+So the reported error feels and behaves as &quot;usual&quot; compilation error which cannot be avoided or ignored and the user only choice to &quot;fix&quot; the error is to change the absolutely valid code - and this is wrong and therefore bug in the compiler. The valid code should not cause (not mutable) compilation errors.
+
+&gt; We are only reporting: &quot;You told me to interpret javax.annotation.Nonnull as
+&gt; a nullness annotation, but in this position I can&apos;t.&quot;
+
+Still not clear: *why* this must be reported as code (or user) *error*? It is just internal compiler issue.
+
+I think the main disconnect we have here is that we do not distinguish the fact that ecj has two different roles - compiler and NP analyzer.
+
+The first and foremost role from ecj is compiler role and this one can &quot;break&quot; the build. And of course it also makes sense to use ecj as NP detector too, to leverage the compiled data, and if it detects a hard NP issue AND the user configuration says &quot;yes, please threat NP as compiler error&quot;, then this one also should &quot;break&quot; the build. 
+
+But the NP analysis, if enabled, should not mix together analysis results with (internal) analysis errors, which can&apos;t be &quot;muted&quot;.
+
+If ecj as compiler hit some internal assertion it will most likely not mark the code causing this assertion as wrong - so why ecj as NP analyzer does it?
+
+Also if ecj can&apos;t see any application of those annotations for NP analysis, and JLS allows those annotation to be at this place, ecj should just ignore them, and don&apos;t break the build.
+
+Other software *can* see some value in having annotations on annotations.
+
+I think this case must be just ignored by ecj as: &quot;this annotation at this place is allowed by JLS, it is not used in *my* NP analysis and it definitely can&apos;t cause any harm - so don&apos;t care about it and continue&quot;.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2544560</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-09 19:45:30 -0400</bug_when>
+    <thetext>OK, I think understand how findbugs interprets @TypeQualifierNickname (which is a concept that ecj will not implement).
+
+
+Reporting &quot;The nullness annotation &apos;Nonnull&apos; is not applicable at this location&quot; *as an error* should not be seen as a compiler limitation / internal analysis error, but it was deliberately done in order to give the best possible feedback to users.
+
+Please consider the following JLS-legal applications of TYPE_USE annotations (messages don&apos;t exactly reflect our implementation, but I hope you see my point):
+   
+   @NonNull String toNonNull(@Nullable String s) {
+       return (@NonNull String) s;
+   }
+
+Now imagine we only report this:
+
+  return (@NonNull String) s;
+         ^^^^^^^^^^^^^^^^^^^
+  Null type mismatch: required &apos;@NonNull String&apos; but the provided value is specified as @Nullable
+
+
+User will be at a complete loss unless s/he sees the additional diagnostic:
+
+  return (@NonNull String) s;
+          ^^^^^^^^
+  The nullness annotation &apos;Nonnull&apos; is not applicable at this location
+
+To ensure that the second essential message is seen no later than the first, it should have higher priority. With only error/warning/ignore this cannot always be achieved, but we approximate by reporting the root cause as an error. Promote root causes over secondary problems, that&apos;s a goal we consistently pursue in all our diagnostics, and so we do here.
+
+
+I don&apos;t see the general idea at stake, but we can still improve by increments.
+
+
+We could automatically set the severity as max(all-nullness-severities). Since we recommend to set a few of these severities to error this will not make any difference for many users.
+
+
+We could add yet another configuration option. This would require to postpone this bug to 4.6. Also it feels like overkill to me. Honestly: how many folks are compiling findbugs from sources? Who else would put @NonNull on an annotation declaration? Is ecj disallowing other locations which could possibly make sense for null annotations?
+
+
+We could special-case the situation of annotating an annotation declaration with a nullness annotation, and reduce the severity for this case to warning. If this style were wide-spread I would still be reluctant, because people will think we accept the TypeQualifierNickname story, where in fact we do not interpret the nullness annotation in this location.
+If, OTOH, we assume that the majority of users affected by this change is actually participating in this very discussion :) , then reducing this one situation to warning sounds like the cleanest option to me.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2545320</commentid>
+    <comment_count>7</comment_count>
+    <who name="Andrey Loskutov">loskutov</who>
+    <bug_when>2015-04-12 17:16:23 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #6)
+&gt; We could add yet another configuration option. This would require to
+&gt; postpone this bug to 4.6. Also it feels like overkill to me. Honestly: how
+&gt; many folks are compiling findbugs from sources? 
+
+May be even more then two!
+
+&gt; Who else would put @NonNull
+&gt; on an annotation declaration? Is ecj disallowing other locations which could
+&gt; possibly make sense for null annotations?
+
+Not discovered yet since I had to turn off NP analysis due this  bug :-)
+
+&gt; If, OTOH, we assume that the majority of users affected by this change is
+&gt; actually participating in this very discussion :) , then reducing this one
+&gt; situation to warning sounds like the cleanest option to me.
+
+It would be very nice if you could reduce this to warning level. The rest is OK &amp; I agree with you.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2545331</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-12 18:41:03 -0400</bug_when>
+    <thetext>(In reply to Andrey Loskutov from comment #7)
+&gt; It would be very nice if you could reduce this to warning level. The rest is
+&gt; OK &amp; I agree with you.
+
+deal!
+:)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2551841</commentid>
+    <comment_count>9</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-04-26 11:51:40 -0400</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/46517</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2551856</commentid>
+    <comment_count>10</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-04-26 13:42:51 -0400</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/46517 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=00e2809bf72b0ef903127f87eda0cb314f3225a1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2551857</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-26 13:43:51 -0400</bug_when>
+    <thetext>voil</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2551858</commentid>
+    <comment_count>12</comment_count>
+    <who name="Andrey Loskutov">loskutov</who>
+    <bug_when>2015-04-26 13:46:01 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #11)
+&gt; voil
+
+Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2552747</commentid>
+    <comment_count>13</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2015-04-28 05:18:12 -0400</bug_when>
+    <thetext>Verified for 4.5M7 using I20150427-0800 build.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>251442</attachid>
+            <date>2015-03-10 17:17:00 -0400</date>
+            <delta_ts>2015-03-10 17:17:45 -0400</delta_ts>
+            <desc>Example project</desc>
+            <filename>exampleProject.zip</filename>
+            <type>application/zip</type>
+            <size>3569</size>
+            <attacher name="Andrey Loskutov">loskutov</attacher>
+            
+              <data encoding="base64">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
+MpJcwZ4Zh4paevy5ENTrIw7mX6G9Hi9J48PlmVSShnf03COu6/fhJOdWgMeICENLIF/St/9G+B9Q
+SwcI60WVpAAFAABsGwAAUEsDBBQACAgIAKGxakYAAAAAAAAAAAAAAABHAAAAQW5ub3RhdGlvbnNF
+cnJvci9iaW4vZWR1L3VtZC9jcy9maW5kYnVncy9hbm5vdGF0aW9ucy9Qb3NzaWJseU51bGwuY2xh
+c3NNjL0OgjAUhc9FBcVFR13cnIwdHJ1cnAwaTdwLVFJS2sRSo6/m4AP4UEZwEG5yf3Lu+c7783wB
+WGEYwCMsROqYK1KWWHaROo1dZhnX2pS8lEZbdjDWylg9IqdUgC5hlPMbZ4rrjO3jXCRlAJ8wa9SG
+Zpv/SQhPxl0TsZVKEMbt2GXNEiZHp0tZiLOsP6JhLWG6qz33dnZktK7g9ZxA6FTdQ10egt/sY1Bt
+v9JD4AtQSwcIDxjEQ64AAAD1AAAAUEsDBBQACAgIALexakYAAAAAAAAAAAAAAAAzAAAAQW5ub3Rh
+dGlvbnNFcnJvci9iaW4vamF2YXgvYW5ub3RhdGlvbi9Ob25udWxsLmNsYXNzhYy7CgIxEEXv+Iqu
+Dyy10srSLSytLBQEX6yPPi5BssQE3Kzor1n4AX6UmBVRC8GBO3OZmXNv98sVQA81hgyhEfEjP/lc
+a2O5lUb7M6N1ohRDjlBPr77ieufPt5EILUOB0Ppsv7jB2xK8pUkOoRhJJQiVV2I3xQjNINFW7sVG
+xnKrxAeLCe3Jz+hAWKFT1yfkj1wlLrXz53VhlAzPDmDBerYaT4cdAiHrlEdaGbBnL6LkZtXtPaey
+QAXVB1BLBwgKBs0ouwAAACQBAABQSwMEFAAICAgAobFqRgAAAAAAAAAAAAAAAEYAAABBbm5vdGF0
+aW9uc0Vycm9yL3NyYy9lZHUvdW1kL2NzL2ZpbmRidWdzL2Fubm90YXRpb25zL1Bvc3NpYmx5TnVs
+bC5qYXZhTcnLDYAgDADQO1MwQRfwwgTGFcrPVLEQS43GuLsevb7XMKw4J5uigm4RgkAmjl5nAWSu
+HTtVlsEYt+CB5w9hrMxaimnqCwXriHvaM4ZkpypCvlzj1/Y2zwtQSwcIRQ9Yh1kAAABmAAAAUEsD
+BBQACAgIALexakYAAAAAAAAAAAAAAAAyAAAAQW5ub3RhdGlvbnNFcnJvci9zcmMvamF2YXgvYW5u
+b3RhdGlvbi9Ob25udWxsLmphdmErSEzOTkxPVchKLEus0EvMy8svSSzJzM+z5uLKzC3ILyoBy+jl
+JOalI8nqBaWWpOZB1BGlLCA/JzO5EmioA1xIA01SLyjUL8TT11WTq6A0CSig4JCZV5JalJaYnKrg
+l5+XV5qTo1DNVQsAUEsHCCuVMjlqAAAAsQAAAFBLAQIUABQACAgIAPGwakZrtIJItQAAACcBAAAb
+AAAAAAAAAAAAAAAAAAAAAABBbm5vdGF0aW9uc0Vycm9yLy5jbGFzc3BhdGhQSwECFAAUAAgICAB4
+r2pGHw1g68AAAAB3AQAAGQAAAAAAAAAAAAAAAAD+AAAAQW5ub3RhdGlvbnNFcnJvci8ucHJvamVj
+dFBLAQIUABQACAgIAPGwakbrRZWkAAUAAGwbAAA1AAAAAAAAAAAAAAAAAAUCAABBbm5vdGF0aW9u
+c0Vycm9yLy5zZXR0aW5ncy9vcmcuZWNsaXBzZS5qZHQuY29yZS5wcmVmc1BLAQIUABQACAgIAKGx
+akYPGMRDrgAAAPUAAABHAAAAAAAAAAAAAAAAAGgHAABBbm5vdGF0aW9uc0Vycm9yL2Jpbi9lZHUv
+dW1kL2NzL2ZpbmRidWdzL2Fubm90YXRpb25zL1Bvc3NpYmx5TnVsbC5jbGFzc1BLAQIUABQACAgI
+ALexakYKBs0ouwAAACQBAAAzAAAAAAAAAAAAAAAAAIsIAABBbm5vdGF0aW9uc0Vycm9yL2Jpbi9q
+YXZheC9hbm5vdGF0aW9uL05vbm51bGwuY2xhc3NQSwECFAAUAAgICAChsWpGRQ9Yh1kAAABmAAAA
+RgAAAAAAAAAAAAAAAACnCQAAQW5ub3RhdGlvbnNFcnJvci9zcmMvZWR1L3VtZC9jcy9maW5kYnVn
+cy9hbm5vdGF0aW9ucy9Qb3NzaWJseU51bGwuamF2YVBLAQIUABQACAgIALexakYrlTI5agAAALEA
+AAAyAAAAAAAAAAAAAAAAAHQKAABBbm5vdGF0aW9uc0Vycm9yL3NyYy9qYXZheC9hbm5vdGF0aW9u
+L05vbm51bGwuamF2YVBLBQYAAAAABwAHAJ0CAAA+CwAAAAA=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

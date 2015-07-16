@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>395977</bug_id>
+          
+          <creation_ts>2012-12-06 14:34:00 -0500</creation_ts>
+          <short_desc>[compiler][resource] Resource leak warning behavior possibly incorrect for anonymous inner class</short_desc>
+          <delta_ts>2012-12-11 04:12:25 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.2.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M4</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Colin Bartolome">cbartolo</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2191551</commentid>
+    <comment_count>0</comment_count>
+    <who name="Colin Bartolome">cbartolo</who>
+    <bug_when>2012-12-06 14:34:33 -0500</bug_when>
+    <thetext>With the &quot;resource leak&quot; and &quot;potential resource leak&quot; warnings turned on and the source compliance set to 1.7, the below code exhibits some odd behavior. When I declare an anonymous inner class, a &quot;Resource leak: (unassigned Closeable value) is never closed&quot; warning appears. When I remove the anonymous inner class, no warning appears.
+
+It seems like the warning should appear for both cases or for neither case. I&apos;m also not sure how the compiler expects me to fix the warning.
+
+Here&apos;s the code:
+
+import java.io.*;
+
+public class WriterTest implements Runnable
+{
+   private BufferedWriter m_Writer;
+   
+   @Override
+   public void run()
+   {
+      try
+      {
+         initializeWriter();
+         
+         m_Writer.write(&quot;string&quot;);
+         m_Writer.newLine();
+         
+         closeWriter();
+      }
+      catch (IOException ioe)
+      {
+         ioe.printStackTrace();
+      }
+   }
+   
+   private void initializeWriter()
+      throws UnsupportedEncodingException, FileNotFoundException
+   {
+      m_Writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(&quot;file&quot;), &quot;UTF-8&quot;))
+      {
+         /**
+          * Writes an LF character on all platforms, to avoid constantly flipping the line terminator style.
+          */
+         @Override
+         public void newLine() throws IOException
+         {
+            write(&apos;\n&apos;);
+         }
+      };
+   }
+   
+   private void closeWriter()
+      throws IOException
+   {
+      m_Writer.close();
+   }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2191664</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-06 18:35:29 -0500</bug_when>
+    <thetext>Thanks for the report. I could directly use your example as a test case which demonstrates a trivial omission in the code: when creating a binding for the anonymous class we forgot to mark it as a wrapper closeable, so the anonymous class wasn&apos;t included in the leak analysis at all.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2192037</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-07 17:46:11 -0500</bug_when>
+    <thetext>At a closer look this case is quite special:
+
+If you directly use BufferedWriter, the compiler knows qua its whitelist that this is a &quot;resource wrapper&quot; with these properties:
+1. it holds on to the first constructor argument, which again is a resource
+2. it delegates close() calls to the wrapped resource.
+
+When sub-classing BufferedWriter the compiler cannot know whether the subclass also fulfills both conditions.
+
+For an anonymous sub-class we know that at least (1) holds, so I&apos;m inclined to assuming that also (2) should normally hold -- might as well check if the anonymous class overrides close().</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2192040</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-07 17:49:23 -0500</bug_when>
+    <thetext>More testing in this area revealed why the issue is reported as a definite leak, not a potential one:
+Code in QualifiedAllocationExpression missed a small change (different order of statements) that was made in AllocationExpression.
+I&apos;ll include a fix for that part, too, to the effect that the analysis will see that the inner resource is passed as an argument to the ctor call, so we don&apos;t definitely know what&apos;ll happen to the resource.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2192041</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-07 18:05:18 -0500</bug_when>
+    <thetext>Released for 4.3 M4 via commit 089badac3a8a0209e6db9e45831031dae9c203f2.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2192842</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2012-12-11 04:12:25 -0500</bug_when>
+    <thetext>Verified for 4.3 M4 with build I20121210-2000.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

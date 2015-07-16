@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>451660</bug_id>
+          
+          <creation_ts>2014-11-15 05:52:00 -0500</creation_ts>
+          <short_desc>[compiler][null] Wrong &quot;Null pointer access: The variable can only be null at this location&quot; warning</short_desc>
+          <delta_ts>2015-01-28 00:42:20 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>453483</dup_id>
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Marco Trudel">marco</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>kman</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2483351</commentid>
+    <comment_count>0</comment_count>
+    <who name="Marco Trudel">marco</who>
+    <bug_when>2014-11-15 05:52:30 -0500</bug_when>
+    <thetext>This example gives a &quot;Null pointer access: The variable s can only be null at this location&quot; warning for &quot;s.toString()&quot;:
+
+	public static void main(String[] args)
+	{
+		String s = null;
+		for(; true;) // ok with &quot;while(true)&quot;
+		{
+			switch(0)
+			{
+			default:
+				s = &quot;Hello!&quot;;
+			case 1:
+				System.out.println(s.toString());
+			}
+			return;
+		}
+	}
+
+But of course this prints a friendly &quot;Hello!&quot;.
+This is a minimal testcase as far as I can see. If anything is removed, there&apos;s no warning anymore.
+There are a couple similar open bugreports, but they seem to be about different issues.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2483497</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-15 20:37:23 -0500</bug_when>
+    <thetext>In this program:
+
+public class X {
+public static void main(String[] args)
+	{
+		String s = null;
+		for(; true;) // ok with &quot;while(true)&quot;
+		{
+			switch(0)
+			{
+			case 1:
+				System.out.println(s.toString());
+			}
+			return;
+		}
+	}
+}
+
+
+the case 1: statement should still be seen as reachable from switch(0).
+Which would justify the warning. Reachability analysis is pretty specific
+on when and where the compilers are allowed to fold/recognize compile
+time constant expressions and when and where not. So some cases in which
+a programmer knows control flow can happen only in a certain way would
+still have be treated by the compiler differently</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2491781</commentid>
+    <comment_count>2</comment_count>
+    <who name="Kostya Vasilyev">kman</who>
+    <bug_when>2014-12-02 13:47:07 -0500</bug_when>
+    <thetext>Version: Luna Service Release 1 (4.4.1)
+Build id: 20140925-1800
+Java: Oracle 1.7_72
+OS: Ubuntu Linux, 64 bit
+
+Error is tripped on line 451 in XBill DNS library:
+
+https://android.googlesource.com/platform/external/smack/+/master/src/org/xbill/DNS/Message.java#451
+
+The code goes like this:
+
+	int startpos = out.current();
+	header.toWire(out);
+	Compression c = new Compression();
+	for (int i = 0; i &lt; 4; i++) {
+		int skipped;
+		if (sections[i] == null)
+			continue;
+		skipped = sectionToWire(out, i, c, tempMaxLength);
+		if (skipped != 0) {
+			if (newheader == null)
+				newheader = (Header) header.clone();
+
+// ^^^ this guarantees that &quot;newheader&quot; is not null
+
+			if (i != Section.ADDITIONAL)
+				newheader.setFlag(Flags.TC);
+
+// ^^^ Strangely enough, no warning on line above
+
+			int count = newheader.getCount(i);
+
+// ^^^^ Warning on line above
+// Null pointer access: The variable newheader can only be null at this location
+
+
+			newheader.setCount(i, count - skipped);
+			for (int j = i + 1; j &lt; 4; j++)
+				newheader.setCount(j, 0);
+
+			out.save();
+			out.jump(startpos);
+			newheader.toWire(out);
+			out.restore();
+			break;
+		}
+	}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501422</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-01 12:20:56 -0500</bug_when>
+    <thetext>(In reply to Marco Trudel from comment #0)
+&gt; This example gives a &quot;Null pointer access: The variable s can only be null
+&gt; at this location&quot; warning for &quot;s.toString()&quot;:
+
+As of 4.5 M4 the warning changed to
+
+Potential null pointer access: The variable s may be null at this location
+
+which is the correct message here.
+
+More precisely, the issue was fixed via commit 8b644ce068ecf49daa5da8af14e814933ab3df61 on behalf of bug 453483.
+
+I&apos;ve added a regression test via commit ff2fe8665a4cc197831509bf8ec85eecac35f7cf
+
+
+(In reply to Kostya Vasilyev from comment #2)
+&gt; Version: Luna Service Release 1 (4.4.1)
+&gt; Build id: 20140925-1800
+&gt; Java: Oracle 1.7_72
+&gt; OS: Ubuntu Linux, 64 bit
+&gt; 
+&gt; Error is tripped on line 451 in XBill DNS library:
+&gt; 
+&gt; https://android.googlesource.com/platform/external/smack/+/master/src/org/
+&gt; xbill/DNS/Message.java#451
+&gt; 
+&gt; The code goes like this:
+
+I see a lot of dependencies in that snippet. Could you please,
+- either: re-test with a JDT build &gt;= I20141202-0800,
+- or: simplify the example to be self-contained
+
+If the problem persists in recent builds please file a new bug.
+
+TIA.
+
+*** This bug has been marked as a duplicate of bug 453483 ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511107</commentid>
+    <comment_count>4</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2015-01-28 00:42:20 -0500</bug_when>
+    <thetext>Verified for Eclipse Mars 4.5 M5 Build id: I20150126-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

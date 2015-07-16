@@ -1,0 +1,818 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>394020</bug_id>
+          
+          <creation_ts>2012-11-09 19:12:00 -0500</creation_ts>
+          <short_desc>[model] Persist Review models across workbench</short_desc>
+          <delta_ts>2013-05-22 00:03:45 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>14</classification_id>
+          <classification>Mylyn</classification>
+          <product>Mylyn Reviews</product>
+          <component>Gerrit Connector</component>
+          <version>unspecified</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>2.0</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Miles Parker">milesparker</reporter>
+          <assigned_to name="Miles Parker">milesparker</assigned_to>
+          <cc>sam.davis</cc>
+    
+    <cc>sebastien.dubois</cc>
+    
+    <cc>shawn.minto</cc>
+    
+    <cc>steffen.pingel</cc>
+    
+    <cc>tomasz.zarna</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2182104</commentid>
+    <comment_count>0</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2012-11-09 19:12:22 -0500</bug_when>
+    <thetext>Currently, EMF model creation is driven by the editor components. For example, when a patch set is expanded, a new set of review items are loaded. I am guessing that it is currently implemented this way out of performance/latency concerns? But with the current solution we end up with a) tight model/UI coupling b) overly complex code and util methods c) very limited ability to reuse code across UI elements, and d) losing a lot of the advantages that EMF gives. This last is especially a concern because it means that we need to create multiple instances of the models. I think this concern probably would dominate the other performance issues.
+
+I&apos;m sure I&apos;m missing some concerns here, so I don&apos;t want to go and just start ripping things out. And I don&apos;t know yet if it makes sense to implement this before or after the common model work. It would be a really involve job so my sense is that we&apos;ll have to wait on it. In any case, I&apos;d like to get some feedback on the following general strategy.
+
+1. Unify code for populating review model from Gerrit server.
+2. Remove all direct references to com.google.gerrit.* elements and use Reviews/Gerrit model instead. (There may be exceptions warranted for this.) 
+3. Support deferring reads until the actual model elements are needed, with a generic interface for requesting these at a more granular level.
+5. Provide API for accessing one and only one model for each review from Eclipse workbench.
+6. Provide a mechanism for caching, updating and disposing of stale reviews. This may be managed in EMF by having a single large model containing all elements, or perhaps by storing the reviews separately.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2203389</commentid>
+    <comment_count>1</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-01-15 19:20:03 -0500</bug_when>
+    <thetext>The new ResourceSetImpl.ResourceLocator could be really relevant for this usage. I&apos;d been considering keeping reviews in separate resources, but was concerned about performance cost for the resource discovery, etc.. Ed has a new solution that solves that issue so that resources can be located in constant time:
+
+http://ed-merks.blogspot.ca/2013/01/emf-can-do-what.html
+
+This is key, because ideally we&apos;d keep reviews in separate Review resource files attached to a common ReviewRepository and persisted in local data. A solution like this would allow us to control memory usage to the review level of granularity, and make the solution much simpler and more robust that it would be if we created a single monolithic file -- which would be a bad idea anyway for all kinds of reasons. For example, a &quot;clean cache&quot; operation could simply delete all of the files. At resolution time we simply get the new review item from Gerrit if a corresponding file does not exist.
+
+Of course, that doesn&apos;t solve bug 332589, but it could conceivably make a generic solution a lot cleaner. For example, we could load (and perhaps update) the resources in completely different model domains, and only (re-)attach them to the list of regular reviews when they were completely loaded. That would render the concurrency issue moot, though as I&apos;ve said I think that&apos;s overstated anyway..
+
+To some extent this is similar to what the R4E team has implemented, but using a much more robust / EMF-leveraged implementation. (For one thing we wouldn&apos;t make the actual local files directly visible to users / external file system -- though of course they could easily be shared/cached in some kind of distributed store, which again would be a pretty straightforward swap out w/ the current R4E implementation. That last bit would allow us to support additional Review features that don&apos;t depend on Gerrit or another Web UI in a common way.)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2203750</commentid>
+    <comment_count>2</comment_count>
+    <who name="Sebastien Dubois">sebastien.dubois</who>
+    <bug_when>2013-01-16 11:56:27 -0500</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; The new ResourceSetImpl.ResourceLocator could be really relevant for this
+&gt; usage. I&apos;d been considering keeping reviews in separate resources, but was
+&gt; concerned about performance cost for the resource discovery, etc.. Ed has a
+&gt; new solution that solves that issue so that resources can be located in
+&gt; constant time:
+&gt; 
+&gt; http://ed-merks.blogspot.ca/2013/01/emf-can-do-what.html
+&gt; 
+&gt; This is key, because ideally we&apos;d keep reviews in separate Review resource
+&gt; files attached to a common ReviewRepository and persisted in local data. A
+&gt; solution like this would allow us to control memory usage to the review
+&gt; level of granularity, and make the solution much simpler and more robust
+&gt; that it would be if we created a single monolithic file -- which would be a
+&gt; bad idea anyway for all kinds of reasons. For example, a &quot;clean cache&quot;
+&gt; operation could simply delete all of the files. At resolution time we simply
+&gt; get the new review item from Gerrit if a corresponding file does not exist.
+&gt; 
+
+  Agree, as part of the Offline Reviews effort, we should use EMF serialization/deserialization to persist a local copy of the review data.  Using this we could manage the way resources are organized.  Monolithic file is a no-no IMO.  We also then need a mechanism to make sure this local data stays synchronized with the remote Gerrit data (when it is available) and also to manage the eventual merge conflicts that could arise when synchronizing.
+ 
+&gt; Of course, that doesn&apos;t solve bug 332589, but it could conceivably make a
+&gt; generic solution a lot cleaner. For example, we could load (and perhaps
+&gt; update) the resources in completely different model domains, and only
+&gt; (re-)attach them to the list of regular reviews when they were completely
+&gt; loaded. That would render the concurrency issue moot, though as I&apos;ve said I
+&gt; think that&apos;s overstated anyway..
+&gt; 
+&gt; To some extent this is similar to what the R4E team has implemented, but
+&gt; using a much more robust / EMF-leveraged implementation. (For one thing we
+&gt; wouldn&apos;t make the actual local files directly visible to users / external
+&gt; file system -- though of course they could easily be shared/cached in some
+&gt; kind of distributed store, which again would be a pretty straightforward
+&gt; swap out w/ the current R4E implementation. That last bit would allow us to
+&gt; support additional Review features that don&apos;t depend on Gerrit or another
+&gt; Web UI in a common way.)
+
+That is pretty much what I was thinking.  We could also then leverage on the code already written in R4E for this, although it will need some changes and adaptations
+
+This effort should also include the new Remotes API, which should provide a generic way to access remotes review repositories for the main Review engine code, regardless on how they are implemented (Gerrit server, database, filesystem etc.) i.e. a way to populate the EMF Review model transparently using generic calls.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2213310</commentid>
+    <comment_count>3</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-02-06 21:34:16 -0500</bug_when>
+    <thetext>Was &quot;Improve Gerrit loading to model&quot;. This task now covers just the concern of managing all reviews across the workbench. The Gerrit related bugs are handled separately. The requirements are now:
+
+1. Provide/specify Services for accessing one and only one model for each review from Eclipse workbench.
+2. Provide a mechanism for caching, updating, and disposing reviews. This may be managed in EMF by having a single large model containing all elements, or perhaps by storing the reviews separately.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244453</commentid>
+    <comment_count>4</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-04-16 15:10:20 -0400</bug_when>
+    <thetext>Steffen, Sebastien -- I need some feedback on this one asap so we can hopefully get an implementation in for M7.
+
+I&apos;ve done some more experimentation here, and I think we have two options here. With the Remote API in place it&apos;s actually reasonable to implement either so it&apos;s really a design/risk-tradeoff thing more than anything else.
+
+1. We could do a full-blown stand alone Remote storage as we&apos;ve been envisioning, where w/ probably one file for each Team Repository, and then one file for each Review. In addition to persisting the EMF files as either binary or text (presumably to workbench data dirs) which is straightforward, we&apos;d also need to build out a good deal of infrastructure for managing these files. We might want some way for users to zero out there caches as well. And then we have the risk cropping up in M7 or early RCs and having to clean up data.
+
+We can demand load so there isn&apos;t any problem with being aggresive about wiping out files, but we would still need to write the bits that handle the deletion of a file when the user deletes a task or repository, and I imagine there are some other tricky bits in there as well. Steffen, I&apos;m not even sure how open the Mylyn API is to this, if we can easily plug in to recieve deletion events and the like.
+
+2. We could do essentially what the current implementation does w/ JSON data, and just persist a serialized version to TaskData. That would simplify a lot of things, and is certainly the lower risk item, but it would also mean that we were spending time engineering that is likely to get tossed down the line, wed have to reengineer a few bits in the remote API backend, and there are some potentially tricky bits with associating to repositories. Also Steffen, I&apos;m wondering if we might be risking bulking up TaskData items beyond what is really intended. And we&apos;d lose the ability to store things as binary.
+
+Thoughts between these two options?
+
+(Removing Ed from CC list as the rest of this prob. isn&apos;t relvant to him..)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244622</commentid>
+    <comment_count>5</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-04-17 03:31:22 -0400</bug_when>
+    <thetext>I don&apos;t see much benefit in using task data. EMF already has persistence so it shouldn&apos;t be a big effort to persist review data to disk. I would actually consider a proper repository such as CDO but I don&apos;t have a strong opinion on that. If life-cycle events are missing in Mylyn that would prevent implementation of a task-based store we should simply add them.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244902</commentid>
+    <comment_count>6</comment_count>
+    <who name="Sebastien Dubois">sebastien.dubois</who>
+    <bug_when>2013-04-17 11:32:51 -0400</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; I don&apos;t see much benefit in using task data. EMF already has persistence so
+&gt; it shouldn&apos;t be a big effort to persist review data to disk. I would
+&gt; actually consider a proper repository such as CDO but I don&apos;t have a strong
+&gt; opinion on that. If life-cycle events are missing in Mylyn that would
+&gt; prevent implementation of a task-based store we should simply add them.
+
+I agree with Steffen,  I think the easiest option is just to use EMF serialization facilities to persist data to disk.  This is what we do in R4E and it works fine.  Basically, each Review task repo should be stored in its own resource, and each reviews should also have its own resource.
+
+This cache could be in the workspace (hidden), ideally in the plugin cache storage space.  As for the repository, there are multiple options:  CDO, EMFStore, even having our own Git repo could do it.
+
+We still have a merge/sync/rebase issue, but we can still get the first implementation with local storage while assuming that we are always connected going and tackle this later on.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244950</commentid>
+    <comment_count>7</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-04-17 12:53:15 -0400</bug_when>
+    <thetext>Thanks guys. I just wanted one more sanity check on basic approach before moving forward. My main thought was that there would be a great simplification from just not having to deal w/ keeping in synch with the task lifecycle at all, but agree that all of the other benefits -- especially for long-term - outweight any possible short-term dev savings. Otherwise everything you&apos;ve mentioned above matches my assumptions as well. So 1 it is.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2248752</commentid>
+    <comment_count>8</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-04-25 22:16:02 -0400</bug_when>
+    <thetext>See review: https://git.eclipse.org/r/#/c/12229/ Work in progress, not for production use!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2249272</commentid>
+    <comment_count>9</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-04-26 19:18:18 -0400</bug_when>
+    <thetext>Steffen, one of the things we&apos;re going to need is a unique file space for each repository. I&apos;m not sure how to come up with a good id for those. For version 0 I&apos;m just using a santized repos URL, e.g. httpsgit.eclipse.orgr but that seems pretty iffy. Is there a general strategy for this used in Mylyn?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2249275</commentid>
+    <comment_count>10</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-04-26 19:32:17 -0400</bug_when>
+    <thetext>Take a look at TaskDataManager.getFile(). Can you propose a structure for storing reviews? We have learned in the past that using a flat structure isn&apos;t scalable and I&apos;m wondering if we can do better for reviews.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2249286</commentid>
+    <comment_count>11</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-04-26 20:45:12 -0400</bug_when>
+    <thetext>(In reply to comment #10)
+&gt; Take a look at TaskDataManager.getFile(). 
+
+Perfect!
+
+&gt; Can you propose a structure for
+&gt; storing reviews? We have learned in the past that using a flat structure isn&apos;t
+&gt; scalable and I&apos;m wondering if we can do better for reviews.
+
+Well, I guess we just need to define some kind of partition scheme for sub-directories.
+
+I thought about doing something like breaking them into buckets for task IDs, like (0_100, 101_201,...) but among other things, we can&apos;t rely on them having nice sequential ids. So I&apos;m thinking some kind of scheme where we hash the value and then % it against some arbitrary load factor. One suggestion I just read for the String has is to use Java crypto MessageDigest. Elegant, but then we&apos;d have a Crypto dependency for Reviews...
+
+But we could probably achieve close to the same thing by hashing the file name using a consistent hash algorithm (e.g. not String#hash()), truncating it somehow to preserve the significant part, and then bit XOR&apos;ing it against a blessed random number. Then we&apos;d have a directory for each hex value that should be well distributed. (?!)
+
+Seems complex and total overkill, and I&apos;m concerned about performance, but offhand I can&apos;t think of a simpler way to do this if we don&apos;t want to make assumptions about the task id. OTOH, if we just wrote it for the common case of relatively sequential ids, that might be enough.
+
+Seems like this should be a solved problem, maybe even w/ API somewhere. I&apos;ll look around.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2249403</commentid>
+    <comment_count>12</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-04-27 11:49:07 -0400</bug_when>
+    <thetext>If we have numeric IDs using Gerrit&apos;s scheme could be useful, i.e. taking the remainder of dividing the ID by 100. We would end up with something like this?
+
+pre.. 
+workspace/.metadata/.mylyn/reviews/gerrit/git.eclipse.org/cache/39/9639/review.xml
+workspace/.metadata/.mylyn/reviews/gerrit/git.eclipse.org/data/39/9639/edits.xml</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250067</commentid>
+    <comment_count>13</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-04-29 15:45:42 -0400</bug_when>
+    <thetext>First, Steffen please note that for a first implementation (e.g. M7) I&apos;m going to avoid the complxity of a  more scalable file solution, since there are already enough pieces that can&apos;t break. :) I&apos;ll use your proposed layout and then we can simply blow away the cache for the subsequent RCs.
+
+(In reply to comment #12)
+&gt; If we have numeric IDs using Gerrit&apos;s scheme could be useful, i.e. taking the
+&gt; remainder of dividing the ID by 100. We would end up with something like this?
+&gt; 
+&gt; pre..
+&gt; workspace/.metadata/.mylyn/reviews/gerrit/git.eclipse.org/cache/39/9639/review.xml
+&gt; workspace/.metadata/.mylyn/reviews/gerrit/git.eclipse.org/data/39/9639/edits.xml
+
+Yeah, or use mod to get the significant digits. And actually, it we&apos;re assuming Gerrit, we could also simply use a shortened section of the hash/long id, since that would be well distributed. (In the typical cases, this would be really sparse, but that&apos;s not really an issue.)
+
+But note that then we have a Gerrit only solution. We could provide API to allow different implementations to support their own schemes.
+
+One other approach that occurred to me is to use an EMF generated GUID. But that could make resolution more costly (see below) and my preference is for semantic ids in EMF.
+
+==Proposed Layout==
+
+The artifacts themselves will need to support two kinds of files. See proposed layout..
+
+../{CONNECTOR_ID}/{REPOS_ID}/cache/Repository/Repository.reviews   &lt;--Singleton. Contains repository metadata, users, configuration, etc.. as well as references to reviews 
+../{CONNECTOR_ID}/{REPOS_ID}/cache/Review/[scheme/]{ID}.reviews  &lt;--One per review
+
+The Type qualifier allows us to generalize things and plug in additional separate files as needed.
+
+I&apos;m currently investigating efficient ways to locate and add the review items themselves. I&apos;m not sure if we&apos;ll use off-the-shelf EMF resolution or some other scheme that leverages the fact that we can determine the review by simply locating it in the file space. Then, since reviews don&apos;t reference each other, we could load each review on demand and unload it as soon as it is closed.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250106</commentid>
+    <comment_count>14</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-04-29 17:08:32 -0400</bug_when>
+    <thetext>Broke scalability design into separate bug, see bug 406843.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2254929</commentid>
+    <comment_count>15</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-05-09 19:21:03 -0400</bug_when>
+    <thetext>Please see: https://git.eclipse.org/r/#/c/12229/
+
+I&apos;d really appreciate end-user testing on this now (defects to this bug for now), though it isn&apos;t ready for a full code review -- I&apos;ll work on cleaning everything up and documentation once everything seems to be working reasonably well. 
+
+Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2255215</commentid>
+    <comment_count>16</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-05-10 13:09:54 -0400</bug_when>
+    <thetext>Steffen said on bug 406036 comment 1:
+
+I got the following exceptions when clicking the refresh link in the editor header:
+
+java.lang.NullPointerException
+	at org.eclipse.mylyn.internal.gerrit.ui.factories.SubmitUiFactory.isExecutable(SubmitUiFactory.java:38)
+	at org.eclipse.mylyn.reviews.ui.spi.factories.AbstractUiFactory.createControl(AbstractUiFactory.java:60)
+	at org.eclipse.mylyn.reviews.ui.spi.factories.AbstractUiFactoryProvider.createButtons(AbstractUiFactoryProvider.java:38)
+	at org.eclipse.mylyn.reviews.ui.spi.editor.ReviewSetContentSection.updateButtons(ReviewSetContentSection.java:333)
+	at org.eclipse.mylyn.reviews.ui.spi.editor.ReviewSetContentSection.updateReview(ReviewSetContentSection.java:354)
+	at org.eclipse.mylyn.reviews.ui.spi.editor.ReviewSetSection.updateModelContent(ReviewSetSection.java:84)
+	at org.eclipse.mylyn.reviews.ui.spi.editor.AbstractReviewSection$1.update(AbstractReviewSection.java:69)
+	at org.eclipse.mylyn.reviews.core.spi.remote.emf.RemoteEmfClient.checkUpdate(RemoteEmfClient.java:52)
+	at org.eclipse.mylyn.reviews.ui.spi.editor.AbstractReviewSection.createContent(AbstractReviewSection.java:86)
+	at org.eclipse.mylyn.internal.tasks.ui.editors.AbstractTaskEditorSection.createSectionClient(AbstractTaskEditorSection.java:129)
+	at org.eclipse.mylyn.internal.tasks.ui.editors.AbstractTaskEditorSection.createControl(AbstractTaskEditorSection.java:59)
+	at org.eclipse.mylyn.tasks.ui.editors.AbstractTaskEditorPage.initializePart(AbstractTaskEditorPage.java:1309)
+	at org.eclipse.mylyn.tasks.ui.editors.AbstractTaskEditorPage.access$7(AbstractTaskEditorPage.java:1301)
+	at org.eclipse.mylyn.tasks.ui.editors.AbstractTaskEditorPage$14.run(AbstractTaskEditorPage.java:857)
+	at org.eclipse.core.runtime.SafeRunner.run(SafeRunner.java:42)
+	at org.eclipse.mylyn.tasks.ui.editors.AbstractTaskEditorPage.createParts(AbstractTaskEditorPage.java:848)
+	at org.eclipse.mylyn.tasks.ui.editors.AbstractTaskEditorPage.createParts(AbstractTaskEditorPage.java:833)
+	at org.eclipse.mylyn.tasks.ui.editors.AbstractTaskEditorPage.createFormContentInternal(AbstractTaskEditorPage.java:720)
+	at org.eclipse.mylyn.tasks.ui.editors.AbstractTaskEditorPage.createFormContent(AbstractTaskEditorPage.java:665)
+	at org.eclipse.ui.forms.editor.FormPage$1.run(FormPage.java:152)
+	at org.eclipse.swt.custom.BusyIndicator.showWhile(BusyIndicator.java:70)
+	at org.eclipse.ui.forms.editor.FormPage.createPartControl(FormPage.java:150)
+	at org.eclipse.mylyn.tasks.ui.editors.AbstractTaskEditorPage.createPartControl(AbstractTaskEditorPage.java:618)
+	at org.eclipse.ui.forms.editor.FormEditor.pageChange(FormEditor.java:471)
+	at org.eclipse.ui.part.MultiPageEditorPart.setActivePage(MultiPageEditorPart.java:1067)
+	at org.eclipse.ui.forms.editor.FormEditor.setActivePage(FormEditor.java:603)
+	at org.eclipse.ui.forms.editor.SharedHeaderFormEditor.setActivePage(SharedHeaderFormEditor.java:110)
+	at org.eclipse.mylyn.tasks.ui.editors.TaskEditor.addPages(TaskEditor.java:414)
+	at org.eclipse.ui.forms.editor.FormEditor.createPages(FormEditor.java:138)
+	at org.eclipse.ui.forms.editor.SharedHeaderFormEditor.createPages(SharedHeaderFormEditor.java:98)
+	at org.eclipse.mylyn.tasks.ui.editors.TaskEditor.createPages(TaskEditor.java:196)
+	at org.eclipse.ui.part.MultiPageEditorPart.createPartControl(MultiPageEditorPart.java:348)
+	at org.eclipse.ui.internal.EditorReference.createPartHelper(EditorReference.java:670)
+	at org.eclipse.ui.internal.EditorReference.createPart(EditorReference.java:465)
+	at org.eclipse.ui.internal.WorkbenchPartReference.getPart(WorkbenchPartReference.java:595)
+	at org.eclipse.ui.internal.EditorReference.getEditor(EditorReference.java:289)
+	at org.eclipse.ui.internal.WorkbenchPage.busyOpenEditorBatched(WorkbenchPage.java:2958)
+	at org.eclipse.ui.internal.WorkbenchPage.busyOpenEditor(WorkbenchPage.java:2863)
+	at org.eclipse.ui.internal.WorkbenchPage.access$11(WorkbenchPage.java:2855)
+	at org.eclipse.ui.internal.WorkbenchPage$10.run(WorkbenchPage.java:2806)
+	at org.eclipse.swt.custom.BusyIndicator.showWhile(BusyIndicator.java:70)
+	at org.eclipse.ui.internal.WorkbenchPage.openEditor(WorkbenchPage.java:2802)
+	at org.eclipse.ui.internal.WorkbenchPage.openEditor(WorkbenchPage.java:2786)
+	at org.eclipse.ui.internal.WorkbenchPage.openEditor(WorkbenchPage.java:2769)
+	at org.eclipse.mylyn.tasks.ui.TasksUiUtil.openEditor(TasksUiUtil.java:182)
+	at org.eclipse.mylyn.internal.tasks.ui.util.TasksUiInternal.openTask(TasksUiInternal.java:923)
+	at org.eclipse.mylyn.tasks.ui.TasksUiUtil.openTask(TasksUiUtil.java:283)
+	at org.eclipse.mylyn.internal.tasks.ui.util.TasksUiInternal.refreshAndOpenTaskListElement(TasksUiInternal.java:306)
+	at org.eclipse.mylyn.internal.tasks.ui.actions.OpenTaskListElementAction.runWithEvent(OpenTaskListElementAction.java:56)
+	at org.eclipse.mylyn.internal.tasks.ui.actions.OpenTaskListElementAction.run(OpenTaskListElementAction.java:47)
+	at org.eclipse.mylyn.internal.tasks.ui.views.TaskListView$21.open(TaskListView.java:1293)
+	at org.eclipse.jface.viewers.StructuredViewer$2.run(StructuredViewer.java:866)
+	at org.eclipse.core.runtime.SafeRunner.run(SafeRunner.java:42)
+	at org.eclipse.ui.internal.JFaceUtil$1.run(JFaceUtil.java:49)
+	at org.eclipse.jface.util.SafeRunnable.run(SafeRunnable.java:175)
+	at org.eclipse.jface.viewers.StructuredViewer.fireOpen(StructuredViewer.java:864)
+	at org.eclipse.jface.viewers.StructuredViewer.handleOpen(StructuredViewer.java:1152)
+	at org.eclipse.jface.viewers.StructuredViewer$6.handleOpen(StructuredViewer.java:1256)
+	at org.eclipse.jface.util.OpenStrategy.fireOpenEvent(OpenStrategy.java:275)
+	at org.eclipse.jface.util.OpenStrategy.access$2(OpenStrategy.java:269)
+	at org.eclipse.jface.util.OpenStrategy$1.handleEvent(OpenStrategy.java:309)
+	at org.eclipse.swt.widgets.EventTable.sendEvent(EventTable.java:84)
+	at org.eclipse.swt.widgets.Widget.sendEvent(Widget.java:1276)
+	at org.eclipse.swt.widgets.Display.runDeferredEvents(Display.java:3562)
+	at org.eclipse.swt.widgets.Display.readAndDispatch(Display.java:3186)
+	at org.eclipse.ui.internal.Workbench.runEventLoop(Workbench.java:2701)
+	at org.eclipse.ui.internal.Workbench.runUI(Workbench.java:2665)
+	at org.eclipse.ui.internal.Workbench.access$4(Workbench.java:2499)
+	at org.eclipse.ui.internal.Workbench$7.run(Workbench.java:679)
+	at org.eclipse.core.databinding.observable.Realm.runWithDefault(Realm.java:332)
+	at org.eclipse.ui.internal.Workbench.createAndRunWorkbench(Workbench.java:668)
+	at org.eclipse.ui.PlatformUI.createAndRunWorkbench(PlatformUI.java:149)
+	at org.eclipse.ui.internal.ide.application.IDEApplication.start(IDEApplication.java:124)
+	at org.eclipse.equinox.internal.app.EclipseAppHandle.run(EclipseAppHandle.java:196)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.runApplication(EclipseAppLauncher.java:110)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.start(EclipseAppLauncher.java:79)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:353)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:180)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:601)
+	at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:629)
+	at org.eclipse.equinox.launcher.Main.basicRun(Main.java:584)
+	at org.eclipse.equinox.launcher.Main.run(Main.java:1438)
+	at org.eclipse.equinox.launcher.Main.main(Main.java:1414)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2255222</commentid>
+    <comment_count>17</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-05-10 13:19:28 -0400</bug_when>
+    <thetext>I&apos;m not able to reproduce the above issue with https://git.eclipse.org/r/#/c/12229/ but this was a *very* tricky to work out -- took a couple of days on just the issue of creating the buttons at the right point in the editor/remote/task-refresh lifecycle -- so perhaps it is failing under different conditions, e.g. different OS or a sequence of events that I hadn&apos;t tested. Did you click the refresh immediatly after opening the task? Did the buttons show up before you clicked refresh? (They should if you have an active connection.) Were there any jobs in progress when you clicked refresh?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2255223</commentid>
+    <comment_count>18</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-05-10 13:23:34 -0400</bug_when>
+    <thetext>One defect I&apos;m just seeing now.. the Patch set message isn&apos;t always updated correctly, in some cases it shows &quot;Retrieving contents&quot; even after content retrieval has completed.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2256400</commentid>
+    <comment_count>19</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-05-13 18:47:57 -0400</bug_when>
+    <thetext>I&apos;m getting errors in the error log when I close reviews
+
+org.eclipse.emf.ecore.resource.Resource$IOWrappedException: The object &apos;org.eclipse.mylyn.reviews.internal.core.model.User@2b6c002c (id: 591, email: david.green@tasktop.com, displayName: David Green)&apos; is not contained in a resource.
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.endSave(XMLSaveImpl.java:307)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.save(XMLSaveImpl.java:271)
+	at org.eclipse.emf.ecore.xmi.impl.XMLResourceImpl.doSave(XMLResourceImpl.java:333)
+	at org.eclipse.emf.ecore.resource.impl.ResourceImpl.save(ResourceImpl.java:1423)
+	at org.eclipse.emf.ecore.resource.impl.ResourceImpl.saveOnlyIfChangedWithMemoryBuffer(ResourceImpl.java:1137)
+	at org.eclipse.emf.ecore.resource.impl.ResourceImpl.save(ResourceImpl.java:978)
+	at org.eclipse.mylyn.reviews.spi.edit.remote.AbstractRemoteEditFactoryProvider.save(AbstractRemoteEditFactoryProvider.java:266)
+	at org.eclipse.mylyn.reviews.spi.edit.remote.AbstractRemoteEditFactoryProvider.save(AbstractRemoteEditFactoryProvider.java:248)
+	at org.eclipse.mylyn.reviews.spi.edit.remote.AbstractRemoteEditFactoryProvider.close(AbstractRemoteEditFactoryProvider.java:216)
+	at org.eclipse.mylyn.reviews.ui.spi.editor.AbstractReviewTaskEditorPage.dispose(AbstractReviewTaskEditorPage.java:115)
+	at org.eclipse.ui.forms.editor.FormEditor.dispose(FormEditor.java:403)
+	at org.eclipse.ui.forms.editor.SharedHeaderFormEditor.dispose(SharedHeaderFormEditor.java:160)
+	at org.eclipse.mylyn.tasks.ui.editors.TaskEditor.dispose(TaskEditor.java:519)
+	at org.eclipse.ui.internal.WorkbenchPartReference.doDisposePart(WorkbenchPartReference.java:737)
+	at org.eclipse.ui.internal.EditorReference.doDisposePart(EditorReference.java:327)
+	at org.eclipse.ui.internal.WorkbenchPartReference.dispose(WorkbenchPartReference.java:684)
+	at org.eclipse.ui.internal.WorkbenchPage.disposePart(WorkbenchPage.java:1810)
+	at org.eclipse.ui.internal.WorkbenchPage.handleDeferredEvents(WorkbenchPage.java:1514)
+	at org.eclipse.ui.internal.WorkbenchPage.deferUpdates(WorkbenchPage.java:1498)
+	at org.eclipse.ui.internal.WorkbenchPage.closeEditors(WorkbenchPage.java:1472)
+	at org.eclipse.ui.internal.EditorStack.close(EditorStack.java:219)
+	at org.eclipse.ui.internal.PartStack$1.close(PartStack.java:120)
+	at org.eclipse.ui.internal.presentations.SystemMenuCloseAll.run(SystemMenuCloseAll.java:32)
+	at org.eclipse.jface.action.Action.runWithEvent(Action.java:498)
+	at org.eclipse.jface.action.ActionContributionItem.handleWidgetSelection(ActionContributionItem.java:584)
+	at org.eclipse.jface.action.ActionContributionItem.access$2(ActionContributionItem.java:501)
+	at org.eclipse.jface.action.ActionContributionItem$5.handleEvent(ActionContributionItem.java:411)
+	at org.eclipse.swt.widgets.EventTable.sendEvent(EventTable.java:84)
+	at org.eclipse.swt.widgets.Widget.sendEvent(Widget.java:1276)
+	at org.eclipse.swt.widgets.Display.runDeferredEvents(Display.java:3562)
+	at org.eclipse.swt.widgets.Display.readAndDispatch(Display.java:3186)
+	at org.eclipse.ui.internal.Workbench.runEventLoop(Workbench.java:2701)
+	at org.eclipse.ui.internal.Workbench.runUI(Workbench.java:2665)
+	at org.eclipse.ui.internal.Workbench.access$4(Workbench.java:2499)
+	at org.eclipse.ui.internal.Workbench$7.run(Workbench.java:679)
+	at org.eclipse.core.databinding.observable.Realm.runWithDefault(Realm.java:332)
+	at org.eclipse.ui.internal.Workbench.createAndRunWorkbench(Workbench.java:668)
+	at org.eclipse.ui.PlatformUI.createAndRunWorkbench(PlatformUI.java:149)
+	at org.eclipse.ui.internal.ide.application.IDEApplication.start(IDEApplication.java:124)
+	at org.eclipse.equinox.internal.app.EclipseAppHandle.run(EclipseAppHandle.java:196)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.runApplication(EclipseAppLauncher.java:110)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.start(EclipseAppLauncher.java:79)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:353)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:180)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:601)
+	at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:629)
+	at org.eclipse.equinox.launcher.Main.basicRun(Main.java:584)
+	at org.eclipse.equinox.launcher.Main.run(Main.java:1438)
+	at org.eclipse.equinox.launcher.Main.main(Main.java:1414)
+Caused by: org.eclipse.emf.ecore.xmi.DanglingHREFException: The object &apos;org.eclipse.mylyn.reviews.internal.core.model.User@2b6c002c (id: 591, email: david.green@tasktop.com, displayName: David Green)&apos; is not contained in a resource.
+	at org.eclipse.emf.ecore.xmi.impl.XMLHelperImpl.handleDanglingHREF(XMLHelperImpl.java:760)
+	at org.eclipse.emf.ecore.xmi.impl.XMLHelperImpl.getURIFragment(XMLHelperImpl.java:731)
+	at org.eclipse.emf.ecore.xmi.impl.XMLHelperImpl.getIDREF(XMLHelperImpl.java:753)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.saveIDRefSingle(XMLSaveImpl.java:1988)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.saveFeatures(XMLSaveImpl.java:1329)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.saveFeatures(XMLSaveImpl.java:1220)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.saveElementID(XMLSaveImpl.java:2712)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.saveElement(XMLSaveImpl.java:1177)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.saveElement(XMLSaveImpl.java:1038)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.saveContainedMany(XMLSaveImpl.java:2413)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.saveFeatures(XMLSaveImpl.java:1549)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.saveFeatures(XMLSaveImpl.java:1220)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.saveElementID(XMLSaveImpl.java:2712)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.writeTopObject(XMLSaveImpl.java:683)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.traverse(XMLSaveImpl.java:591)
+	at org.eclipse.emf.ecore.xmi.impl.XMLSaveImpl.save(XMLSaveImpl.java:257)
+	... 50 more</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2256401</commentid>
+    <comment_count>20</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-05-13 18:49:10 -0400</bug_when>
+    <thetext>I often get NPEs when double clicking on files in patch sets:
+
+java.lang.NullPointerException
+	at org.eclipse.mylyn.internal.gerrit.ui.factories.AbstractPatchSetUiFactory.getGitRepository(AbstractPatchSetUiFactory.java:88)
+	at org.eclipse.mylyn.internal.gerrit.ui.factories.AbstractPatchSetUiFactory.resolveGitRepository(AbstractPatchSetUiFactory.java:75)
+	at org.eclipse.mylyn.internal.gerrit.ui.factories.OpenFileUiFactory.execute(OpenFileUiFactory.java:45)
+	at org.eclipse.mylyn.reviews.ui.spi.editor.ReviewSetContentSection$8.open(ReviewSetContentSection.java:321)
+	at org.eclipse.jface.viewers.StructuredViewer$2.run(StructuredViewer.java:866)
+	at org.eclipse.core.runtime.SafeRunner.run(SafeRunner.java:42)
+	at org.eclipse.ui.internal.JFaceUtil$1.run(JFaceUtil.java:49)
+	at org.eclipse.jface.util.SafeRunnable.run(SafeRunnable.java:175)
+	at org.eclipse.jface.viewers.StructuredViewer.fireOpen(StructuredViewer.java:864)
+	at org.eclipse.jface.viewers.StructuredViewer.handleOpen(StructuredViewer.java:1152)
+	at org.eclipse.jface.viewers.StructuredViewer$6.handleOpen(StructuredViewer.java:1256)
+	at org.eclipse.jface.util.OpenStrategy.fireOpenEvent(OpenStrategy.java:275)
+	at org.eclipse.jface.util.OpenStrategy.access$2(OpenStrategy.java:269)
+	at org.eclipse.jface.util.OpenStrategy$1.handleEvent(OpenStrategy.java:309)
+	at org.eclipse.swt.widgets.EventTable.sendEvent(EventTable.java:84)
+	at org.eclipse.swt.widgets.Widget.sendEvent(Widget.java:1276)
+	at org.eclipse.swt.widgets.Display.runDeferredEvents(Display.java:3562)
+	at org.eclipse.swt.widgets.Display.readAndDispatch(Display.java:3186)
+	at org.eclipse.ui.internal.Workbench.runEventLoop(Workbench.java:2701)
+	at org.eclipse.ui.internal.Workbench.runUI(Workbench.java:2665)
+	at org.eclipse.ui.internal.Workbench.access$4(Workbench.java:2499)
+	at org.eclipse.ui.internal.Workbench$7.run(Workbench.java:679)
+	at org.eclipse.core.databinding.observable.Realm.runWithDefault(Realm.java:332)
+	at org.eclipse.ui.internal.Workbench.createAndRunWorkbench(Workbench.java:668)
+	at org.eclipse.ui.PlatformUI.createAndRunWorkbench(PlatformUI.java:149)
+	at org.eclipse.ui.internal.ide.application.IDEApplication.start(IDEApplication.java:124)
+	at org.eclipse.equinox.internal.app.EclipseAppHandle.run(EclipseAppHandle.java:196)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.runApplication(EclipseAppLauncher.java:110)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.start(EclipseAppLauncher.java:79)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:353)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:180)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:601)
+	at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:629)
+	at org.eclipse.equinox.launcher.Main.basicRun(Main.java:584)
+	at org.eclipse.equinox.launcher.Main.run(Main.java:1438)
+	at org.eclipse.equinox.launcher.Main.main(Main.java:1414)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2256402</commentid>
+    <comment_count>21</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-05-13 18:51:01 -0400</bug_when>
+    <thetext>Also got StackOverflowErrors that could be related to the containment problem in comment 19.
+
+org.eclipse.swt.SWTException: Failed to execute runnable (java.lang.StackOverflowError)
+	at org.eclipse.swt.SWT.error(SWT.java:4361)
+	at org.eclipse.swt.SWT.error(SWT.java:4276)
+	at org.eclipse.swt.widgets.Synchronizer.runAsyncMessages(Synchronizer.java:138)
+	at org.eclipse.swt.widgets.Display.runAsyncMessages(Display.java:3537)
+	at org.eclipse.swt.widgets.Display.readAndDispatch(Display.java:3189)
+	at org.eclipse.ui.internal.Workbench.runEventLoop(Workbench.java:2701)
+	at org.eclipse.ui.internal.Workbench.runUI(Workbench.java:2665)
+	at org.eclipse.ui.internal.Workbench.access$4(Workbench.java:2499)
+	at org.eclipse.ui.internal.Workbench$7.run(Workbench.java:679)
+	at org.eclipse.core.databinding.observable.Realm.runWithDefault(Realm.java:332)
+	at org.eclipse.ui.internal.Workbench.createAndRunWorkbench(Workbench.java:668)
+	at org.eclipse.ui.PlatformUI.createAndRunWorkbench(PlatformUI.java:149)
+	at org.eclipse.ui.internal.ide.application.IDEApplication.start(IDEApplication.java:124)
+	at org.eclipse.equinox.internal.app.EclipseAppHandle.run(EclipseAppHandle.java:196)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.runApplication(EclipseAppLauncher.java:110)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.start(EclipseAppLauncher.java:79)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:353)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:180)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:601)
+	at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:629)
+	at org.eclipse.equinox.launcher.Main.basicRun(Main.java:584)
+	at org.eclipse.equinox.launcher.Main.run(Main.java:1438)
+	at org.eclipse.equinox.launcher.Main.main(Main.java:1414)
+Caused by: java.lang.StackOverflowError
+	at org.eclipse.emf.ecore.impl.BasicEObjectImpl.eInternalResource(BasicEObjectImpl.java:931)
+	at org.eclipse.emf.ecore.impl.BasicEObjectImpl.eResource(BasicEObjectImpl.java:926)
+	at org.eclipse.emf.ecore.util.EcoreUtil.resolve(EcoreUtil.java:262)
+	at org.eclipse.emf.ecore.impl.BasicEObjectImpl.eResolveProxy(BasicEObjectImpl.java:1483)
+	at org.eclipse.emf.ecore.util.EcoreEList.resolveProxy(EcoreEList.java:212)
+	at org.eclipse.emf.ecore.util.EcoreEList.resolve(EcoreEList.java:167)
+	at org.eclipse.emf.ecore.util.EObjectContainmentWithInverseEList$Resolving.resolve(EObjectContainmentWithInverseEList.java:111)
+	at org.eclipse.emf.common.util.BasicEList.get(BasicEList.java:354)
+	at org.eclipse.emf.ecore.impl.BasicEObjectImpl.eObjectForURIFragmentSegment(BasicEObjectImpl.java:545)
+	at org.eclipse.emf.ecore.resource.impl.ResourceImpl.getEObject(ResourceImpl.java:780)
+	at org.eclipse.emf.ecore.resource.impl.ResourceImpl.getEObject(ResourceImpl.java:756)
+	at org.eclipse.emf.ecore.resource.impl.ResourceSetImpl.getEObject(ResourceSetImpl.java:219)
+	at org.eclipse.emf.ecore.util.EcoreUtil.resolve(EcoreUtil.java:203)
+	at org.eclipse.emf.ecore.util.EcoreUtil.resolve(EcoreUtil.java:263)
+	at org.eclipse.emf.ecore.impl.BasicEObjectImpl.eResolveProxy(BasicEObjectImpl.java:1483)
+	at org.eclipse.emf.ecore.util.EcoreEList.resolveProxy(EcoreEList.java:212)
+	at org.eclipse.emf.ecore.util.EcoreEList.resolve(EcoreEList.java:167)
+	at org.eclipse.emf.ecore.util.EObjectContainmentWithInverseEList$Resolving.resolve(EObjectContainmentWithInverseEList.java:111)
+	at org.eclipse.emf.common.util.BasicEList.get(BasicEList.java:354)
+	at org.eclipse.emf.ecore.impl.BasicEObjectImpl.eObjectForURIFragmentSegment(BasicEObjectImpl.java:545)
+	at org.eclipse.emf.ecore.resource.impl.ResourceImpl.getEObject(ResourceImpl.java:780)
+	at org.eclipse.emf.ecore.resource.impl.ResourceImpl.getEObject(ResourceImpl.java:756)
+	at org.eclipse.emf.ecore.resource.impl.ResourceSetImpl.getEObject(ResourceSetImpl.java:219)
+	at org.eclipse.emf.ecore.util.EcoreUtil.resolve(EcoreUtil.java:203)
+	at org.eclipse.emf.ecore.util.EcoreUtil.resolve(EcoreUtil.java:263)
+	at org.eclipse.emf.ecore.impl.BasicEObjectImpl.eResolveProxy(BasicEObjectImpl.java:1483)
+	at org.eclipse.emf.ecore.util.EcoreEList.resolveProxy(EcoreEList.java:212)
+	at org.eclipse.emf.ecore.util.EcoreEList.resolve(EcoreEList.java:167)
+	at org.eclipse.emf.ecore.util.EObjectContainmentWithInverseEList$Resolving.resolve(EObjectContainmentWithInverseEList.java:111)
+	at org.eclipse.emf.common.util.BasicEList.get(BasicEList.java:354)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2260376</commentid>
+    <comment_count>22</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-05-21 13:55:43 -0400</bug_when>
+    <thetext>Yes, these look like they all my have proximal cause of the issue of having model code in the User pull. Perhaps that is the explanation for Sam&apos;s repoerted issue w/ Review 16 as well. I&apos;ll have a fix for that one soon.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2260382</commentid>
+    <comment_count>23</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-05-21 14:03:14 -0400</bug_when>
+    <thetext>Of ourse, the ideal thing is to make sure that nothing breaks, but I think we also need to give some thought to having support for &quot;blowing everything away if something goes terribly wrong&quot; -- at least for RCs. Right now, we&apos;re supposed to fail and recreate a file if anything goes wrong (such as a breaking change in the ecore model) during load. But that won&apos;t necessarily work under a stack overflow situation.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2260559</commentid>
+    <comment_count>24</comment_count>
+    <who name="Tomasz Zarna">tomasz.zarna</who>
+    <bug_when>2013-05-21 19:23:56 -0400</bug_when>
+    <thetext>With the latest patch set (i.e. https://git.eclipse.org/r/#/c/12229/18) I get this when opening a review from https://git.eclipse.org/r (fresh workspace):
+
+java.lang.RuntimeException: No instances of eclipse found in [org.eclipse.emf.ecore.impl.EClassImpl@635eba48 (name: CommentContainer) (instanceClassName: null) (abstract: true, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@6017ffef (name: Change) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@5501ea5c (name: Review) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@70c1699d (name: Comment) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@2014e349 (name: ReviewItem) (instanceClassName: null) (abstract: true, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@3b55de13 (name: Location) (instanceClassName: null) (abstract: true, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@266cfd4 (name: User) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@2bd66887 (name: Repository) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@9688d8d (name: FileItem) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@2f2528ce (name: ReviewItemSet) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@309a0490 (name: LineLocation) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@4fa1a2dd (name: LineRange) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@7ccb8402 (name: FileVersion) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@29fcfc40 (name: Indexed) (instanceClassName: null) (abstract: true, interface: true), org.eclipse.emf.ecore.impl.EClassImpl@47a3d532 (name: Dated) (instanceClassName: null) (abstract: true, interface: true), org.eclipse.emf.ecore.impl.EClassImpl@1547df50 (name: ApprovalType) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@2196081a (name: UserApprovalsMap) (instanceClassName: java.util.Map$Entry) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@edf430 (name: ReviewerEntry) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@63a7bca (name: ApprovalValueMap) (instanceClassName: java.util.Map$Entry) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@69950df7 (name: RequirementEntry) (instanceClassName: null) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EClassImpl@38c80948 (name: ReviewRequirementsMap) (instanceClassName: java.util.Map$Entry) (abstract: false, interface: false), org.eclipse.emf.ecore.impl.EEnumImpl@3c37acf1 (name: RequirementStatus) (instanceClassName: null) (serializable: true), org.eclipse.emf.ecore.impl.EEnumImpl@6b3b2119 (name: ReviewStatus) (instanceClassName: null) (serializable: true), org.eclipse.emf.ecore.impl.EDataTypeImpl@76fa274e (name: IFileRevision) (instanceClassName: org.eclipse.team.core.history.IFileRevision) (serializable: false), org.eclipse.emf.ecore.impl.EDataTypeImpl@212aaee8 (name: TaskRepository) (instanceClassName: org.eclipse.mylyn.tasks.core.TaskRepository) (serializable: false)]
+	at org.eclipse.mylyn.reviews.spi.edit.remote.AbstractRemoteEditFactoryProvider.getResourceImpl(AbstractRemoteEditFactoryProvider.java:158)
+	at org.eclipse.mylyn.reviews.spi.edit.remote.AbstractRemoteEditFactoryProvider.open(AbstractRemoteEditFactoryProvider.java:194)
+	at org.eclipse.mylyn.reviews.spi.edit.remote.AbstractRemoteEditFactoryProvider.open(AbstractRemoteEditFactoryProvider.java:99)
+	at org.eclipse.mylyn.reviews.spi.edit.remote.review.ReviewsRemoteEditFactoryProvider.open(ReviewsRemoteEditFactoryProvider.java:48)
+	at org.eclipse.mylyn.reviews.spi.edit.remote.review.ReviewsRemoteEditFactoryProvider.open(ReviewsRemoteEditFactoryProvider.java:1)
+	at org.eclipse.mylyn.internal.reviews.ui.ReviewsUiPlugin.getFactoryProvider(ReviewsUiPlugin.java:72)
+	at org.eclipse.mylyn.reviews.ui.spi.editor.AbstractReviewTaskEditorPage.getFactoryProvider(AbstractReviewTaskEditorPage.java:105)
+	at org.eclipse.mylyn.reviews.ui.spi.editor.AbstractReviewTaskEditorPage.init(AbstractReviewTaskEditorPage.java:91)
+	at org.eclipse.ui.forms.editor.FormEditor.registerPage(FormEditor.java:657)
+	at org.eclipse.ui.forms.editor.FormEditor.configurePage(FormEditor.java:348)
+	at org.eclipse.ui.forms.editor.FormEditor.addPage(FormEditor.java:190)
+	at org.eclipse.mylyn.tasks.ui.editors.TaskEditor.addPages(TaskEditor.java:410)
+	at org.eclipse.ui.forms.editor.FormEditor.createPages(FormEditor.java:138)
+	at org.eclipse.ui.forms.editor.SharedHeaderFormEditor.createPages(SharedHeaderFormEditor.java:98)
+	at org.eclipse.mylyn.tasks.ui.editors.TaskEditor.createPages(TaskEditor.java:196)
+	at org.eclipse.ui.part.MultiPageEditorPart.createPartControl(MultiPageEditorPart.java:348)
+	at org.eclipse.ui.internal.EditorReference.createPartHelper(EditorReference.java:670)
+	at org.eclipse.ui.internal.EditorReference.createPart(EditorReference.java:465)
+	at org.eclipse.ui.internal.WorkbenchPartReference.getPart(WorkbenchPartReference.java:595)
+	at org.eclipse.ui.internal.PartPane.setVisible(PartPane.java:315)
+	at org.eclipse.ui.internal.presentations.PresentablePart.setVisible(PresentablePart.java:180)
+	at org.eclipse.ui.internal.presentations.util.PresentablePartFolder.select(PresentablePartFolder.java:270)
+	at org.eclipse.ui.internal.presentations.util.LeftToRightTabOrder.select(LeftToRightTabOrder.java:65)
+	at org.eclipse.ui.internal.presentations.util.TabbedStackPresentation.selectPart(TabbedStackPresentation.java:473)
+	at org.eclipse.ui.internal.PartStack.refreshPresentationSelection(PartStack.java:1245)
+	at org.eclipse.ui.internal.PartStack.setSelection(PartStack.java:1198)
+	at org.eclipse.ui.internal.PartStack.showPart(PartStack.java:1597)
+	at org.eclipse.ui.internal.PartStack.add(PartStack.java:493)
+	at org.eclipse.ui.internal.EditorStack.add(EditorStack.java:103)
+	at org.eclipse.ui.internal.PartStack.add(PartStack.java:479)
+	at org.eclipse.ui.internal.EditorStack.add(EditorStack.java:112)
+	at org.eclipse.ui.internal.EditorSashContainer.addEditor(EditorSashContainer.java:63)
+	at org.eclipse.ui.internal.EditorAreaHelper.addToLayout(EditorAreaHelper.java:225)
+	at org.eclipse.ui.internal.EditorAreaHelper.addEditor(EditorAreaHelper.java:213)
+	at org.eclipse.ui.internal.EditorManager.createEditorTab(EditorManager.java:808)
+	at org.eclipse.ui.internal.EditorManager.openEditorFromDescriptor(EditorManager.java:707)
+	at org.eclipse.ui.internal.EditorManager.openEditor(EditorManager.java:666)
+	at org.eclipse.ui.internal.WorkbenchPage.busyOpenEditorBatched(WorkbenchPage.java:2955)
+	at org.eclipse.ui.internal.WorkbenchPage.busyOpenEditor(WorkbenchPage.java:2863)
+	at org.eclipse.ui.internal.WorkbenchPage.access$11(WorkbenchPage.java:2855)
+	at org.eclipse.ui.internal.WorkbenchPage$10.run(WorkbenchPage.java:2806)
+	at org.eclipse.swt.custom.BusyIndicator.showWhile(BusyIndicator.java:70)
+	at org.eclipse.ui.internal.WorkbenchPage.openEditor(WorkbenchPage.java:2802)
+	at org.eclipse.ui.internal.WorkbenchPage.openEditor(WorkbenchPage.java:2786)
+	at org.eclipse.ui.internal.WorkbenchPage.openEditor(WorkbenchPage.java:2769)
+	at org.eclipse.mylyn.tasks.ui.TasksUiUtil.openEditor(TasksUiUtil.java:182)
+	at org.eclipse.mylyn.internal.tasks.ui.util.TasksUiInternal.openTask(TasksUiInternal.java:923)
+	at org.eclipse.mylyn.tasks.ui.TasksUiUtil.openTask(TasksUiUtil.java:283)
+	at org.eclipse.mylyn.internal.tasks.ui.util.TasksUiInternal.refreshAndOpenTaskListElement(TasksUiInternal.java:306)
+	at org.eclipse.mylyn.internal.tasks.ui.actions.OpenTaskListElementAction.runWithEvent(OpenTaskListElementAction.java:56)
+	at org.eclipse.mylyn.internal.tasks.ui.actions.OpenTaskListElementAction.run(OpenTaskListElementAction.java:47)
+	at org.eclipse.mylyn.internal.tasks.ui.views.TaskListView$21.open(TaskListView.java:1293)
+	at org.eclipse.jface.viewers.StructuredViewer$2.run(StructuredViewer.java:866)
+	at org.eclipse.core.runtime.SafeRunner.run(SafeRunner.java:42)
+	at org.eclipse.ui.internal.JFaceUtil$1.run(JFaceUtil.java:49)
+	at org.eclipse.jface.util.SafeRunnable.run(SafeRunnable.java:175)
+	at org.eclipse.jface.viewers.StructuredViewer.fireOpen(StructuredViewer.java:864)
+	at org.eclipse.jface.viewers.StructuredViewer.handleOpen(StructuredViewer.java:1152)
+	at org.eclipse.jface.viewers.StructuredViewer$6.handleOpen(StructuredViewer.java:1256)
+	at org.eclipse.jface.util.OpenStrategy.fireOpenEvent(OpenStrategy.java:275)
+	at org.eclipse.jface.util.OpenStrategy.access$2(OpenStrategy.java:269)
+	at org.eclipse.jface.util.OpenStrategy$1.handleEvent(OpenStrategy.java:309)
+	at org.eclipse.swt.widgets.EventTable.sendEvent(EventTable.java:84)
+	at org.eclipse.swt.widgets.Widget.sendEvent(Widget.java:1053)
+	at org.eclipse.swt.widgets.Display.runDeferredEvents(Display.java:4169)
+	at org.eclipse.swt.widgets.Display.readAndDispatch(Display.java:3758)
+	at org.eclipse.ui.internal.Workbench.runEventLoop(Workbench.java:2701)
+	at org.eclipse.ui.internal.Workbench.runUI(Workbench.java:2665)
+	at org.eclipse.ui.internal.Workbench.access$4(Workbench.java:2499)
+	at org.eclipse.ui.internal.Workbench$7.run(Workbench.java:679)
+	at org.eclipse.core.databinding.observable.Realm.runWithDefault(Realm.java:332)
+	at org.eclipse.ui.internal.Workbench.createAndRunWorkbench(Workbench.java:668)
+	at org.eclipse.ui.PlatformUI.createAndRunWorkbench(PlatformUI.java:149)
+	at org.eclipse.ui.internal.ide.application.IDEApplication.start(IDEApplication.java:124)
+	at org.eclipse.equinox.internal.app.EclipseAppHandle.run(EclipseAppHandle.java:196)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.runApplication(EclipseAppLauncher.java:110)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.start(EclipseAppLauncher.java:79)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:353)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:180)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:601)
+	at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:629)
+	at org.eclipse.equinox.launcher.Main.basicRun(Main.java:584)
+	at org.eclipse.equinox.launcher.Main.run(Main.java:1438)
+	at org.eclipse.equinox.launcher.Main.main(Main.java:1414)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2260560</commentid>
+    <comment_count>25</comment_count>
+    <who name="Tomasz Zarna">tomasz.zarna</who>
+    <bug_when>2013-05-21 19:26:48 -0400</bug_when>
+    <thetext>... and for an existing workspace:
+
+org.osgi.framework.BundleException: Exception in org.eclipse.mylyn.internal.gerrit.core.GerritCorePlugin.stop() of bundle org.eclipse.mylyn.gerrit.core.
+	at org.eclipse.osgi.framework.internal.core.BundleContextImpl.stop(BundleContextImpl.java:791)
+	at org.eclipse.osgi.framework.internal.core.BundleHost.stopWorker(BundleHost.java:510)
+	at org.eclipse.osgi.framework.internal.core.AbstractBundle.suspend(AbstractBundle.java:566)
+	at org.eclipse.osgi.framework.internal.core.Framework.suspendBundle(Framework.java:1206)
+	at org.eclipse.osgi.framework.internal.core.StartLevelManager.decFWSL(StartLevelManager.java:592)
+	at org.eclipse.osgi.framework.internal.core.StartLevelManager.doSetStartLevel(StartLevelManager.java:257)
+	at org.eclipse.osgi.framework.internal.core.StartLevelManager.shutdown(StartLevelManager.java:215)
+	at org.eclipse.osgi.framework.internal.core.InternalSystemBundle.suspend(InternalSystemBundle.java:284)
+	at org.eclipse.osgi.framework.internal.core.Framework.shutdown(Framework.java:692)
+	at org.eclipse.osgi.framework.internal.core.Framework.close(Framework.java:600)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.shutdown(EclipseStarter.java:399)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:199)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:601)
+	at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:629)
+	at org.eclipse.equinox.launcher.Main.basicRun(Main.java:584)
+	at org.eclipse.equinox.launcher.Main.run(Main.java:1438)
+	at org.eclipse.equinox.launcher.Main.main(Main.java:1414)
+Caused by: java.lang.RuntimeException: Attempted to execute a model-related operation in a non-model thread.
+	at org.eclipse.mylyn.reviews.ui.spi.remote.RemoteUiService.ensureModelThread(RemoteUiService.java:45)
+	at org.eclipse.mylyn.reviews.spi.edit.remote.AbstractRemoteEditFactoryProvider.clearChildren(AbstractRemoteEditFactoryProvider.java:232)
+	at org.eclipse.mylyn.reviews.spi.edit.remote.AbstractRemoteEditFactoryProvider.close(AbstractRemoteEditFactoryProvider.java:244)
+	at org.eclipse.mylyn.reviews.core.spi.ReviewsConnector.close(ReviewsConnector.java:41)
+	at org.eclipse.mylyn.internal.gerrit.core.GerritCorePlugin.stop(GerritCorePlugin.java:49)
+	at org.eclipse.osgi.framework.internal.core.BundleContextImpl$2.run(BundleContextImpl.java:771)
+	at java.security.AccessController.doPrivileged(Native Method)
+	at org.eclipse.osgi.framework.internal.core.BundleContextImpl.stop(BundleContextImpl.java:764)
+	... 19 more
+Root exception:
+java.lang.RuntimeException: Attempted to execute a model-related operation in a non-model thread.
+	at org.eclipse.mylyn.reviews.ui.spi.remote.RemoteUiService.ensureModelThread(RemoteUiService.java:45)
+	at org.eclipse.mylyn.reviews.spi.edit.remote.AbstractRemoteEditFactoryProvider.clearChildren(AbstractRemoteEditFactoryProvider.java:232)
+	at org.eclipse.mylyn.reviews.spi.edit.remote.AbstractRemoteEditFactoryProvider.close(AbstractRemoteEditFactoryProvider.java:244)
+	at org.eclipse.mylyn.reviews.core.spi.ReviewsConnector.close(ReviewsConnector.java:41)
+	at org.eclipse.mylyn.internal.gerrit.core.GerritCorePlugin.stop(GerritCorePlugin.java:49)
+	at org.eclipse.osgi.framework.internal.core.BundleContextImpl$2.run(BundleContextImpl.java:771)
+	at java.security.AccessController.doPrivileged(Native Method)
+	at org.eclipse.osgi.framework.internal.core.BundleContextImpl.stop(BundleContextImpl.java:764)
+	at org.eclipse.osgi.framework.internal.core.BundleHost.stopWorker(BundleHost.java:510)
+	at org.eclipse.osgi.framework.internal.core.AbstractBundle.suspend(AbstractBundle.java:566)
+	at org.eclipse.osgi.framework.internal.core.Framework.suspendBundle(Framework.java:1206)
+	at org.eclipse.osgi.framework.internal.core.StartLevelManager.decFWSL(StartLevelManager.java:592)
+	at org.eclipse.osgi.framework.internal.core.StartLevelManager.doSetStartLevel(StartLevelManager.java:257)
+	at org.eclipse.osgi.framework.internal.core.StartLevelManager.shutdown(StartLevelManager.java:215)
+	at org.eclipse.osgi.framework.internal.core.InternalSystemBundle.suspend(InternalSystemBundle.java:284)
+	at org.eclipse.osgi.framework.internal.core.Framework.shutdown(Framework.java:692)
+	at org.eclipse.osgi.framework.internal.core.Framework.close(Framework.java:600)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.shutdown(EclipseStarter.java:399)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:199)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:57)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:601)
+	at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:629)
+	at org.eclipse.equinox.launcher.Main.basicRun(Main.java:584)
+	at org.eclipse.equinox.launcher.Main.run(Main.java:1438)
+	at org.eclipse.equinox.launcher.Main.main(Main.java:1414)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2260561</commentid>
+    <comment_count>26</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-05-21 19:30:13 -0400</bug_when>
+    <thetext>(In reply to comment #24)
+&gt; With the latest patch set (i.e. https://git.eclipse.org/r/#/c/12229/18) I get
+&gt; this when opening a review from https://git.eclipse.org/r (fresh workspace):
+
+Thanks. Sam is reporting the same issue. What OS are you running under?
+
+(In reply to comment #25)
+&gt; Caused by: java.lang.RuntimeException: Attempted to execute a model-related
+&gt; operation in a non-model thread.
+
+Fixed in 19.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2260564</commentid>
+    <comment_count>27</comment_count>
+    <who name="Tomasz Zarna">tomasz.zarna</who>
+    <bug_when>2013-05-21 19:35:31 -0400</bug_when>
+    <thetext>(In reply to comment #26)
+&gt; What OS are you running under?
+
+Windows 7</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2260569</commentid>
+    <comment_count>28</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-05-21 19:48:55 -0400</bug_when>
+    <thetext>(In reply to comment #27)
+&gt; (In reply to comment #26)
+&gt; &gt; What OS are you running under?
+&gt; 
+&gt; Windows 7
+
+
+Yep, as I said to Sam, we probably should support that OS. I&apos;m working on a VM now and we&apos;ll get this one sorted..</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2260611</commentid>
+    <comment_count>29</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-05-21 23:08:20 -0400</bug_when>
+    <thetext>(In reply to comment #28)
+&gt; Yep, as I said to Sam, we probably should support that OS. I&apos;m working on a VM
+&gt; now and we&apos;ll get this one sorted..
+
+This one should be fixed in latest. (20)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2260622</commentid>
+    <comment_count>30</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-05-22 00:03:45 -0400</bug_when>
+    <thetext>Merged https://git.eclipse.org/r/#/c/12229/. Persistence is now working. Please follow up on any newly discovered issues/suggestions on new bugs.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

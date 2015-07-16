@@ -1,0 +1,651 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>359495</bug_id>
+          
+          <creation_ts>2011-09-29 18:06:00 -0400</creation_ts>
+          <short_desc>[1.7][compiler] VerifyError in try-finally block with lock encompassing for-each block and unlock in finally clause</short_desc>
+          <delta_ts>2012-05-29 11:29:39 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>3.7.2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Anthony">tonyb452</reporter>
+          <assigned_to name="Ayushman Jain">amj87.iitr</assigned_to>
+          <cc>eclipse</cc>
+    
+    <cc>Olivier_Thomann</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+    
+    <cc>tonyb452</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="46113"
+          type_id="1"
+          status="+"
+          setter="Olivier_Thomann"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2002791</commentid>
+    <comment_count>0</comment_count>
+    <who name="Anthony">tonyb452</who>
+    <bug_when>2011-09-29 18:06:49 -0400</bug_when>
+    <thetext>Build Identifier: M20110909-1335
+
+Executing the following test case will result in a VerifyError &quot;Inconsistent
+stackmap frames at branch target&quot;.
+
+Environment:
+- Eclipse 3.7.1 (M20110909-1335)
+- Linux (x86_64/GTK 2)
+- JDK7
+
+Stacktrace:
+---
+Exception in thread &quot;main&quot; java.lang.VerifyError: Inconsistent stackmap frames at branch target 48 in method E7Bug.main([Ljava/lang/String;)V at offset 34
+	at java.lang.Class.getDeclaredMethods0(Native Method)
+	at java.lang.Class.privateGetDeclaredMethods(Class.java:2442)
+	at java.lang.Class.getMethod0(Class.java:2685)
+	at java.lang.Class.getMethod(Class.java:1620)
+	at sun.launcher.LauncherHelper.getMainMethod(LauncherHelper.java:484)
+	at sun.launcher.LauncherHelper.checkAndLoadMain(LauncherHelper.java:476)
+---
+
+---
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+public class E7Bug
+{
+   public static void main(final String[] args)
+   {
+      final Lock lock = new ReentrantLock();
+      final List&lt;String&gt; strings = Arrays.asList(args);
+      lock.lock();
+      try
+      {
+         for (final String string : strings)
+         {
+            return;
+         }
+
+         return;
+      }
+      finally
+      {
+         lock.unlock();
+      }
+   }
+}
+---
+
+
+Reproducible: Always
+
+Steps to Reproduce:
+1. Run testcase in Eclipse with JavaSE-1.7 target</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2002806</commentid>
+    <comment_count>1</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2011-09-29 19:52:46 -0400</bug_when>
+    <thetext>Reproduced when -preserveAllLocals option is used. If unused locals are optimized out, the code runs fine.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2002812</commentid>
+    <comment_count>2</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2011-09-29 20:31:40 -0400</bug_when>
+    <thetext>In this case, both return statements are &quot;shared&quot;. We compare state index of both return statements and they are identical. Now I need to investigate why they are identical when one should define one more local than the other one.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2002815</commentid>
+    <comment_count>3</comment_count>
+    <who name="Anthony">tonyb452</who>
+    <bug_when>2011-09-29 20:49:02 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; Reproduced when -preserveAllLocals option is used. If unused locals are
+&gt; optimized out, the code runs fine.
+
+If the loop
+         for (final String string : strings)
+         {
+            return;
+         }
+is replaced with
+         for (final String string : strings)
+         {
+            if(string == null)
+               return;
+         }
+the code causes the error regardless of whether the -preserveAllLocals option is used.  But removing either of the return statements from the try block or the lock.unlock() statement from the finally block will allow the code to run fine.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2002816</commentid>
+    <comment_count>4</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2011-09-29 20:54:40 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; the code causes the error regardless of whether the -preserveAllLocals option
+&gt; is used.  But removing either of the return statements from the try block or
+&gt; the lock.unlock() statement from the finally block will allow the code to run
+&gt; fine.
+The problem comes from the sharing of the return statement and we do so because we believe they both have the same state index which is wrong.
+I am investigating what is going on.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2002817</commentid>
+    <comment_count>5</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2011-09-29 21:07:15 -0400</bug_when>
+    <thetext>Ayushman, could you please investigate why the state index is identical for both return statements?
+I believe this is the key of the problem here. They should not be identical since the locals initializations state is different for both return statement. If I replace the code with its for statement equivalent, the code generation is fine.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2003846</commentid>
+    <comment_count>6</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-10-03 06:24:23 -0400</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; Ayushman, could you please investigate why the state index is identical for
+&gt; both return statements?
+
+I think this happens because the merged info that we return after the foreach statement has been analysed still consists of the initialization info of the foreach condition variable &apos;string&apos; (it is still marked as definitely initialized in the flow info at the end of foreach analysis). This polluted flow info, is in turn, used to initialize the state index for the second return as well, and thus both return statements end up with the same indices. The flow info outside the foreach should not contain any initialization info for &apos;string&apos;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2003868</commentid>
+    <comment_count>7</comment_count>
+      <attachid>204440</attachid>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-10-03 07:52:27 -0400</bug_when>
+    <thetext>Created attachment 204440
+proposed fix v1.0 + regression tests
+
+The fix for the foreach case is fairly localised. We were adding the initialization info from the condition into the exit branch&apos;s info, which was finding its way into the final merged info. But since in foreach, a variable is always declared in the condition, and its scope ends with end of the foreach, we should not add any initialization info from the foreach condition. Also added a test for this.
+
+I also saw the same thing happening in for statement case, although there was no verify error there as such. But again, any variable initialized in the for statement itself has no business to pollute the flow info after the for loop. This needed some more work as currently there was no infrastructure to remove the init info of specific variables from the flow info. 
+
+Now the generated code is same as the one generated by javac 7 in both for and foreach case.
+
+(I still need to run the complete test suite)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2003995</commentid>
+    <comment_count>8</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-10-03 10:39:05 -0400</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; (I still need to run the complete test suite)
+
+All tests pass.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2004082</commentid>
+    <comment_count>9</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-10-03 11:57:45 -0400</bug_when>
+    <thetext>Released in HEAD via commit 99350dc001d49db8dc24214c00ce73e1cd4de055.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2004084</commentid>
+    <comment_count>10</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-10-03 11:58:35 -0400</bug_when>
+    <thetext>Reopening for backporting in R3_7_maintenance.
+
+Olivier, need your +1 on this.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2004695</commentid>
+    <comment_count>11</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2011-10-04 10:41:48 -0400</bug_when>
+    <thetext>Looks good to me.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2005079</commentid>
+    <comment_count>12</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-10-05 01:49:17 -0400</bug_when>
+    <thetext>Released commit 4b5d6df0b2e1a9471a757e456125a40aa1a7569d in R3_7_maintenance.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2016056</commentid>
+    <comment_count>13</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-10-25 06:51:21 -0400</bug_when>
+    <thetext>Verified for 3.8 M3 using build id: N20111022-2000</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052629</commentid>
+    <comment_count>14</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-19 01:18:09 -0500</bug_when>
+    <thetext>Verified for 3.7.2RC2 using build M20120118-0800</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052642</commentid>
+    <comment_count>15</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-01-19 01:46:09 -0500</bug_when>
+    <thetext>*** Bug 368996 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2114065</commentid>
+    <comment_count>16</comment_count>
+    <who name="Carsten Otto">eclipse</who>
+    <bug_when>2012-05-25 05:09:50 -0400</bug_when>
+    <thetext>(In reply to comment #14)
+&gt; Verified for 3.7.2RC2 using build M20120118-0800
+
+Sadly, this is not fixed in 3.7.2 build M20120208-0800. Should it be fixed? If so, please reopen this bug (or my original one #368996).
+
+Thanks,
+Carsten</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2114251</commentid>
+    <comment_count>17</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-05-25 10:08:43 -0400</bug_when>
+    <thetext>(In reply to comment #16)
+&gt; (In reply to comment #14)
+&gt; &gt; Verified for 3.7.2RC2 using build M20120118-0800
+&gt; 
+&gt; Sadly, this is not fixed in 3.7.2 build M20120208-0800. Should it be fixed? If
+&gt; so, please reopen this bug (or my original one #368996).
+
+Version: 3.7.2
+Build id: M20120127-0800 runs the test case from
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=368996#c2 just fine.
+
+Are you sure you are not confusing the same symptom for the same problem ?
+
+We have had multiple fixes in this area - one is also underway as we
+speak.
+
+Could you test with 3.8 RC1 bits posted ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2114298</commentid>
+    <comment_count>18</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-05-25 10:53:29 -0400</bug_when>
+    <thetext>(In reply to comment #16)
+&gt; (In reply to comment #14)
+&gt; &gt; Verified for 3.7.2RC2 using build M20120118-0800
+&gt; 
+&gt; Sadly, this is not fixed in 3.7.2 build M20120208-0800. Should it be fixed? If
+&gt; so, please reopen this bug (or my original one #368996).
+&gt; 
+&gt; Thanks,
+&gt; Carsten
+
+I downloaded the build and tried both the test cases in comment 0 of this bug and also the one that you gave in bug 368996. Both run fine without any errors.
+
+What problem do you see?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2115500</commentid>
+    <comment_count>19</comment_count>
+    <who name="Carsten Otto">eclipse</who>
+    <bug_when>2012-05-29 11:11:44 -0400</bug_when>
+    <thetext>&gt; Are you sure you are not confusing the same symptom for the same problem ?
+
+This may indeed be the problem. Sorry!
+
+&gt; We have had multiple fixes in this area - one is also underway as we
+&gt; speak.
+
+Where can I find it?
+
+&gt; Could you test with 3.8 RC1 bits posted ?
+
+I do not have Eclipse 3.8 RC1. However, I can provide a simple test case that breaks with Eclipse 3.7SR2 (20120216-1857):
+
+public class E7Bug {
+    public final static Object f() {
+        final Object a = null;
+        Object b;
+
+        label: do {
+            switch (0) {
+            case 1: {
+                b = a;
+            }
+                break;
+            default:
+                break label;
+            }
+        } while (true);
+
+        return a;
+    }
+
+    public static void main(final String[] args) {
+        f();
+    }
+}
+
+
+Exception in thread &quot;main&quot; java.lang.VerifyError: Inconsistent stackmap frames at branch target 25 in method E7Bug.f()Ljava/lang/Object; at offset 3
+
+This code results out of code generated by antlr (which is why we cannot easlily work around the bug).
+
+Please re-open this ticket (or create a new one?).
+
+Best regards,
+Carsten Otto</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2115520</commentid>
+    <comment_count>20</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2012-05-29 11:29:39 -0400</bug_when>
+    <thetext>Carsten,
+
+This is still an issue with the code in latest. I opened bug 380927 to cover your test case.
+Thanks for the test case.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>204440</attachid>
+            <date>2011-10-03 07:52:00 -0400</date>
+            <delta_ts>2011-10-03 07:52:27 -0400</delta_ts>
+            <desc>proposed fix v1.0 + regression tests</desc>
+            <filename>HEAD--fixed-bug-359495-17compiler-VerifyError-in-try.patch</filename>
+            <type>text/plain</type>
+            <size>14781</size>
+            <attacher name="Ayushman Jain">amj87.iitr</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL1N0YWNrTWFwQXR0cmli
+dXRlVGVzdC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vU3RhY2tNYXBBdHRy
+aWJ1dGVUZXN0LmphdmEKaW5kZXggZGUwZTdjNi4uYWZjNTY4ZSAxMDA2NDQKLS0tIGEvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rl
+c3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vU3RhY2tNYXBBdHRyaWJ1dGVUZXN0LmphdmEKKysrIGIv
+b3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9j
+b3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vU3RhY2tNYXBBdHRyaWJ1dGVUZXN0LmphdmEK
+QEAgLTMzLDcgKzMzLDcgQEAKIAkvLyBBbGwgc3BlY2lmaWVkIHRlc3RzIHdoaWNoIGRvZXMgbm90
+IGJlbG9uZyB0byB0aGUgY2xhc3MgYXJlIHNraXBwZWQuLi4KIAlzdGF0aWMgewogLy8JCVRFU1RT
+X1BSRUZJWCA9ICJ0ZXN0QnVnOTU1MjEiOwotLy8JCVRFU1RTX05BTUVTID0gbmV3IFN0cmluZ1td
+IHsgInRlc3RCdWc4MzEyN2EiIH07CisvLwkJVEVTVFNfTkFNRVMgPSBuZXcgU3RyaW5nW10geyAi
+dGVzdEJ1ZzM1OTQ5NSIgfTsKIC8vCQlURVNUU19OVU1CRVJTID0gbmV3IGludFtdIHsgNTMgfTsK
+IC8vCQlURVNUU19SQU5HRSA9IG5ldyBpbnRbXSB7IDIzIC0xLH07CiAJfQpAQCAtNjgwMiw0ICs2
+ODAyLDIwNyBAQAogCQkJfSwKIAkJCSJTVUNDRVNTIik7CiAJfQorCQorCS8vIGh0dHBzOi8vYnVn
+cy5lY2xpcHNlLm9yZy9idWdzL3Nob3dfYnVnLmNnaT9pZD0zNTk0OTUKKwlwdWJsaWMgdm9pZCB0
+ZXN0QnVnMzU5NDk1YSgpIHRocm93cyBFeGNlcHRpb24geworCQl0aGlzLnJ1bkNvbmZvcm1UZXN0
+KAorCQkJCW5ldyBTdHJpbmdbXSB7CisJCQkJCSJYLmphdmEiLAorCQkJCQkiaW1wb3J0IGphdmEu
+dXRpbC5MaXN0O1xuIiArCisJCQkJCSJpbXBvcnQgamF2YS51dGlsLmNvbmN1cnJlbnQubG9ja3Mu
+TG9jaztcbiIgKworCQkJCQkiaW1wb3J0IGphdmEudXRpbC5BcnJheXM7XG4iICsKKwkJCQkJImlt
+cG9ydCBqYXZhLnV0aWwuY29uY3VycmVudC5sb2Nrcy5SZWVudHJhbnRMb2NrO1xuIiArCisJCQkJ
+CSJwdWJsaWMgY2xhc3MgWCB7XG4iICsKKwkJCQkJIglwdWJsaWMgc3RhdGljIHZvaWQgbWFpbihT
+dHJpbmdbXSBhcmdzKSB7XG4iICsKKwkJCQkJIgkJZmluYWwgTG9jayBsb2NrID0gbmV3IFJlZW50
+cmFudExvY2soKTtcbiIgKworCQkJCQkiCQlmaW5hbCBMaXN0PFN0cmluZz4gc3RyaW5ncyA9IEFy
+cmF5cy5hc0xpc3QoYXJncyk7XG4iICsKKwkJCQkJIgkJbG9jay5sb2NrKCk7XG4iICsKKwkJCQkJ
+IgkJdHJ5e1xuIiArCisJCQkJCSIJCQlmb3IgKGZpbmFsIFN0cmluZyBzdHJpbmc6c3RyaW5ncyl7
+XG4iICsKKwkJCQkJIgkJCQlyZXR1cm47XG4iICsKKwkJCQkJIgkJCX1cbiIgKworCQkJCQkiCQkJ
+cmV0dXJuO1xuIiArCisJCQkJCSIJCX0gZmluYWxseSB7XG4iICsKKwkJCQkJIgkJCWxvY2sudW5s
+b2NrKCk7XG4iICsKKwkJCQkJIgkJfSIgKworCQkJCQkiCX1cbiIgKworCQkJCQkifSIsCisJCQkJ
+fSwKKwkJCQkiIik7CisKKwkJCUNsYXNzRmlsZUJ5dGVzRGlzYXNzZW1ibGVyIGRpc2Fzc2VtYmxl
+ciA9IFRvb2xGYWN0b3J5LmNyZWF0ZURlZmF1bHRDbGFzc0ZpbGVCeXRlc0Rpc2Fzc2VtYmxlcigp
+OworCQkJYnl0ZVtdIGNsYXNzRmlsZUJ5dGVzID0gb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNv
+bXBpbGVyLnV0aWwuVXRpbC5nZXRGaWxlQnl0ZUNvbnRlbnQobmV3IEZpbGUoT1VUUFVUX0RJUiAr
+IEZpbGUuc2VwYXJhdG9yICArIlguY2xhc3MiKSk7CisJCQlTdHJpbmcgYWN0dWFsT3V0cHV0ID0K
+KwkJCQlkaXNhc3NlbWJsZXIuZGlzYXNzZW1ibGUoCisJCQkJCWNsYXNzRmlsZUJ5dGVzLAorCQkJ
+CQkiXG4iLAorCQkJCQlDbGFzc0ZpbGVCeXRlc0Rpc2Fzc2VtYmxlci5ERVRBSUxFRCk7CisKKwkJ
+CVN0cmluZyBleHBlY3RlZE91dHB1dCA9CisJCQkJCSIgIC8vIE1ldGhvZCBkZXNjcmlwdG9yICMx
+NSAoW0xqYXZhL2xhbmcvU3RyaW5nOylWXG4iICsgCisJCQkJCSIgIC8vIFN0YWNrOiAyLCBMb2Nh
+bHM6IDZcbiIgKyAKKwkJCQkJIiAgcHVibGljIHN0YXRpYyB2b2lkIG1haW4oamF2YS5sYW5nLlN0
+cmluZ1tdIGFyZ3MpO1xuIiArIAorCQkJCQkiICAgICAwICBuZXcgamF2YS51dGlsLmNvbmN1cnJl
+bnQubG9ja3MuUmVlbnRyYW50TG9jayBbMTZdXG4iICsgCisJCQkJCSIgICAgIDMgIGR1cFxuIiAr
+IAorCQkJCQkiICAgICA0ICBpbnZva2VzcGVjaWFsIGphdmEudXRpbC5jb25jdXJyZW50LmxvY2tz
+LlJlZW50cmFudExvY2soKSBbMThdXG4iICsgCisJCQkJCSIgICAgIDcgIGFzdG9yZV8xIFtsb2Nr
+XVxuIiArIAorCQkJCQkiICAgICA4ICBhbG9hZF8wIFthcmdzXVxuIiArIAorCQkJCQkiICAgICA5
+ICBpbnZva2VzdGF0aWMgamF2YS51dGlsLkFycmF5cy5hc0xpc3QoamF2YS5sYW5nLk9iamVjdFtd
+KSA6IGphdmEudXRpbC5MaXN0IFsxOV1cbiIgKyAKKwkJCQkJIiAgICAxMiAgYXN0b3JlXzIgW3N0
+cmluZ3NdXG4iICsgCisJCQkJCSIgICAgMTMgIGFsb2FkXzEgW2xvY2tdXG4iICsgCisJCQkJCSIg
+ICAgMTQgIGludm9rZWludGVyZmFjZSBqYXZhLnV0aWwuY29uY3VycmVudC5sb2Nrcy5Mb2NrLmxv
+Y2soKSA6IHZvaWQgWzI1XSBbbmFyZ3M6IDFdXG4iICsgCisJCQkJCSIgICAgMTkgIGFsb2FkXzIg
+W3N0cmluZ3NdXG4iICsgCisJCQkJCSIgICAgMjAgIGludm9rZWludGVyZmFjZSBqYXZhLnV0aWwu
+TGlzdC5pdGVyYXRvcigpIDogamF2YS51dGlsLkl0ZXJhdG9yIFszMF0gW25hcmdzOiAxXVxuIiAr
+IAorCQkJCQkiICAgIDI1ICBhc3RvcmUgNFxuIiArIAorCQkJCQkiICAgIDI3ICBhbG9hZCA0XG4i
+ICsgCisJCQkJCSIgICAgMjkgIGludm9rZWludGVyZmFjZSBqYXZhLnV0aWwuSXRlcmF0b3IuaGFz
+TmV4dCgpIDogYm9vbGVhbiBbMzZdIFtuYXJnczogMV1cbiIgKyAKKwkJCQkJIiAgICAzNCAgaWZl
+cSA1NVxuIiArIAorCQkJCQkiICAgIDM3ICBhbG9hZCA0XG4iICsgCisJCQkJCSIgICAgMzkgIGlu
+dm9rZWludGVyZmFjZSBqYXZhLnV0aWwuSXRlcmF0b3IubmV4dCgpIDogamF2YS5sYW5nLk9iamVj
+dCBbNDJdIFtuYXJnczogMV1cbiIgKyAKKwkJCQkJIiAgICA0NCAgY2hlY2tjYXN0IGphdmEubGFu
+Zy5TdHJpbmcgWzQ2XVxuIiArIAorCQkJCQkiICAgIDQ3ICBhc3RvcmVfMyBbc3RyaW5nXVxuIiAr
+IAorCQkJCQkiICAgIDQ4ICBhbG9hZF8xIFtsb2NrXVxuIiArIAorCQkJCQkiICAgIDQ5ICBpbnZv
+a2VpbnRlcmZhY2UgamF2YS51dGlsLmNvbmN1cnJlbnQubG9ja3MuTG9jay51bmxvY2soKSA6IHZv
+aWQgWzQ4XSBbbmFyZ3M6IDFdXG4iICsgCisJCQkJCSIgICAgNTQgIHJldHVyblxuIiArIAorCQkJ
+CQkiICAgIDU1ICBhbG9hZF8xIFtsb2NrXVxuIiArIAorCQkJCQkiICAgIDU2ICBpbnZva2VpbnRl
+cmZhY2UgamF2YS51dGlsLmNvbmN1cnJlbnQubG9ja3MuTG9jay51bmxvY2soKSA6IHZvaWQgWzQ4
+XSBbbmFyZ3M6IDFdXG4iICsgCisJCQkJCSIgICAgNjEgIHJldHVyblxuIiArIAorCQkJCQkiICAg
+IDYyICBhc3RvcmUgNVxuIiArIAorCQkJCQkiICAgIDY0ICBhbG9hZF8xIFtsb2NrXVxuIiArIAor
+CQkJCQkiICAgIDY1ICBpbnZva2VpbnRlcmZhY2UgamF2YS51dGlsLmNvbmN1cnJlbnQubG9ja3Mu
+TG9jay51bmxvY2soKSA6IHZvaWQgWzQ4XSBbbmFyZ3M6IDFdXG4iICsgCisJCQkJCSIgICAgNzAg
+IGFsb2FkIDVcbiIgKyAKKwkJCQkJIiAgICA3MiAgYXRocm93XG4iICsgCisJCQkJCSIgICAgICBF
+eGNlcHRpb24gVGFibGU6XG4iICsgCisJCQkJCSIgICAgICAgIFtwYzogMTksIHBjOiA0OF0gLT4g
+NjIgd2hlbiA6IGFueVxuIiArIAorCQkJCQkiICAgICAgTGluZSBudW1iZXJzOlxuIiArIAorCQkJ
+CQkiICAgICAgICBbcGM6IDAsIGxpbmU6IDddXG4iICsgCisJCQkJCSIgICAgICAgIFtwYzogOCwg
+bGluZTogOF1cbiIgKyAKKwkJCQkJIiAgICAgICAgW3BjOiAxMywgbGluZTogOV1cbiIgKyAKKwkJ
+CQkJIiAgICAgICAgW3BjOiAxOSwgbGluZTogMTFdXG4iICsgCisJCQkJCSIgICAgICAgIFtwYzog
+NDgsIGxpbmU6IDE2XVxuIiArIAorCQkJCQkiICAgICAgICBbcGM6IDU0LCBsaW5lOiAxMl1cbiIg
+KyAKKwkJCQkJIiAgICAgICAgW3BjOiA1NSwgbGluZTogMTZdXG4iICsgCisJCQkJCSIgICAgICAg
+IFtwYzogNjEsIGxpbmU6IDE0XVxuIiArIAorCQkJCQkiICAgICAgICBbcGM6IDYyLCBsaW5lOiAx
+NV1cbiIgKyAKKwkJCQkJIiAgICAgICAgW3BjOiA2NCwgbGluZTogMTZdXG4iICsgCisJCQkJCSIg
+ICAgICAgIFtwYzogNzAsIGxpbmU6IDE3XVxuIiArIAorCQkJCQkiICAgICAgTG9jYWwgdmFyaWFi
+bGUgdGFibGU6XG4iICsgCisJCQkJCSIgICAgICAgIFtwYzogMCwgcGM6IDczXSBsb2NhbDogYXJn
+cyBpbmRleDogMCB0eXBlOiBqYXZhLmxhbmcuU3RyaW5nW11cbiIgKyAKKwkJCQkJIiAgICAgICAg
+W3BjOiA4LCBwYzogNzNdIGxvY2FsOiBsb2NrIGluZGV4OiAxIHR5cGU6IGphdmEudXRpbC5jb25j
+dXJyZW50LmxvY2tzLkxvY2tcbiIgKyAKKwkJCQkJIiAgICAgICAgW3BjOiAxMywgcGM6IDczXSBs
+b2NhbDogc3RyaW5ncyBpbmRleDogMiB0eXBlOiBqYXZhLnV0aWwuTGlzdFxuIiArIAorCQkJCQki
+ICAgICAgICBbcGM6IDQ4LCBwYzogNTVdIGxvY2FsOiBzdHJpbmcgaW5kZXg6IDMgdHlwZTogamF2
+YS5sYW5nLlN0cmluZ1xuIiArIAorCQkJCQkiICAgICAgTG9jYWwgdmFyaWFibGUgdHlwZSB0YWJs
+ZTpcbiIgKyAKKwkJCQkJIiAgICAgICAgW3BjOiAxMywgcGM6IDczXSBsb2NhbDogc3RyaW5ncyBp
+bmRleDogMiB0eXBlOiBqYXZhLnV0aWwuTGlzdDxqYXZhLmxhbmcuU3RyaW5nPlxuIiArIAorCQkJ
+CQkiICAgICAgU3RhY2sgbWFwIHRhYmxlOiBudW1iZXIgb2YgZnJhbWVzIDJcbiIgKyAKKwkJCQkJ
+IiAgICAgICAgW3BjOiA1NSwgYXBwZW5kOiB7amF2YS51dGlsLmNvbmN1cnJlbnQubG9ja3MuTG9j
+aywgamF2YS51dGlsLkxpc3R9XVxuIiArIAorCQkJCQkiICAgICAgICBbcGM6IDYyLCBzYW1lX2xv
+Y2Fsc18xX3N0YWNrX2l0ZW0sIHN0YWNrOiB7amF2YS5sYW5nLlRocm93YWJsZX1dXG4iIDsKKwor
+CQkJaW50IGluZGV4ID0gYWN0dWFsT3V0cHV0LmluZGV4T2YoZXhwZWN0ZWRPdXRwdXQpOworCQkJ
+aWYgKGluZGV4ID09IC0xIHx8IGV4cGVjdGVkT3V0cHV0Lmxlbmd0aCgpID09IDApIHsKKwkJCQlT
+eXN0ZW0ub3V0LnByaW50bG4oVXRpbC5kaXNwbGF5U3RyaW5nKGFjdHVhbE91dHB1dCwgMikpOwor
+CQkJfQorCQkJaWYgKGluZGV4ID09IC0xKSB7CisJCQkJYXNzZXJ0RXF1YWxzKCJXcm9uZyBjb250
+ZW50cyIsIGV4cGVjdGVkT3V0cHV0LCBhY3R1YWxPdXRwdXQpOworCQkJfQorCX0KKwkKKwkvLyBo
+dHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9MzU5NDk1CisJcHVi
+bGljIHZvaWQgdGVzdEJ1ZzM1OTQ5NWIoKSB0aHJvd3MgRXhjZXB0aW9uIHsKKwkJdGhpcy5ydW5D
+b25mb3JtVGVzdCgKKwkJCQluZXcgU3RyaW5nW10geworCQkJCQkiWC5qYXZhIiwKKwkJCQkJImlt
+cG9ydCBqYXZhLnV0aWwuTGlzdDtcbiIgKworCQkJCQkiaW1wb3J0IGphdmEudXRpbC5JdGVyYXRv
+cjtcbiIgKworCQkJCQkiaW1wb3J0IGphdmEudXRpbC5jb25jdXJyZW50LmxvY2tzLkxvY2s7XG4i
+ICsKKwkJCQkJImltcG9ydCBqYXZhLnV0aWwuQXJyYXlzO1xuIiArCisJCQkJCSJpbXBvcnQgamF2
+YS51dGlsLmNvbmN1cnJlbnQubG9ja3MuUmVlbnRyYW50TG9jaztcbiIgKworCQkJCQkicHVibGlj
+IGNsYXNzIFgge1xuIiArCisJCQkJCSIJcHVibGljIHN0YXRpYyB2b2lkIG1haW4oU3RyaW5nW10g
+YXJncykge1xuIiArCisJCQkJCSIJCWZpbmFsIExvY2sgbG9jayA9IG5ldyBSZWVudHJhbnRMb2Nr
+KCk7XG4iICsKKwkJCQkJIgkJZmluYWwgTGlzdDxTdHJpbmc+IHN0cmluZ3MgPSBBcnJheXMuYXNM
+aXN0KGFyZ3MpO1xuIiArCisJCQkJCSIJCWxvY2subG9jaygpO1xuIiArCisJCQkJCSIJCXRyeXtc
+biIgKworCQkJCQkiCQkJZm9yIChJdGVyYXRvciBpID0gc3RyaW5ncy5pdGVyYXRvcigpOyBpLmhh
+c05leHQoKTspe1xuIiArCisJCQkJCSIJCQkJcmV0dXJuO1xuIiArCisJCQkJCSIJCQl9XG4iICsK
+KwkJCQkJIgkJCXJldHVybjtcbiIgKworCQkJCQkiCQl9IGZpbmFsbHkge1xuIiArCisJCQkJCSIJ
+CQlsb2NrLnVubG9jaygpO1xuIiArCisJCQkJCSIJCX0iICsKKwkJCQkJIgl9XG4iICsKKwkJCQkJ
+In0iLAorCQkJCX0sCisJCQkJIiIpOworCisJCQlDbGFzc0ZpbGVCeXRlc0Rpc2Fzc2VtYmxlciBk
+aXNhc3NlbWJsZXIgPSBUb29sRmFjdG9yeS5jcmVhdGVEZWZhdWx0Q2xhc3NGaWxlQnl0ZXNEaXNh
+c3NlbWJsZXIoKTsKKwkJCWJ5dGVbXSBjbGFzc0ZpbGVCeXRlcyA9IG9yZy5lY2xpcHNlLmpkdC5p
+bnRlcm5hbC5jb21waWxlci51dGlsLlV0aWwuZ2V0RmlsZUJ5dGVDb250ZW50KG5ldyBGaWxlKE9V
+VFBVVF9ESVIgKyBGaWxlLnNlcGFyYXRvciAgKyJYLmNsYXNzIikpOworCQkJU3RyaW5nIGFjdHVh
+bE91dHB1dCA9CisJCQkJZGlzYXNzZW1ibGVyLmRpc2Fzc2VtYmxlKAorCQkJCQljbGFzc0ZpbGVC
+eXRlcywKKwkJCQkJIlxuIiwKKwkJCQkJQ2xhc3NGaWxlQnl0ZXNEaXNhc3NlbWJsZXIuREVUQUlM
+RUQpOworCisJCQlTdHJpbmcgZXhwZWN0ZWRPdXRwdXQgPQorCQkJCQkiICAvLyBNZXRob2QgZGVz
+Y3JpcHRvciAjMTUgKFtMamF2YS9sYW5nL1N0cmluZzspVlxuIiArIAorCQkJCQkiICAvLyBTdGFj
+azogMiwgTG9jYWxzOiA1XG4iICsgCisJCQkJCSIgIHB1YmxpYyBzdGF0aWMgdm9pZCBtYWluKGph
+dmEubGFuZy5TdHJpbmdbXSBhcmdzKTtcbiIgKyAKKwkJCQkJIiAgICAgMCAgbmV3IGphdmEudXRp
+bC5jb25jdXJyZW50LmxvY2tzLlJlZW50cmFudExvY2sgWzE2XVxuIiArIAorCQkJCQkiICAgICAz
+ICBkdXBcbiIgKyAKKwkJCQkJIiAgICAgNCAgaW52b2tlc3BlY2lhbCBqYXZhLnV0aWwuY29uY3Vy
+cmVudC5sb2Nrcy5SZWVudHJhbnRMb2NrKCkgWzE4XVxuIiArIAorCQkJCQkiICAgICA3ICBhc3Rv
+cmVfMSBbbG9ja11cbiIgKyAKKwkJCQkJIiAgICAgOCAgYWxvYWRfMCBbYXJnc11cbiIgKyAKKwkJ
+CQkJIiAgICAgOSAgaW52b2tlc3RhdGljIGphdmEudXRpbC5BcnJheXMuYXNMaXN0KGphdmEubGFu
+Zy5PYmplY3RbXSkgOiBqYXZhLnV0aWwuTGlzdCBbMTldXG4iICsgCisJCQkJCSIgICAgMTIgIGFz
+dG9yZV8yIFtzdHJpbmdzXVxuIiArIAorCQkJCQkiICAgIDEzICBhbG9hZF8xIFtsb2NrXVxuIiAr
+IAorCQkJCQkiICAgIDE0ICBpbnZva2VpbnRlcmZhY2UgamF2YS51dGlsLmNvbmN1cnJlbnQubG9j
+a3MuTG9jay5sb2NrKCkgOiB2b2lkIFsyNV0gW25hcmdzOiAxXVxuIiArIAorCQkJCQkiICAgIDE5
+ICBhbG9hZF8yIFtzdHJpbmdzXVxuIiArIAorCQkJCQkiICAgIDIwICBpbnZva2VpbnRlcmZhY2Ug
+amF2YS51dGlsLkxpc3QuaXRlcmF0b3IoKSA6IGphdmEudXRpbC5JdGVyYXRvciBbMzBdIFtuYXJn
+czogMV1cbiIgKyAKKwkJCQkJIiAgICAyNSAgYXN0b3JlXzMgW2ldXG4iICsgCisJCQkJCSIgICAg
+MjYgIGFsb2FkXzMgW2ldXG4iICsgCisJCQkJCSIgICAgMjcgIGludm9rZWludGVyZmFjZSBqYXZh
+LnV0aWwuSXRlcmF0b3IuaGFzTmV4dCgpIDogYm9vbGVhbiBbMzZdIFtuYXJnczogMV1cbiIgKyAK
+KwkJCQkJIiAgICAzMiAgaWZlcSA0MlxuIiArIAorCQkJCQkiICAgIDM1ICBhbG9hZF8xIFtsb2Nr
+XVxuIiArIAorCQkJCQkiICAgIDM2ICBpbnZva2VpbnRlcmZhY2UgamF2YS51dGlsLmNvbmN1cnJl
+bnQubG9ja3MuTG9jay51bmxvY2soKSA6IHZvaWQgWzQyXSBbbmFyZ3M6IDFdXG4iICsgCisJCQkJ
+CSIgICAgNDEgIHJldHVyblxuIiArIAorCQkJCQkiICAgIDQyICBhbG9hZF8xIFtsb2NrXVxuIiAr
+IAorCQkJCQkiICAgIDQzICBpbnZva2VpbnRlcmZhY2UgamF2YS51dGlsLmNvbmN1cnJlbnQubG9j
+a3MuTG9jay51bmxvY2soKSA6IHZvaWQgWzQyXSBbbmFyZ3M6IDFdXG4iICsgCisJCQkJCSIgICAg
+NDggIHJldHVyblxuIiArIAorCQkJCQkiICAgIDQ5ICBhc3RvcmUgNFxuIiArIAorCQkJCQkiICAg
+IDUxICBhbG9hZF8xIFtsb2NrXVxuIiArIAorCQkJCQkiICAgIDUyICBpbnZva2VpbnRlcmZhY2Ug
+amF2YS51dGlsLmNvbmN1cnJlbnQubG9ja3MuTG9jay51bmxvY2soKSA6IHZvaWQgWzQyXSBbbmFy
+Z3M6IDFdXG4iICsgCisJCQkJCSIgICAgNTcgIGFsb2FkIDRcbiIgKyAKKwkJCQkJIiAgICA1OSAg
+YXRocm93XG4iICsgCisJCQkJCSIgICAgICBFeGNlcHRpb24gVGFibGU6XG4iICsgCisJCQkJCSIg
+ICAgICAgIFtwYzogMTksIHBjOiAzNV0gLT4gNDkgd2hlbiA6IGFueVxuIiArIAorCQkJCQkiICAg
+ICAgTGluZSBudW1iZXJzOlxuIiArIAorCQkJCQkiICAgICAgICBbcGM6IDAsIGxpbmU6IDhdXG4i
+ICsgCisJCQkJCSIgICAgICAgIFtwYzogOCwgbGluZTogOV1cbiIgKyAKKwkJCQkJIiAgICAgICAg
+W3BjOiAxMywgbGluZTogMTBdXG4iICsgCisJCQkJCSIgICAgICAgIFtwYzogMTksIGxpbmU6IDEy
+XVxuIiArIAorCQkJCQkiICAgICAgICBbcGM6IDM1LCBsaW5lOiAxN11cbiIgKyAKKwkJCQkJIiAg
+ICAgICAgW3BjOiA0MSwgbGluZTogMTNdXG4iICsgCisJCQkJCSIgICAgICAgIFtwYzogNDIsIGxp
+bmU6IDE3XVxuIiArIAorCQkJCQkiICAgICAgICBbcGM6IDQ4LCBsaW5lOiAxNV1cbiIgKyAKKwkJ
+CQkJIiAgICAgICAgW3BjOiA0OSwgbGluZTogMTZdXG4iICsgCisJCQkJCSIgICAgICAgIFtwYzog
+NTEsIGxpbmU6IDE3XVxuIiArIAorCQkJCQkiICAgICAgICBbcGM6IDU3LCBsaW5lOiAxOF1cbiIg
+KyAKKwkJCQkJIiAgICAgIExvY2FsIHZhcmlhYmxlIHRhYmxlOlxuIiArIAorCQkJCQkiICAgICAg
+ICBbcGM6IDAsIHBjOiA2MF0gbG9jYWw6IGFyZ3MgaW5kZXg6IDAgdHlwZTogamF2YS5sYW5nLlN0
+cmluZ1tdXG4iICsgCisJCQkJCSIgICAgICAgIFtwYzogOCwgcGM6IDYwXSBsb2NhbDogbG9jayBp
+bmRleDogMSB0eXBlOiBqYXZhLnV0aWwuY29uY3VycmVudC5sb2Nrcy5Mb2NrXG4iICsgCisJCQkJ
+CSIgICAgICAgIFtwYzogMTMsIHBjOiA2MF0gbG9jYWw6IHN0cmluZ3MgaW5kZXg6IDIgdHlwZTog
+amF2YS51dGlsLkxpc3RcbiIgKyAKKwkJCQkJIiAgICAgICAgW3BjOiAyNiwgcGM6IDQyXSBsb2Nh
+bDogaSBpbmRleDogMyB0eXBlOiBqYXZhLnV0aWwuSXRlcmF0b3JcbiIgKyAKKwkJCQkJIiAgICAg
+IExvY2FsIHZhcmlhYmxlIHR5cGUgdGFibGU6XG4iICsgCisJCQkJCSIgICAgICAgIFtwYzogMTMs
+IHBjOiA2MF0gbG9jYWw6IHN0cmluZ3MgaW5kZXg6IDIgdHlwZTogamF2YS51dGlsLkxpc3Q8amF2
+YS5sYW5nLlN0cmluZz5cbiIgKyAKKwkJCQkJIiAgICAgIFN0YWNrIG1hcCB0YWJsZTogbnVtYmVy
+IG9mIGZyYW1lcyAyXG4iICsgCisJCQkJCSIgICAgICAgIFtwYzogNDIsIGFwcGVuZDoge2phdmEu
+dXRpbC5jb25jdXJyZW50LmxvY2tzLkxvY2ssIGphdmEudXRpbC5MaXN0fV1cbiIgKyAKKwkJCQkJ
+IiAgICAgICAgW3BjOiA0OSwgc2FtZV9sb2NhbHNfMV9zdGFja19pdGVtLCBzdGFjazoge2phdmEu
+bGFuZy5UaHJvd2FibGV9XVxuIjsKKworCQkJaW50IGluZGV4ID0gYWN0dWFsT3V0cHV0LmluZGV4
+T2YoZXhwZWN0ZWRPdXRwdXQpOworCQkJaWYgKGluZGV4ID09IC0xIHx8IGV4cGVjdGVkT3V0cHV0
+Lmxlbmd0aCgpID09IDApIHsKKwkJCQlTeXN0ZW0ub3V0LnByaW50bG4oVXRpbC5kaXNwbGF5U3Ry
+aW5nKGFjdHVhbE91dHB1dCwgMikpOworCQkJfQorCQkJaWYgKGluZGV4ID09IC0xKSB7CisJCQkJ
+YXNzZXJ0RXF1YWxzKCJXcm9uZyBjb250ZW50cyIsIGV4cGVjdGVkT3V0cHV0LCBhY3R1YWxPdXRw
+dXQpOworCQkJfQorCX0KIH0KZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBp
+bGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvRm9yU3RhdGVtZW50Lmph
+dmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvYXN0L0ZvclN0YXRlbWVudC5qYXZhCmluZGV4IDc1Y2E1YmYuLjQ5OGE4MTQg
+MTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9hc3QvRm9yU3RhdGVtZW50LmphdmEKKysrIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Fz
+dC9Gb3JTdGF0ZW1lbnQuamF2YQpAQCAtMjE3LDYgKzIxNywxNyBAQAogCQkJCWV4aXRCcmFuY2gs
+CiAJCQkJaXNDb25kaXRpb25PcHRpbWl6ZWRGYWxzZSwKIAkJCQkhaXNDb25kaXRpb25UcnVlIC8q
+Zm9yKDs7KXt9d2hpbGUodHJ1ZSk7IHVucmVhY2hhYmxlKCk7ICovKTsKKwkJLy8gVmFyaWFibGVz
+IGluaXRpYWxpemVkIG9ubHkgZm9yIHRoZSBwdXJwb3NlIG9mIHRoZSBmb3IgbG9vcCBjYW4gYmUg
+cmVtb3ZlZCBmb3IgZnVydGhlciBmbG93IGluZm8KKwkJLy8gaHR0cHM6Ly9idWdzLmVjbGlwc2Uu
+b3JnL2J1Z3Mvc2hvd19idWcuY2dpP2lkPTM1OTQ5NQorCQlpZiAodGhpcy5pbml0aWFsaXphdGlv
+bnMgIT0gbnVsbCkgeworCQkJZm9yIChpbnQgaSA9IDA7IGkgPCB0aGlzLmluaXRpYWxpemF0aW9u
+cy5sZW5ndGg7IGkrKykgeworCQkJCVN0YXRlbWVudCBpbml0ID0gdGhpcy5pbml0aWFsaXphdGlv
+bnNbaV07CisJCQkJaWYgKGluaXQgaW5zdGFuY2VvZiBMb2NhbERlY2xhcmF0aW9uKSB7CisJCQkJ
+CUxvY2FsVmFyaWFibGVCaW5kaW5nIGJpbmRpbmcgPSAoKExvY2FsRGVjbGFyYXRpb24pIGluaXQp
+LmJpbmRpbmc7CisJCQkJCW1lcmdlZEluZm8ucmVzZXRBc3NpZ25tZW50SW5mbyhiaW5kaW5nKTsK
+KwkJCQl9CisJCQl9CisJCX0KIAkJdGhpcy5tZXJnZWRJbml0U3RhdGVJbmRleCA9IGN1cnJlbnRT
+Y29wZS5tZXRob2RTY29wZSgpLnJlY29yZEluaXRpYWxpemF0aW9uU3RhdGVzKG1lcmdlZEluZm8p
+OwogCQlyZXR1cm4gbWVyZ2VkSW5mbzsKIAl9CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0ZvcmVh
+Y2hTdGF0ZW1lbnQuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xp
+cHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvRm9yZWFjaFN0YXRlbWVudC5qYXZhCmluZGV4
+IDQ0ZDNiNjEuLjkxZTA4NjEgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBp
+bGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvRm9yZWFjaFN0YXRlbWVu
+dC5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9hc3QvRm9yZWFjaFN0YXRlbWVudC5qYXZhCkBAIC0xMDYsNyAr
+MTA2LDcgQEAKIAogCQkJLy8gY29kZSBnZW5lcmF0aW9uIGNhbiBiZSBvcHRpbWl6ZWQgd2hlbiBu
+byBuZWVkIHRvIGNvbnRpbnVlIGluIHRoZSBsb29wCiAJCQlleGl0QnJhbmNoID0gZmxvd0luZm8u
+dW5jb25kaXRpb25hbENvcHkoKS4KLQkJCWFkZEluaXRpYWxpemF0aW9uc0Zyb20oY29uZEluZm8u
+aW5pdHNXaGVuRmFsc2UoKSk7CisJCQkJCWFkZE51bGxJbmZvRnJvbShjb25kSW5mby5pbml0c1do
+ZW5GYWxzZSgpKTsKIAkJCS8vIFRPRE8gKG1heGltZSkgbm8gbmVlZCB0byB0ZXN0IHdoZW4gZmFs
+c2U6IGNhbiBvcHRpbWl6ZSAoc2FtZSBmb3IgYWN0aW9uIGJlaW5nIHVucmVhY2hhYmxlIGFib3Zl
+KQogCQkJaWYgKChhY3Rpb25JbmZvLnRhZ0JpdHMgJiBsb29waW5nQ29udGV4dC5pbml0c09uQ29u
+dGludWUudGFnQml0cyAmCiAJCQkJCUZsb3dJbmZvLlVOUkVBQ0hBQkxFX09SX0RFQUQpICE9IDAp
+IHsKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNl
+L2pkdC9pbnRlcm5hbC9jb21waWxlci9mbG93L0NvbmRpdGlvbmFsRmxvd0luZm8uamF2YSBiL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21w
+aWxlci9mbG93L0NvbmRpdGlvbmFsRmxvd0luZm8uamF2YQppbmRleCBjMTM3YjQyLi41Y2I0MTY2
+IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvY29tcGlsZXIvZmxvdy9Db25kaXRpb25hbEZsb3dJbmZvLmphdmEKKysrIGIv
+b3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2Nv
+bXBpbGVyL2Zsb3cvQ29uZGl0aW9uYWxGbG93SW5mby5qYXZhCkBAIC0yNTIsNCArMjUyLDkgQEAK
+IAlyZXR1cm4gKHRoaXMuaW5pdHNXaGVuVHJ1ZS5pc01hcmtlZEFzTnVsbE9yTm9uTnVsbEluQXNz
+ZXJ0RXhwcmVzc2lvbihsb2NhbCkKIAkJfHwgdGhpcy5pbml0c1doZW5GYWxzZS5pc01hcmtlZEFz
+TnVsbE9yTm9uTnVsbEluQXNzZXJ0RXhwcmVzc2lvbihsb2NhbCkpOwogfQorCitwdWJsaWMgdm9p
+ZCByZXNldEFzc2lnbm1lbnRJbmZvKExvY2FsVmFyaWFibGVCaW5kaW5nIGxvY2FsKSB7CisJdGhp
+cy5pbml0c1doZW5UcnVlLnJlc2V0QXNzaWdubWVudEluZm8obG9jYWwpOworCXRoaXMuaW5pdHNX
+aGVuRmFsc2UucmVzZXRBc3NpZ25tZW50SW5mbyhsb2NhbCk7Cit9CiB9CmRpZmYgLS1naXQgYS9v
+cmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29t
+cGlsZXIvZmxvdy9GbG93SW5mby5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIv
+b3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Zsb3cvRmxvd0luZm8uamF2YQppbmRl
+eCAyYTc5NjZhLi5iOTMxMzcyIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21w
+aWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvZmxvdy9GbG93SW5mby5qYXZh
+CisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRl
+cm5hbC9jb21waWxlci9mbG93L0Zsb3dJbmZvLmphdmEKQEAgLTYwOSw0ICs2MDksMTAgQEAKICAq
+LwogLy9odHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9MzAzNDQ4
+CiBhYnN0cmFjdCBwdWJsaWMgYm9vbGVhbiBpc01hcmtlZEFzTnVsbE9yTm9uTnVsbEluQXNzZXJ0
+RXhwcmVzc2lvbihMb2NhbFZhcmlhYmxlQmluZGluZyBsb2NhbCk7CisKKy8qKgorICogUmVzZXRz
+IHRoZSBkZWZpbml0ZSBhbmQgcG90ZW50aWFsIGluaXRpYWxpemF0aW9uIGluZm8gZm9yIHRoZSBn
+aXZlbiBsb2NhbCB2YXJpYWJsZQorICogQHBhcmFtIGxvY2FsCisgKi8KK2Fic3RyYWN0IHB1Ymxp
+YyB2b2lkIHJlc2V0QXNzaWdubWVudEluZm8oTG9jYWxWYXJpYWJsZUJpbmRpbmcgbG9jYWwpOwog
+fQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2Uv
+amR0L2ludGVybmFsL2NvbXBpbGVyL2Zsb3cvVW5jb25kaXRpb25hbEZsb3dJbmZvLmphdmEgYi9v
+cmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29t
+cGlsZXIvZmxvdy9VbmNvbmRpdGlvbmFsRmxvd0luZm8uamF2YQppbmRleCA4Yjk5MmQ3Li5lZDFh
+ZTdhIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBz
+ZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvZmxvdy9VbmNvbmRpdGlvbmFsRmxvd0luZm8uamF2YQor
+KysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvZmxvdy9VbmNvbmRpdGlvbmFsRmxvd0luZm8uamF2YQpAQCAtMjEzMSw1ICsy
+MTMxLDI5IEBACiAJCX0KIAl9CiB9CisKK3B1YmxpYyB2b2lkIHJlc2V0QXNzaWdubWVudEluZm8o
+TG9jYWxWYXJpYWJsZUJpbmRpbmcgbG9jYWwpIHsKKwlyZXNldEFzc2lnbm1lbnRJbmZvKGxvY2Fs
+LmlkICsgdGhpcy5tYXhGaWVsZENvdW50KTsKK30KKworcHVibGljIHZvaWQgcmVzZXRBc3NpZ25t
+ZW50SW5mbyhpbnQgcG9zaXRpb24pIHsKKwlpZiAodGhpcyAhPSBERUFEX0VORCkgeworCQkvLyBw
+b3NpdGlvbiBpcyB6ZXJvLWJhc2VkCisJCWlmIChwb3NpdGlvbiA8IEJpdENhY2hlU2l6ZSkgewor
+CQkJLy8gdXNlIGJpdHMKKwkJCWxvbmcgbWFzazsKKwkJCXRoaXMuZGVmaW5pdGVJbml0cyAmPSAo
+bWFzayA9IH4oMUwgPDwgcG9zaXRpb24pKTsKKwkJCXRoaXMucG90ZW50aWFsSW5pdHMgJj0gbWFz
+azsKKwkJfSBlbHNlIHsKKwkJCS8vIHVzZSBleHRyYSB2ZWN0b3IKKwkJCWludCB2ZWN0b3JJbmRl
+eCA9IChwb3NpdGlvbiAvIEJpdENhY2hlU2l6ZSkgLSAxOworCQkJaWYgKHRoaXMuZXh0cmEgPT0g
+bnVsbCB8fCB2ZWN0b3JJbmRleCA+PSB0aGlzLmV4dHJhWzBdLmxlbmd0aCkgcmV0dXJuOwkvLyB2
+YXJpYWJsZSBkb2VzbnQgZXhpc3QgaW4gZmxvdyBpbmZvCisJCQlsb25nIG1hc2s7CisJCQl0aGlz
+LmV4dHJhWzBdW3ZlY3RvckluZGV4XSAmPQorCQkJCShtYXNrID0gfigxTCA8PCAocG9zaXRpb24g
+JSBCaXRDYWNoZVNpemUpKSk7CisJCQl0aGlzLmV4dHJhWzFdW3ZlY3RvckluZGV4XSAmPSBtYXNr
+OworCQl9CisJfQorfQogfQog
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,266 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>376263</bug_id>
+          
+          <creation_ts>2012-04-06 15:04:00 -0400</creation_ts>
+          <short_desc>[compiler][null] Bogus &quot;Potential null pointer access&quot; warning</short_desc>
+          <delta_ts>2013-03-11 09:42:05 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Sergey Prigogin">eclipse.sprigogin</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>satyam.kandula</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2090743</commentid>
+    <comment_count>0</comment_count>
+    <who name="Sergey Prigogin">eclipse.sprigogin</who>
+    <bug_when>2012-04-06 15:04:49 -0400</bug_when>
+    <thetext>The following code triggers a &quot;Potential null pointer access: The variable elem may be null at this location&quot;. The warning is not justified.
+
+public class Test {
+    private int x;
+
+    static void test(Test[] array) {
+        Test elem = null;
+        int i = 0;
+        while (i &lt; array.length) {
+            if (i == 0) {
+                elem = array[0];
+            }
+            if (elem != null) {
+                while (true) {
+                    if (elem.x &gt;= 0 || i &gt;= array.length) { &lt;-- Warning here
+                        break;
+                    }
+                    elem = array[i++];
+                }
+            }
+        }
+    }
+}
+
+A more meaningful code that triggers the same warning is in org.eclipse.cdt/core/org.eclipse.cdt.core/parser/org/eclipse/cdt/internal/core/dom/rewrite/changegenerator/ChangeGenerator.java line 450.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2090809</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-04-07 07:08:05 -0400</bug_when>
+    <thetext>The warning is not completely wrong as the assignment &apos;elem = array[i++]&apos; could assign null. Although, normally our analysis is silent about array elements, as we have no information for those.
+
+I&apos;ll take a look what&apos;s going on here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2091252</commentid>
+    <comment_count>2</comment_count>
+      <attachid>213775</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-04-09 18:49:42 -0400</bug_when>
+    <thetext>Created attachment 213775
+test &amp; draft of a potential fix
+
+Analysis of nested loop is incomplete.
+
+Here&apos;s what happens:
+
+The line in question is first analyzed on behalf of the inner loop. 
+ First pass defers checking until the end of the (inner) loop. 
+ During inner deferred checking we find no immediate problem
+ -&gt; delegate to the outer LoopingFlowContext.
+In this particular context we forget the information from the if that directly encloses the inner while.
+However, outer level deferred checking somehow feeds a potential for being null into the analysis.
+
+The draft patch fixes this by one more check:
+- Before delegating to outer check if in the upstream flowInfo the local is
+  known to be definitely non-null -&gt; don&apos;t propagate since we can already
+  rule out a null problem due to iterations of the outer loop.
+
+I&apos;m kind-of surprised that this change doesn&apos;t break any tests in the direct
+vicinity.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2091254</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-04-09 18:53:11 -0400</bug_when>
+    <thetext>Ayush, do you want to take a look whether we should consider this for M7?
+
+The change is small, but it would take some more investigation to convince
+ourselves that this is the right thing to do.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2091300</commentid>
+    <comment_count>4</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-04-10 01:22:31 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; Ayush, do you want to take a look whether we should consider this for M7?
+&gt; 
+&gt; The change is small, but it would take some more investigation to convince
+&gt; ourselves that this is the right thing to do.
+While the fix is logically correct and will always work for cases like comment 0, I wonder what happens when there&apos;s no if statement enclosing the inner loop. In that case, upstream info refers to flow info of the outer loop&apos;s statements. The variable being non null in that info does not guarantee that it will definitely be non null, because i think that info still does not have merged info from upstream, loop condition, breaks, etc. For example, see this variation:
+
+static void test(Test[] array) {
+        Test elem = new Test();
+        int i = 0;
+        while (i &lt; array.length) {
+            // some statements that don&apos;t affect elem.
+            while (true) {
+                if (elem.x &gt;= 0 || i &gt;= array.length) { &lt;-- Warning here
+                     break;
+                }
+                elem = array[i++];
+            }
+            if (i == 5) {
+                elem = null;
+            }
+        }
+}
+
+I haven&apos;t debugged this case so I may be wrong.
+
+This aside, I&apos;m not sure if comment 0 represents a critical user problem, since for all we know, array[i++] may be null. So perhaps we can keep the patch around but let this lie for M7</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2204501</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-17 15:30:20 -0500</bug_when>
+    <thetext>As a more complete solution is not in sight I&apos;ve cleaned up and released the fix from comment 2:
+Released for 4.3 M5 via commit 5022709d9b0934611de6ddf11e79067d32b49675.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2228789</commentid>
+    <comment_count>6</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-03-11 07:01:32 -0400</bug_when>
+    <thetext>Verified for 4.3 M6 using  build I20130310-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>213775</attachid>
+            <date>2012-04-09 18:49:00 -0400</date>
+            <delta_ts>2012-04-09 18:49:42 -0400</delta_ts>
+            <desc>test &amp; draft of a potential fix</desc>
+            <filename>Bug_376263_v0.1.patch</filename>
+            <type>text/plain</type>
+            <size>3679</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxSZWZlcmVuY2VU
+ZXN0LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2Vj
+bGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsUmVmZXJlbmNlVGVz
+dC5qYXZhCmluZGV4IDRjYjc2OGUuLjUzZmVkYjkgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21w
+aWxlci9yZWdyZXNzaW9uL051bGxSZWZlcmVuY2VUZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2Uu
+amR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Nv
+bXBpbGVyL3JlZ3Jlc3Npb24vTnVsbFJlZmVyZW5jZVRlc3QuamF2YQpAQCAtMzAsNiArMzAsNyBA
+QAogCiBpbXBvcnQganVuaXQuZnJhbWV3b3JrLlRlc3Q7CiAKK2ltcG9ydCBvcmcuZWNsaXBzZS5q
+ZHQuY29yZS5KYXZhQ29yZTsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5Ub29sRmFjdG9y
+eTsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy51dGlsLlV0aWw7CiBpbXBvcnQg
+b3JnLmVjbGlwc2UuamR0LmNvcmUudXRpbC5DbGFzc0ZpbGVCeXRlc0Rpc2Fzc2VtYmxlcjsKQEAg
+LTQ5LDcgKzUwLDcgQEAKIC8vIE9ubHkgdGhlIGhpZ2hlc3QgY29tcGxpYW5jZSBsZXZlbCBpcyBy
+dW47IGFkZCB0aGUgVk0gYXJndW1lbnQKIC8vIC1EY29tcGxpYW5jZT0xLjQgKGZvciBleGFtcGxl
+KSB0byBsb3dlciBpdCBpZiBuZWVkZWQKIHN0YXRpYyB7Ci0vLwkJVEVTVFNfTkFNRVMgPSBuZXcg
+U3RyaW5nW10geyAidGVzdEJ1ZzMzNjQyOGYiIH07CisvLwkJVEVTVFNfTkFNRVMgPSBuZXcgU3Ry
+aW5nW10geyAidGVzdEJ1ZzM3NjI2MyIgfTsKIC8vCQlURVNUU19OVU1CRVJTID0gbmV3IGludFtd
+IHsgNTYxIH07CiAvLwkJVEVTVFNfUkFOR0UgPSBuZXcgaW50W10geyAxLCAyMDQ5IH07CiB9CkBA
+IC0xNTYwMSw0ICsxNTYwMiwzOSBAQAogCQkiIiwvKiBleHBlY3RlZCBlcnJvciAqLwogCSAgICBK
+YXZhY1Rlc3RPcHRpb25zLkV4Y3VzZS5FY2xpcHNlV2FybmluZ0NvbmZpZ3VyZWRBc0Vycm9yKTsK
+IH0KK3B1YmxpYyB2b2lkIHRlc3RCdWczNzYyNjMoKSB7CisJTWFwIGN1c3RvbU9wdGlvbnMgPSBn
+ZXRDb21waWxlck9wdGlvbnMoKTsKKwljdXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxF
+Ul9QQl9QT1RFTlRJQUxfTlVMTF9SRUZFUkVOQ0UsIEphdmFDb3JlLkVSUk9SKTsKKwlydW5Db25m
+b3JtVGVzdCgKKwkJbmV3IFN0cmluZ1tdIHsKKwkJCSJUZXN0LmphdmEiLAorCQkJInB1YmxpYyBj
+bGFzcyBUZXN0IHtcbiIgKyAKKwkJCSIgICAgcHJpdmF0ZSBpbnQgeDtcbiIgKyAKKwkJCSJcbiIg
+KyAKKwkJCSIgICAgc3RhdGljIHZvaWQgdGVzdChUZXN0W10gYXJyYXkpIHtcbiIgKyAKKwkJCSIg
+ICAgICAgIFRlc3QgZWxlbSA9IG51bGw7XG4iICsgCisJCQkiICAgICAgICBpbnQgaSA9IDA7XG4i
+ICsgCisJCQkiICAgICAgICB3aGlsZSAoaSA8IGFycmF5Lmxlbmd0aCkge1xuIiArIAorCQkJIiAg
+ICAgICAgICAgIGlmIChpID09IDApIHtcbiIgKyAKKwkJCSIgICAgICAgICAgICAgICAgZWxlbSA9
+IGFycmF5WzBdO1xuIiArIAorCQkJIiAgICAgICAgICAgIH1cbiIgKyAKKwkJCSIgICAgICAgICAg
+ICBpZiAoZWxlbSAhPSBudWxsKSB7XG4iICsgCisJCQkiICAgICAgICAgICAgICAgIHdoaWxlICh0
+cnVlKSB7XG4iICsgCisJCQkiICAgICAgICAgICAgICAgICAgICBpZiAoZWxlbS54ID49IDAgfHwg
+aSA+PSBhcnJheS5sZW5ndGgpIHsgLy8gc2hvdWxkIG5vdCB3YXJuIGhlcmVcbiIgKyAKKwkJCSIg
+ICAgICAgICAgICAgICAgICAgICAgICBicmVhaztcbiIgKyAKKwkJCSIgICAgICAgICAgICAgICAg
+ICAgIH1cbiIgKyAKKwkJCSIgICAgICAgICAgICAgICAgICAgIGVsZW0gPSBhcnJheVtpKytdO1xu
+IiArIAorCQkJIiAgICAgICAgICAgICAgICB9XG4iICsgCisJCQkiICAgICAgICAgICAgfVxuIiAr
+IAorCQkJIiAgICAgICAgfVxuIiArIAorCQkJIiAgICB9XG4iICsgCisJCQkifSIKKwkJfSwKKwkJ
+IiIsCisJCW51bGwvKmNsYXNzTGlicmFyaWVzKi8sCisJCXRydWUvKnNob3VsZEZsdXNoKi8sCisJ
+CW51bGwvKnZtQXJncyovLAorCQljdXN0b21PcHRpb25zLAorCQludWxsLypyZXF1ZXN0b3IqLyk7
+Cit9CiB9ClwgTm8gbmV3bGluZSBhdCBlbmQgb2YgZmlsZQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Zs
+b3cvTG9vcGluZ0Zsb3dDb250ZXh0LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxl
+ci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvZmxvdy9Mb29waW5nRmxvd0NvbnRl
+eHQuamF2YQppbmRleCBhMTViMTdjLi41ODRjMDdmIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5q
+ZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvZmxvdy9M
+b29waW5nRmxvd0NvbnRleHQuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxl
+ci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvZmxvdy9Mb29waW5nRmxvd0NvbnRl
+eHQuamF2YQpAQCAtMTQ1LDYgKzE0NSw3IEBACiAJCQlhZGRQb3RlbnRpYWxOdWxsSW5mb0Zyb20o
+dGhpcy5pbm5lckZsb3dJbmZvc1tpXSk7CiAJfQogCXRoaXMuaW5uZXJGbG93Q29udGV4dHNDb3Vu
+dCA9IDA7CisJRmxvd0luZm8gdXBzdHJlYW1Db3B5ID0gdGhpcy51cHN0cmVhbU51bGxGbG93SW5m
+by5jb3B5KCk7CiAJVW5jb25kaXRpb25hbEZsb3dJbmZvIGZsb3dJbmZvID0gdGhpcy51cHN0cmVh
+bU51bGxGbG93SW5mby4KIAkJYWRkUG90ZW50aWFsTnVsbEluZm9Gcm9tKGNhbGxlckZsb3dJbmZv
+LnVuY29uZGl0aW9uYWxJbml0c1dpdGhvdXRTaWRlRWZmZWN0KCkpOwogCWlmICgodGhpcy50YWdC
+aXRzICYgRmxvd0NvbnRleHQuREVGRVJfTlVMTF9ESUFHTk9TVElDKSAhPSAwKSB7CkBAIC0yNzEs
+OCArMjcyLDE3IEBACiAJCQkJZGVmYXVsdDoKIAkJCQkJLy8gbmV2ZXIgaGFwcGVucwogCQkJfQot
+CQkJdGhpcy5wYXJlbnQucmVjb3JkVXNpbmdOdWxsUmVmZXJlbmNlKHNjb3BlLCBsb2NhbCwgbG9j
+YXRpb24sCi0JCQkJCXRoaXMubnVsbENoZWNrVHlwZXNbaV0sIGZsb3dJbmZvKTsKKwkJCWJvb2xl
+YW4gcHJvcGFnYXRlVXAgPSB0cnVlOworCQkJc3dpdGNoICh0aGlzLm51bGxDaGVja1R5cGVzW2ld
+KSB7CisJCQkJY2FzZSBNQVlfTlVMTDoKKwkJCQkJcHJvcGFnYXRlVXAgPSAhdXBzdHJlYW1Db3B5
+LmlzRGVmaW5pdGVseU5vbk51bGwobG9jYWwpOworCQkJCQlicmVhazsKKwkJCQkvLyBUT0RPIChz
+dGVwaGFuKTogaGFuZGxlIG1vcmUgc2ltaWxhciBzaXR1YXRpb25zPworCQkJfQorCQkJaWYgKHBy
+b3BhZ2F0ZVVwKSB7CisJCQkJdGhpcy5wYXJlbnQucmVjb3JkVXNpbmdOdWxsUmVmZXJlbmNlKHNj
+b3BlLCBsb2NhbCwgbG9jYXRpb24sCisJCQkJCQl0aGlzLm51bGxDaGVja1R5cGVzW2ldLCBmbG93
+SW5mbyk7CisJCQl9CiAJCX0KIAl9CiAJZWxzZSB7Cg==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

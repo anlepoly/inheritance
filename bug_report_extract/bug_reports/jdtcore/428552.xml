@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>428552</bug_id>
+          
+          <creation_ts>2014-02-19 09:23:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler][codegen] Serialization does not work for method references</short_desc>
+          <delta_ts>2014-02-23 23:18:02 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Holger Pietsch">hpietsch</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>aclement</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>manju656</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2365488</commentid>
+    <comment_count>0</comment_count>
+    <who name="Holger Pietsch">hpietsch</who>
+    <bug_when>2014-02-19 09:23:47 -0500</bug_when>
+    <thetext>For lambdas created using a method reference of the form Type::MethodName instead of a lambda expression of the form (arg)-&gt;expression the Serialization does not work.
+
+They will be compiled like non-Serializable lambdas ignoring if the functional interface extends Serializable.
+
+import java.io.*;
+public class SimpleTestCase {
+	interface Example extends Serializable
+	{
+		String convert(Object o);
+	}
+	public static void main(String[] args) throws IOException {
+		Example e=Object::toString;
+		try(ObjectOutputStream os=new ObjectOutputStream(new ByteArrayOutputStream())) {
+			os.writeObject(e);
+		}
+	}
+}
+
+Produces
+
+Exception in thread &quot;main&quot; java.io.NotSerializableException: Non-serializable lambda
+	at SimpleTestCase$$Lambda$1/2536472.writeObject(Unknown Source)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2365532</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-19 10:36:09 -0500</bug_when>
+    <thetext>I&apos;ll take a look, may have to reassign to Andy if it calls for more detailed
+work than what I think is needed - I plan to transform the method reference
+to implicit lambda if it is serializable - support for such transformation was
+added recently - so this could be a trivial fix.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2365624</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-19 13:18:35 -0500</bug_when>
+    <thetext>Fortunately, this turned out to be simple enough as a transformation into
+an implicit lambda - where the support is already in place.
+
+Fix and tests released here: 
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=6e68e9cf1522a12f0e985131be99c9578a7def47
+
+Holger, Thanks for the defect report - please test and raise fresh tickets for 
+any further issues found.
+
+A note to anyone interested in serializable lambdas: The present implementation
+assumes that the same class files are present on either side of the wire. 
+&quot;Seemingly unconnected/innocuous&quot; changes on one side alone will cause breakage.
+
+There are no plans at GA time to make the scheme any more fool proof/fail safe
+than stipulating the requirement of identical class files. The standard allows
+an implementation to stipulate that.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2365917</commentid>
+    <comment_count>3</comment_count>
+    <who name="Holger Pietsch">hpietsch</who>
+    <bug_when>2014-02-20 05:31:13 -0500</bug_when>
+    <thetext>Hmm, serializing them now works but de-serializing them fails with  java.lang.IllegalArgumentException: Invalid lambda deserialization
+	at $deserializeLambda$
+(without changing the class in-between)
+
+But indeed, lambda expressions and method references behave the same now
+
+
+import java.io.*;
+import java.util.function.IntConsumer;
+
+public class QuickSerializedLambdaTest {
+	interface X extends IntConsumer,Serializable{}
+	public static void main(String[] args) throws IOException, ClassNotFoundException {
+		X x1 = i -&gt; System.out.println(i);// lambda expression
+		X x2 = System::exit; // method reference
+		ByteArrayOutputStream debug=new ByteArrayOutputStream();
+		try(ObjectOutputStream oo=new ObjectOutputStream(debug))
+		{
+			oo.writeObject(x1);
+			oo.writeObject(x2);
+		}
+		try(ObjectInputStream oi=new ObjectInputStream(new ByteArrayInputStream(debug.toByteArray())))
+		{
+			X x=(X)oi.readObject();
+			x.accept(42);// shall print &quot;42&quot;
+			x=(X)oi.readObject();
+			x.accept(0);// shall exit
+		}
+		throw new AssertionError(&quot;should not reach this point&quot;);
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2365920</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-20 05:35:24 -0500</bug_when>
+    <thetext>OK, will take a look - I did add a test that deserializes the object and it passes. Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367364</commentid>
+    <comment_count>5</comment_count>
+    <who name="Manju Mathew">manju656</who>
+    <bug_when>2014-02-23 22:21:04 -0500</bug_when>
+    <thetext>When i execute the code snippet given in comment 3 using Kepler SR2 + Java 8 RC1 +   Eclipse Java Development Tools Patch for Java 8 Support (BETA) 1.0.0.v20140220-2054, i get the below exception in the console:
+
+Exception in thread &quot;main&quot; java.io.IOException: unexpected exception type
+	at java.io.ObjectStreamClass.throwMiscException(ObjectStreamClass.java:1538)
+	at java.io.ObjectStreamClass.invokeReadResolve(ObjectStreamClass.java:1110)
+	at java.io.ObjectInputStream.readOrdinaryObject(ObjectInputStream.java:1810)
+	at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1351)
+	at java.io.ObjectInputStream.readObject(ObjectInputStream.java:371)
+	at p1.QuickSerializedLambdaTest.main(QuickSerializedLambdaTest.java:18)
+Caused by: java.lang.reflect.InvocationTargetException
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:483)
+	at java.lang.invoke.SerializedLambda.readResolve(SerializedLambda.java:230)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.lang.reflect.Method.invoke(Method.java:483)
+	at java.io.ObjectStreamClass.invokeReadResolve(ObjectStreamClass.java:1104)
+	... 4 more
+Caused by: java.lang.IllegalArgumentException: Invalid lambda deserialization
+	at p1.QuickSerializedLambdaTest.$deserializeLambda$(QuickSerializedLambdaTest.java:1)
+	... 14 more</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367367</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-23 22:32:59 -0500</bug_when>
+    <thetext>(In reply to Manju Mathew from comment #5)
+&gt; When i execute the code snippet given in comment 3 using Kepler SR2 + Java 8
+&gt; RC1 +   Eclipse Java Development Tools Patch for Java 8 Support (BETA)
+&gt; 1.0.0.v20140220-2054, i get the below exception in the console:
+
+Sorry, I should have mentioned a link here: This was fixed in a follow up
+defect; https://bugs.eclipse.org/bugs/show_bug.cgi?id=428642, which was
+released on 22nd Feb.
+
+Could you update to the latest and reverify ? If it passes (as it should)
+please mark as verified with the suitable version string</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367372</commentid>
+    <comment_count>7</comment_count>
+    <who name="Manju Mathew">manju656</who>
+    <bug_when>2014-02-23 22:59:14 -0500</bug_when>
+    <thetext>The issue is not reproducible after executing the code from the development WS post pulling latest code from BETA_JAVA8.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367374</commentid>
+    <comment_count>8</comment_count>
+    <who name="Manju Mathew">manju656</who>
+    <bug_when>2014-02-23 23:18:02 -0500</bug_when>
+    <thetext>Verified using Kepler SR2 + Java 8 RC1 + Eclipse Java Development Tools Patch for Java 8 Support (BETA) 1.0.0.v20140223-2022</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>429759</bug_id>
+          
+          <creation_ts>2014-03-06 07:33:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler] Lambda expression&apos;s signature matching error</short_desc>
+          <delta_ts>2014-03-08 13:36:29 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Daniel Dietrich">daniel.dietrich</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>manju656</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="61829"
+          type_id="1"
+          status="+"
+          setter="stephan.herrmann"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2372372</commentid>
+    <comment_count>0</comment_count>
+    <who name="Daniel Dietrich">daniel.dietrich</who>
+    <bug_when>2014-03-06 07:33:20 -0500</bug_when>
+    <thetext>Hi, one more finding (jdk8 compiles, eclipse not):
+
+public class Main {
+
+	public static void main(String[] args) {
+
+		// *
+		// * ERROR MESSAGE:
+		// * Lambda expression&apos;s signature does not match
+		// * the signature of the functional interface method get()
+		// *
+		final int i = new Test&lt;Integer&gt;().test(&quot;&quot;, (String s) -&gt; 1);
+
+	}
+
+	static class Test&lt;R&gt; {
+
+		&lt;T&gt; R test(T t, Supplier&lt;R&gt; s) {
+			return s.get();
+		}
+
+		&lt;T&gt; R test(T t, Function&lt;T, R&gt; f) {
+			return f.apply(t);
+		}
+	}
+
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372441</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-03-06 09:26:50 -0500</bug_when>
+    <thetext>Thanks, will take a look</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372486</commentid>
+    <comment_count>2</comment_count>
+    <who name="Daniel Dietrich">daniel.dietrich</who>
+    <bug_when>2014-03-06 10:23:34 -0500</bug_when>
+    <thetext>I omitted the import java.util.*; in the example</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372502</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-03-06 10:37:14 -0500</bug_when>
+    <thetext>Stephan, please take a look, shape check not happening early enough causes
+problems.
+
+Disabled test here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=3e19fda2df1bc113dba7573b5ff115a5be6c5c02
+
+Let us evaluate a strategy: Calling isCompatibleWith should be safe to weed
+out early.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372542</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-03-06 11:13:26 -0500</bug_when>
+    <thetext>I have a fix under test.
+
+Basically the problem is two folds. 
+
+(1) LE should return null and set resolvedType
+to null upon reporting errors against a copy. For the original, there is interest
+in continuing to look for additional errors, not for copy. Presently, we return
+the expected type as the resolvedType which leaves the arity micmatches lambda
+in contention.
+
+(2) org.eclipse.jdt.internal.compiler.lookup.ConstraintExpressionFormula.reduce(InferenceContext18) is ignoring boxing compatibility.
+
+if (!(expr.isConstantValueOfTypeAssignableToType(exprType, r)
+									|| exprType.isCompatibleWith(r))
+								return FALSE;
+
+should really be:
+
+if (!(expr.isConstantValueOfTypeAssignableToType(exprType, r)
+									|| exprType.isCompatibleWith(r) || expr.isBoxingCompatible(exprType, r, expr, scope)))
+								return FALSE;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372544</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-03-06 11:14:58 -0500</bug_when>
+    <thetext>This would very nicely eliminate the arity mismatched lambdas out of contention
+without having to introduce an additional layer of compatibility checks.
+
+Test underway.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372580</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-06 12:26:37 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #4)
+&gt; (2)
+&gt; org.eclipse.jdt.internal.compiler.lookup.ConstraintExpressionFormula.
+&gt; reduce(InferenceContext18) is ignoring boxing compatibility.
+&gt; 
+&gt; if (!(expr.isConstantValueOfTypeAssignableToType(exprType, r)
+&gt; 									|| exprType.isCompatibleWith(r))
+&gt; 								return FALSE;
+&gt; 
+&gt; should really be:
+&gt; 
+&gt; if (!(expr.isConstantValueOfTypeAssignableToType(exprType, r)
+&gt; 									|| exprType.isCompatibleWith(r) ||
+&gt; expr.isBoxingCompatible(exprType, r, expr, scope)))
+&gt; 								return FALSE;
+
+Looks like I got confused by that method&apos;s name. I guess instead of isConstantValueOfTypeAssignableToType() I actually wanted isAssignmentCompatible() :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372581</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-03-06 12:29:24 -0500</bug_when>
+    <thetext>Fix and tests here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=fd4885a8e3e73ea3cccc8e028b8c128b958bea94
+
+Thanks Daniel.
+
+Stephan, when you have a moment, please look through the fix, TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372768</commentid>
+    <comment_count>8</comment_count>
+    <who name="Manju Mathew">manju656</who>
+    <bug_when>2014-03-06 23:38:31 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC2 using Kepler SR2 +   
+Eclipse Java Development Tools Patch for Java 8 Support (BETA) 
+1.0.0.v20140306-1935
+
+The code snippet provided in comment 0 compiles and execute using ECJ</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2373398</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-08 13:36:29 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #7)
+&gt; Stephan, when you have a moment, please look through the fix, TIA.
+
+Change looks good.
+
+For polish post GA I filed bug 429940.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

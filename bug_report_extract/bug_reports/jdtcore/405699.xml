@@ -1,0 +1,629 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>405699</bug_id>
+          
+          <creation_ts>2013-04-15 05:23:00 -0400</creation_ts>
+          <short_desc>[ast rewrite] AST Rewrite misses modification in node inside ASTNode.copySubtree(..)</short_desc>
+          <delta_ts>2013-05-02 05:49:48 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.7.2</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Dongqing Hu">dawnstar</reporter>
+          <assigned_to name="Markus Keller">markus_keller</assigned_to>
+          <cc>anchakrk</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2243549</commentid>
+    <comment_count>0</comment_count>
+      <attachid>229713</attachid>
+    <who name="Dongqing Hu">dawnstar</who>
+    <bug_when>2013-04-15 05:23:26 -0400</bug_when>
+    <thetext>Created attachment 229713
+test code
+
+I created a CompilationUnit, call recordModifications() and do some modifications on it,
+and then use CompilationUnit#rewrite(...) to generate changed code.
+
+BUT such modifications come into problem:
+        cu.accept(new ASTVisitor() {
+            @Override
+            public boolean visit(CatchClause node) {
+                if (node.getException().getType().toString().equals(&quot;RemoteException&quot;)) {
+                    AST ast = node.getAST();
+                    CatchClause newCC = (CatchClause) ASTNode.copySubtree(ast, node);
+                    newCC.getException().setType(ast.newSimpleType(ast.newSimpleName(&quot;ServiceApplicationException&quot;))); // This has no effect,  isn&apos;t it recorded?
+                    TryStatement parent = (TryStatement) node.getParent();
+                    parent.catchClauses().add(newCC);
+                }
+                return true;
+            }
+        });
+
+A modification has no effect. So is it normal or a bug?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2243552</commentid>
+    <comment_count>1</comment_count>
+      <attachid>229714</attachid>
+    <who name="Dongqing Hu">dawnstar</who>
+    <bug_when>2013-04-15 05:28:35 -0400</bug_when>
+    <thetext>Created attachment 229714
+sample
+
+I encounter it in 3.7.3
+Not sure about HEAD, because my mvn build failed with information:
+
+Reason: Cannot find layout implementation corresponding to: &apos;p2&apos; for remote repository with id: &apos;orbit&apos;. for project org.eclipse:eclipse-platform-parent
+
+Sorry that I am new to maven. I use a wrapped ant+ivy in daily work.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2243568</commentid>
+    <comment_count>2</comment_count>
+    <who name="Dongqing Hu">dawnstar</who>
+    <bug_when>2013-04-15 06:03:01 -0400</bug_when>
+    <thetext>The test code can print you the different output between toString() and rewrite().
+
+And the indentation of rewritten code is not good, how can it be improved?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244115</commentid>
+    <comment_count>3</comment_count>
+    <who name="Dongqing Hu">dawnstar</who>
+    <bug_when>2013-04-16 01:39:13 -0400</bug_when>
+    <thetext>Can you look into this issue? I&apos;m anxious about it. Thanks in advance.
+
+Latest progress: 
+
+I think &quot;newCC.getException().setType(...)&quot; is recorded as an event, but not consumed in rewrite.
+
+The below shows a snapshot of the event state of InternalASTRewrite in debugging:
+
+Events:
+try {
+  action();
+}
+ catch (RemoteException e) {
+}
+catch (ServiceApplicationException e) {
+}
+ - catchClauses:  [list change
+	 [unchanged]
+	 [inserted: catch (ServiceApplicationException e) {
+}
+]
+]
+
+RemoteException - identifier:  [replaced: MISSING -&gt; RemoteException]
+
+ServiceApplicationException - name:  [replaced: MISSING -&gt; ServiceApplicationException]
+
+e - identifier:  [replaced: MISSING -&gt; e]
+
+RemoteException - name:  [replaced: MISSING -&gt; RemoteException]
+
+catch (ServiceApplicationException e) {
+}
+ - body:  [replaced: {
+}
+ -&gt; {
+}
+]
+
+catch (ServiceApplicationException e) {
+}
+ - exception:  [replaced: int MISSING -&gt; ServiceApplicationException e]
+
+ServiceApplicationException e - varargs:  [unchanged]
+
+ServiceApplicationException e - type:  [replaced: int -&gt; ServiceApplicationException]
+
+ServiceApplicationException e - extraDimensions:  [unchanged]
+
+ServiceApplicationException e - name:  [replaced: MISSING -&gt; e]
+
+ServiceApplicationException - identifier:  [replaced: MISSING -&gt; ServiceApplicationException]</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244152</commentid>
+    <comment_count>4</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-04-16 03:16:34 -0400</bug_when>
+    <thetext>I can reproduce it in HEAD too and see the same behavior as described in comment #3. Looks like the CopyPlaceholderData from the node markers are affecting the rewrite probably because wrong offset. But I am not entirely sure. Of course, if I create a new CatchClause instead of using copySubtree, things work as expected. Any reason why this approach won&apos;t work for you?
+
+Markus, any idea what might be wrong?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244442</commentid>
+    <comment_count>5</comment_count>
+      <attachid>229777</attachid>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-04-16 14:44:04 -0400</bug_when>
+    <thetext>Created attachment 229777
+workaround
+
+&gt;	System.out.println(cu);
+&gt; And the indentation of rewritten code is not good, how can it be improved?
+
+ASTNode#toString() explicitly tells that this representation is only for debugging purposes. There&apos;s no way to serialize a modified AST without losing formatting and line/block comments.
+
+
+&gt; Markus, any idea what might be wrong?
+
+IMHO, the general idea of CompilationUnit#recordModifications() is doomed to fail. The best way to modify an AST is to use an ASTRewrite. I&apos;ve added this to the Javadoc: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=72b6116017ad54924e550f806f31977764727c6d
+
+The code in comment 0 calls ASTNode.copySubtree(..) and then modifies the cloned node. The problem is that NodeInfoStore#markAsCopyTarget(..) creates a CopyPlaceholderData in the &quot;catchClauses().add(newCC)&quot; call. During the rewrite, this overrides all other modifications that have been done on the newCC node.
+
+This reveals a fundamental flaw of the recordModifications() model: ASTNode.copySubtree(..) clones ASTNodes and then tries to do something similar as ASTRewrite#createCopyTarget(..), but the whole masquerade falls down as soon as you run into this conflict:
+- Should the cloned node be copied 1:1, so as to preserve formatting and comments? That&apos;s what the current code does.
+- Or should we give up 1:1 copying as soon as the cloned node or a descendant of it gets modified?
+
+There&apos;s no good answer for that. The attached patch implements the second solution, which is less lossy.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244443</commentid>
+    <comment_count>6</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-04-16 14:45:51 -0400</bug_when>
+    <thetext>The recommended solution for comment 0 is to use two ASTRewrites like this:
+
+final ASTRewrite rewrite = ASTRewrite.create(cu.getAST());
+...
+// HERE
+Document localDoc = new Document(source);
+ASTRewrite localRewrite = ASTRewrite.create(ast);
+SingleVariableDeclaration ex = node.getException();
+SimpleType newType = ast.newSimpleType(ast.newSimpleName(&quot;ServiceApplicationException&quot;));
+localRewrite.set(ex, SingleVariableDeclaration.TYPE_PROPERTY, newType, null);
+ITrackedNodePosition pos = localRewrite.track(node);
+TextEdit localEdits = localRewrite.rewriteAST(localDoc, options);
+try {
+	localEdits.apply(localDoc);
+	String newEx = localDoc.get(pos.getStartPosition(), pos.getLength());
+	ASTNode newCC = rewrite.createStringPlaceholder(newEx, node.getNodeType());
+	TryStatement parent = (TryStatement) node.getParent();
+	rewrite.getListRewrite(parent, TryStatement.CATCH_CLAUSES_PROPERTY).insertLast(newCC, null);
+} catch (Exception e) {
+	// TODO Auto-generated catch block
+	e.printStackTrace();
+}
+// END
+...
+TextEdit edits = rewrite.rewriteAST(document, options);</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244529</commentid>
+    <comment_count>7</comment_count>
+      <attachid>229781</attachid>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-04-16 18:26:25 -0400</bug_when>
+    <thetext>Created attachment 229781
+better workaround
+
+Comment 5 still loses more formatting than necessary, since it dumps all copying on the slightest change. In some cases, we can do better by just replacing the top-level clone operation by clone operations on all children (except for modified children, of course).
+
+This still doesn&apos;t solve all cases, but it&apos;s enough for comment 0.
+
+The patch also fixes the tests (and shows a remaining limitation).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244592</commentid>
+    <comment_count>8</comment_count>
+    <who name="Dongqing Hu">dawnstar</who>
+    <bug_when>2013-04-17 01:26:00 -0400</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; Created attachment 229781 [details]
+&gt; better workaround
+&gt; 
+&gt; Comment 5 still loses more formatting than necessary, since it dumps all
+&gt; copying on the slightest change. In some cases, we can do better by just
+&gt; replacing the top-level clone operation by clone operations on all children
+&gt; (except for modified children, of course).
+&gt; 
+&gt; This still doesn&apos;t solve all cases, but it&apos;s enough for comment 0.
+&gt; 
+&gt; The patch also fixes the tests (and shows a remaining limitation).
+
+Thank you for the workaround! 
+
+I wrote &quot;cu.toString()&quot; in order to show you that the rewrite could not reflect the real state of the AST.
+
+So, is the workaround able to reflect it well?
+
+And the indentation I mentioned is also about the rewrite: 
+		try {
+			action();
+		} catch (RemoteException e) {
+			// do sth
+		} catch (RemoteException e) {
+	// do sth
+}
+
+The copied and inserted code is not indentented well.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244680</commentid>
+    <comment_count>9</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-04-17 06:07:58 -0400</bug_when>
+    <thetext>Removed some code duplication and released workaround to master: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=9115bb8a229c7ea0533ba010d4fd36e981257274
+
+This also solves the indentation problems of cloned nodes and turns the output of comment 0 into the expected:
+
+		try {
+			action();
+		} catch (RemoteException e) {
+			// do sth
+		} catch (ServiceApplicationException e) {
+			// do sth
+		}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250923</commentid>
+    <comment_count>10</comment_count>
+    <who name="ANIRBAN CHAKRABORTY">anchakrk</who>
+    <bug_when>2013-05-01 02:51:29 -0400</bug_when>
+    <thetext>Verified for M7 build I20130428-2000.
+I see that there is difference in prints between #First# and #Second#.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>229713</attachid>
+            <date>2013-04-15 05:23:00 -0400</date>
+            <delta_ts>2013-04-15 05:23:26 -0400</delta_ts>
+            <desc>test code</desc>
+            <filename>RewriteTest.java</filename>
+            <type>text/x-java</type>
+            <size>2368</size>
+            <attacher name="Dongqing Hu">dawnstar</attacher>
+            
+              <data encoding="base64">cGFja2FnZSBzY2Fjb252ZXJ0ZXI7CgppbXBvcnQgamF2YS51dGlsLk1hcDsKCmltcG9ydCBvcmcu
+ZWNsaXBzZS5qZHQuY29yZS5KYXZhQ29yZTsKaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLmRv
+bS5BU1Q7CmltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5kb20uQVNUTm9kZTsKaW1wb3J0IG9y
+Zy5lY2xpcHNlLmpkdC5jb3JlLmRvbS5BU1RQYXJzZXI7CmltcG9ydCBvcmcuZWNsaXBzZS5qZHQu
+Y29yZS5kb20uQVNUVmlzaXRvcjsKaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLmRvbS5DYXRj
+aENsYXVzZTsKaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLmRvbS5Db21waWxhdGlvblVuaXQ7
+CmltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5kb20uU2ltcGxlTmFtZTsKaW1wb3J0IG9yZy5l
+Y2xpcHNlLmpkdC5jb3JlLmRvbS5UcnlTdGF0ZW1lbnQ7CmltcG9ydCBvcmcuZWNsaXBzZS5qZHQu
+Y29yZS5mb3JtYXR0ZXIuRGVmYXVsdENvZGVGb3JtYXR0ZXJDb25zdGFudHM7CmltcG9ydCBvcmcu
+ZWNsaXBzZS5qZmFjZS50ZXh0LkRvY3VtZW50OwppbXBvcnQgb3JnLmVjbGlwc2UudGV4dC5lZGl0
+cy5UZXh0RWRpdDsKCmltcG9ydCBzY2Fjb252ZXJ0ZXIudXRpbC5GaWxlQnVmZmVyZWRSZWFkZXI7
+CgpwdWJsaWMgY2xhc3MgUmV3cml0ZVRlc3QgewoKCXB1YmxpYyBzdGF0aWMgdm9pZCBtYWluKFN0
+cmluZ1tdIGFyZ3MpIHRocm93cyBFeGNlcHRpb24gewoJCUFTVFBhcnNlciBwYXJzZXIgPSBBU1RQ
+YXJzZXIubmV3UGFyc2VyKEFTVC5KTFM0KTsKCQlwYXJzZXIuc2V0S2luZChBU1RQYXJzZXIuS19D
+T01QSUxBVElPTl9VTklUKTsKCQkKCQlNYXA8U3RyaW5nLCBTdHJpbmc+IG9wdGlvbnMgPSBKYXZh
+Q29yZS5nZXRPcHRpb25zKCk7CgkJb3B0aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElMRVJfQ09NUExJ
+QU5DRSwgSmF2YUNvcmUuVkVSU0lPTl8xXzYpOwoJCW9wdGlvbnMucHV0KEphdmFDb3JlLkNPTVBJ
+TEVSX0NPREVHRU5fVEFSR0VUX1BMQVRGT1JNLCBKYXZhQ29yZS5WRVJTSU9OXzFfNik7CgkJb3B0
+aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElMRVJfU09VUkNFLCBKYXZhQ29yZS5WRVJTSU9OXzFfNik7
+CgkJb3B0aW9ucy5wdXQoRGVmYXVsdENvZGVGb3JtYXR0ZXJDb25zdGFudHMuRk9STUFUVEVSX1RB
+Ql9DSEFSLCBKYXZhQ29yZS5TUEFDRSk7CgkJb3B0aW9ucy5wdXQoRGVmYXVsdENvZGVGb3JtYXR0
+ZXJDb25zdGFudHMuRk9STUFUVEVSX1RBQl9TSVpFLCAiMiIpOwoJCXBhcnNlci5zZXRDb21waWxl
+ck9wdGlvbnMob3B0aW9ucyk7CgkJCgkJU3RyaW5nIHNvdXJjZSA9IEZpbGVCdWZmZXJlZFJlYWRl
+ci5yZWFkVG9TdHJpbmcoIlNhbXBsZS5qYXZhIik7CgkJRG9jdW1lbnQgZG9jdW1lbnQgPSBuZXcg
+RG9jdW1lbnQoc291cmNlKTsKCQlwYXJzZXIuc2V0U291cmNlKHNvdXJjZS50b0NoYXJBcnJheSgp
+KTsKCgkJQ29tcGlsYXRpb25Vbml0IGN1ID0gKENvbXBpbGF0aW9uVW5pdCkgcGFyc2VyLmNyZWF0
+ZUFTVChudWxsKTsKCQljdS5yZWNvcmRNb2RpZmljYXRpb25zKCk7CgkJCgkJY3UuYWNjZXB0KG5l
+dyBBU1RWaXNpdG9yKCkgewoJCQlAT3ZlcnJpZGUKCQkJcHVibGljIGJvb2xlYW4gdmlzaXQoQ2F0
+Y2hDbGF1c2Ugbm9kZSkgewoJCQkJaWYgKG5vZGUuZ2V0RXhjZXB0aW9uKCkuZ2V0VHlwZSgpLnRv
+U3RyaW5nKCkuZXF1YWxzKCJSZW1vdGVFeGNlcHRpb24iKSkgewoJCQkJCUFTVCBhc3QgPSBub2Rl
+LmdldEFTVCgpOwoJCQkJCS8vIEhFUkUKCQkJCQlDYXRjaENsYXVzZSBuZXdDQyA9IChDYXRjaENs
+YXVzZSkgQVNUTm9kZS5jb3B5U3VidHJlZShhc3QsIG5vZGUpOwoJCQkJCW5ld0NDLmdldEV4Y2Vw
+dGlvbigpLnNldFR5cGUoYXN0Lm5ld1NpbXBsZVR5cGUoYXN0Lm5ld1NpbXBsZU5hbWUoIlNlcnZp
+Y2VBcHBsaWNhdGlvbkV4Y2VwdGlvbiIpKSk7IC8vIFRoaXMgbGluZSBoYXMgbm8gZWZmZWN0LCAg
+aXNuJ3QgaXQgcmVjb3JkZWQ/CgkJCQkJVHJ5U3RhdGVtZW50IHBhcmVudCA9IChUcnlTdGF0ZW1l
+bnQpIG5vZGUuZ2V0UGFyZW50KCk7CgkJCQkJcGFyZW50LmNhdGNoQ2xhdXNlcygpLmFkZChuZXdD
+Qyk7CgkJCQkJLy8gbm9kZS5kZWxldGUoKTsKCQkJCQkvLyBFTkQKCQkJCX0KCQkJCXJldHVybiB0
+cnVlOwoJCQl9CgkJfSk7CgkJU3lzdGVtLm91dC5wcmludGxuKCIjRmlyc3QjIik7CgkJU3lzdGVt
+Lm91dC5wcmludGxuKGN1KTsKCQlUZXh0RWRpdCBlZGl0cyA9IGN1LnJld3JpdGUoZG9jdW1lbnQs
+IG9wdGlvbnMpOwoJCWVkaXRzLmFwcGx5KGRvY3VtZW50KTsKCQlTdHJpbmcgbmV3U291cmNlID0g
+ZG9jdW1lbnQuZ2V0KCk7CgkJU3lzdGVtLm91dC5wcmludGxuKCIjU2Vjb25kIyIpOwoJCVN5c3Rl
+bS5vdXQucHJpbnRsbihuZXdTb3VyY2UpOwoJfQp9Cg==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>229714</attachid>
+            <date>2013-04-15 05:28:00 -0400</date>
+            <delta_ts>2013-04-15 05:28:35 -0400</delta_ts>
+            <desc>sample</desc>
+            <filename>Sample.java</filename>
+            <type>text/x-java</type>
+            <size>254</size>
+            <attacher name="Dongqing Hu">dawnstar</attacher>
+            
+              <data encoding="base64">cGFja2FnZSBzYW1wbGU7CgppbXBvcnQgamF2YS5ybWkuUmVtb3RlRXhjZXB0aW9uOwoKcHVibGlj
+IGNsYXNzIENvbW1hbmQgewoJCglwdWJsaWMgdm9pZCBydW4oKSB7CgkJdHJ5IHsKCQkJYWN0aW9u
+KCk7CgkJfSBjYXRjaCAoUmVtb3RlRXhjZXB0aW9uIGUpIHsKCQkJLy8gZG8gc3RoCgkJfQoJfQoJ
+CglwdWJsaWMgdm9pZCBhY3Rpb24oKSB0aHJvd3MgUmVtb3RlRXhjZXB0aW9uIHsKCQl0aHJvdyBu
+ZXcgUmVtb3RlRXhjZXB0aW9uKCk7Cgl9Cn0=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>229777</attachid>
+            <date>2013-04-16 14:44:00 -0400</date>
+            <delta_ts>2013-04-16 18:26:25 -0400</delta_ts>
+            <desc>workaround</desc>
+            <filename>eclipse.jdt.core.patch</filename>
+            <type>text/plain</type>
+            <size>1584</size>
+            <attacher name="Markus Keller">markus_keller</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZQpk
+aWZmIC0tZ2l0IGRvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vSW50ZXJuYWxBU1RSZXdyaXRl
+LmphdmEgZG9tL29yZy9lY2xpcHNlL2pkdC9jb3JlL2RvbS9JbnRlcm5hbEFTVFJld3JpdGUuamF2
+YQppbmRleCAwOWNmMmZmLi5hYmRmYmJlIDEwMDY0NAotLS0gZG9tL29yZy9lY2xpcHNlL2pkdC9j
+b3JlL2RvbS9JbnRlcm5hbEFTVFJld3JpdGUuamF2YQorKysgZG9tL29yZy9lY2xpcHNlL2pkdC9j
+b3JlL2RvbS9JbnRlcm5hbEFTVFJld3JpdGUuamF2YQpAQCAtMSw1ICsxLDUgQEAKIC8qKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqCi0gKiBDb3B5cmlnaHQgKGMpIDIwMDQsIDIwMDkgSUJNIENvcnBvcmF0
+aW9uIGFuZCBvdGhlcnMuCisgKiBDb3B5cmlnaHQgKGMpIDIwMDQsIDIwMTMgSUJNIENvcnBvcmF0
+aW9uIGFuZCBvdGhlcnMuCiAgKiBBbGwgcmlnaHRzIHJlc2VydmVkLiBUaGlzIHByb2dyYW0gYW5k
+IHRoZSBhY2NvbXBhbnlpbmcgbWF0ZXJpYWxzCiAgKiBhcmUgbWFkZSBhdmFpbGFibGUgdW5kZXIg
+dGhlIHRlcm1zIG9mIHRoZSBFY2xpcHNlIFB1YmxpYyBMaWNlbnNlIHYxLjAKICAqIHdoaWNoIGFj
+Y29tcGFuaWVzIHRoaXMgZGlzdHJpYnV0aW9uLCBhbmQgaXMgYXZhaWxhYmxlIGF0CkBAIC00NCw2
+ICs0NCw3IEBACiAKIAlwcm90ZWN0ZWQgZmluYWwgUmV3cml0ZUV2ZW50U3RvcmUgZXZlbnRTdG9y
+ZTsKIAlwcm90ZWN0ZWQgZmluYWwgTm9kZUluZm9TdG9yZSBub2RlU3RvcmU7CisJLyoqIEFTVE5v
+ZGUgY2xvbmUgLT4gQVNUTm9kZSBvcmlnaW5hbCAqLyAKIAlwcm90ZWN0ZWQgZmluYWwgSGFzaHRh
+YmxlIGNsb25lZE5vZGVzOwogCiAJaW50IGNsb25lRGVwdGggPSAwOwpAQCAtMTAyLDYgKzEwMywx
+NyBAQAogCX0KIAogCXByaXZhdGUgIHZvaWQgbWFya0FzTW92ZU9yQ29weVRhcmdldChBU1ROb2Rl
+IG5vZGUsIEFTVE5vZGUgbmV3Q2hpbGQpIHsKKwkJaWYodGhpcy5jbG9uZURlcHRoID09IDApIHsK
+KwkJCXdoaWxlIChub2RlICE9IG51bGwgJiYgdGhpcy5jbG9uZWROb2Rlcy5yZW1vdmUobm9kZSkg
+IT0gbnVsbCkgeworCQkJCS8qCisJCQkJICogQSBtb2RpZmllZCBub2RlIGNhbm5vdCBiZSBjb25z
+aWRlcmVkIGFzIGNsb25lZCBhbnkgbW9yZS4KKwkJCQkgKiB3ZSBjYW4ndCBjb3B5IHRoZSBvcmln
+aW5hbCBmb3JtYXR0aW5nL2NvbW1lbnRzIGFuZCBhdCB0aGUgc2FtZSB0aW1lIG1vZGlmeSB0aGUg
+bm9kZS4KKwkJCQkgKiBXb3JrYXJvdW5kIGZvciBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvNDA1
+Njk5IGlzIHRvIHJlbW92ZSBzdWNoIG5vZGVzIGZyb20gY2xvbmVkTm9kZXMuIAorCQkJCSAqLwor
+CQkJCW5vZGUgPSBub2RlLmdldFBhcmVudCgpOworCQkJfQorCQl9CisJCQogCQlBU1ROb2RlIHNv
+dXJjZSA9IChBU1ROb2RlKXRoaXMuY2xvbmVkTm9kZXMuZ2V0KG5ld0NoaWxkKTsKIAkJaWYoc291
+cmNlICE9IG51bGwpIHsKIAkJCWlmKHRoaXMuY2xvbmVEZXB0aCA9PSAwKSB7
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>229781</attachid>
+            <date>2013-04-16 18:26:00 -0400</date>
+            <delta_ts>2013-04-16 18:26:25 -0400</delta_ts>
+            <desc>better workaround</desc>
+            <filename>eclipse.jdt.core.patch</filename>
+            <type>text/plain</type>
+            <size>10231</size>
+            <attacher name="Markus Keller">markus_keller</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZS50
+ZXN0cy5tb2RlbApkaWZmIC0tZ2l0IHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9yZXdy
+aXRlL21vZGlmeWluZy9BU1RSZXdyaXRpbmdNb2RpZnlpbmdDb3B5VGVzdC5qYXZhIHNyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9yZXdyaXRlL21vZGlmeWluZy9BU1RSZXdyaXRpbmdNb2Rp
+ZnlpbmdDb3B5VGVzdC5qYXZhCmluZGV4IGJjM2MyZjYuLmFjNDhhZTYgMTAwNjQ0Ci0tLSBzcmMv
+b3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvcmV3cml0ZS9tb2RpZnlpbmcvQVNUUmV3cml0aW5n
+TW9kaWZ5aW5nQ29weVRlc3QuamF2YQorKysgc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L3Jld3JpdGUvbW9kaWZ5aW5nL0FTVFJld3JpdGluZ01vZGlmeWluZ0NvcHlUZXN0LmphdmEKQEAg
+LTEsNSArMSw1IEBACiAvKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKgotICogQ29weXJpZ2h0IChjKSAy
+MDAwLCAyMDEyIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgorICogQ29weXJpZ2h0IChjKSAy
+MDAwLCAyMDEzIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgogICogQWxsIHJpZ2h0cyByZXNl
+cnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVyaWFscwogICogYXJl
+IG1hZGUgYXZhaWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0aGUgRWNsaXBzZSBQdWJsaWMgTGlj
+ZW5zZSB2MS4wCiAgKiB3aGljaCBhY2NvbXBhbmllcyB0aGlzIGRpc3RyaWJ1dGlvbiwgYW5kIGlz
+IGF2YWlsYWJsZSBhdApAQCAtMjYsNiArMjYsNyBAQAogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5j
+b3JlLmRvbS5FeHByZXNzaW9uOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLmRvbS5FeHBy
+ZXNzaW9uU3RhdGVtZW50OwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLmRvbS5GaWVsZEFj
+Y2VzczsKK2ltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5kb20uSmF2YWRvYzsKIGltcG9ydCBv
+cmcuZWNsaXBzZS5qZHQuY29yZS5kb20uTWV0aG9kRGVjbGFyYXRpb247CiBpbXBvcnQgb3JnLmVj
+bGlwc2UuamR0LmNvcmUuZG9tLk1ldGhvZEludm9jYXRpb247CiBpbXBvcnQgb3JnLmVjbGlwc2Uu
+amR0LmNvcmUuZG9tLk5hbWU7CkBAIC0xMDIsNyArMTAzLDcgQEAKIAl9CiAKIAkvKgotCSAqIEtu
+b3duIGxpbWl0YXRpb246IGEgY29waWVkIG5vZGUgY2Fubm90IGJlIG1vZGlmaWVkLgorCSAqIGh0
+dHBzOi8vYnVncy5lY2xpcHNlLm9yZy80MDU2OTkgOiBtb2RpZnkgYSBjb3BpZWQgbm9kZS4KIAkg
+Ki8KIAlwdWJsaWMgdm9pZCB0ZXN0MDAwMigpIHRocm93cyBFeGNlcHRpb24gewogCQlJUGFja2Fn
+ZUZyYWdtZW50IHBhY2sxPSB0aGlzLnNvdXJjZUZvbGRlci5jcmVhdGVQYWNrYWdlRnJhZ21lbnQo
+InRlc3QwMDAyIiwgZmFsc2UsIG51bGwpOwpAQCAtMTEzLDcgKzExNCw5IEBACiAJCWJ1Zi5hcHBl
+bmQoIlxuIik7CiAJCWJ1Zi5hcHBlbmQoIn1cbiIpOwogCQlidWYuYXBwZW5kKCJjbGFzcyBZIC8q
+Ki8ge1xuIik7CisJCWJ1Zi5hcHBlbmQoIiAgICAvL3ByZVxuIik7CiAJCWJ1Zi5hcHBlbmQoIlxu
+Iik7CisJCWJ1Zi5hcHBlbmQoIiAgICBpbnQgaTsgLy9wb3N0XG4iKTsKIAkJYnVmLmFwcGVuZCgi
+fVxuIik7CiAJCWJ1Zi5hcHBlbmQoImNsYXNzIFoge1xuIik7CiAJCWJ1Zi5hcHBlbmQoIlxuIik7
+CkBAIC0xNDEsMTMgKzE0NCwxNyBAQAogCQlidWYuYXBwZW5kKCJcbiIpOwogCQlidWYuYXBwZW5k
+KCJ9XG4iKTsKIAkJYnVmLmFwcGVuZCgiY2xhc3MgWSAvKiovIHtcbiIpOworCQlidWYuYXBwZW5k
+KCIgICAgLy9wcmVcbiIpOwogCQlidWYuYXBwZW5kKCJcbiIpOworCQlidWYuYXBwZW5kKCIgICAg
+aW50IGk7IC8vcG9zdFxuIik7CiAJCWJ1Zi5hcHBlbmQoIn1cbiIpOwogCQlidWYuYXBwZW5kKCJj
+bGFzcyBaIHtcbiIpOwogCQlidWYuYXBwZW5kKCJcbiIpOwogCQlidWYuYXBwZW5kKCJ9XG4iKTsK
+LQkJYnVmLmFwcGVuZCgiY2xhc3MgWSAvKiovIHtcbiIpOwotCQlidWYuYXBwZW5kKCJcbiIpOwor
+CQlidWYuYXBwZW5kKCJjbGFzcyBBIHtcbiIpOworLy8JCWJ1Zi5hcHBlbmQoIiAgICAvL3ByZVxu
+Iik7IC8vIHdlIGNhbid0IHByZXNlcnZlIGV2ZXJ5dGhpbmcsIGJ1dCB3ZSBkbyBvdXIgYmVzdC4u
+LgorLy8JCWJ1Zi5hcHBlbmQoIlxuIik7CisJCWJ1Zi5hcHBlbmQoIiAgICBpbnQgaTsgLy9wb3N0
+XG4iKTsKIAkJYnVmLmFwcGVuZCgifVxuIik7CiAJCWFzc2VydEVxdWFsU3RyaW5nKHByZXZpZXcs
+IGJ1Zi50b1N0cmluZygpKTsKIAl9CkBAIC01MTYsNTcgKzUyMyw1OCBAQAogCQlhc3NlcnRFcXVh
+bFN0cmluZyhVdGlsLmNvbnZlcnRUb0luZGVwZW5kYW50TGluZURlbGltaXRlcihwcmV2aWV3KSwg
+VXRpbC5jb252ZXJ0VG9JbmRlcGVuZGFudExpbmVEZWxpbWl0ZXIoYnVmLnRvU3RyaW5nKCkpKTsK
+IAl9CiAKLQkvLwlwdWJsaWMgdm9pZCB0ZXN0MDAwNygpIHRocm93cyBFeGNlcHRpb24gewotCS8v
+CQlJUGFja2FnZUZyYWdtZW50IHBhY2sxPSBmU291cmNlRm9sZGVyLmNyZWF0ZVBhY2thZ2VGcmFn
+bWVudCgidGVzdDAwMDciLCBmYWxzZSwgbnVsbCk7Ci0JLy8JCVN0cmluZ0J1ZmZlciBidWY9IG5l
+dyBTdHJpbmdCdWZmZXIoKTsKLQkvLwkJYnVmLmFwcGVuZCgicGFja2FnZSB0ZXN0MDAwNztcbiIp
+OwotCS8vCQlidWYuYXBwZW5kKCJcbiIpOwotCS8vCQlidWYuYXBwZW5kKCJwdWJsaWMgY2xhc3Mg
+WCB7XG4iKTsKLQkvLwkJYnVmLmFwcGVuZCgiICAgIC8qKlxuIik7Ci0JLy8JCWJ1Zi5hcHBlbmQo
+IiAgICAgKiBOT1RISU5HXG4iKTsKLQkvLwkJYnVmLmFwcGVuZCgiICAgICAqL1xuIik7Ci0JLy8J
+CWJ1Zi5hcHBlbmQoIiAgICB2b2lkIGZvbygpIHtcbiIpOwotCS8vCQlidWYuYXBwZW5kKCIgICAg
+XG4iKTsKLQkvLwkJYnVmLmFwcGVuZCgiICAgIH1cbiIpOwotCS8vCQlidWYuYXBwZW5kKCIgICAg
+dm9pZCBiYXIoKSB7XG4iKTsKLQkvLwkJYnVmLmFwcGVuZCgiICAgIFxuIik7Ci0JLy8JCWJ1Zi5h
+cHBlbmQoIiAgICB9XG4iKTsKLQkvLwkJYnVmLmFwcGVuZCgifVxuIik7Ci0JLy8JCUlDb21waWxh
+dGlvblVuaXQgY3U9IHBhY2sxLmNyZWF0ZUNvbXBpbGF0aW9uVW5pdCgiWC5qYXZhIiwgYnVmLnRv
+U3RyaW5nKCksIGZhbHNlLCBudWxsKTsKLQkvLwotCS8vCQlDb21waWxhdGlvblVuaXQgYXN0Um9v
+dD0gcGFyc2VDb21waWxhdGlvblVuaXQoY3UsIGZhbHNlKTsKLQkvLwotCS8vCQlhc3RSb290LnJl
+Y29yZE1vZGlmaWNhdGlvbnMoKTsKLQkvLwotCS8vCQlBU1QgYSA9IGFzdFJvb3QuZ2V0QVNUKCk7
+Ci0JLy8KLQkvLwkJTGlzdCB0eXBlcyA9IGFzdFJvb3QudHlwZXMoKTsKLQkvLwkJVHlwZURlY2xh
+cmF0aW9uIHR5cGVEZWNsYXJhdGlvbiA9IChUeXBlRGVjbGFyYXRpb24pdHlwZXMuZ2V0KDApOwot
+CS8vCQlNZXRob2REZWNsYXJhdGlvbiBtZXRob2REZWNsYXJhdGlvbjEgPSB0eXBlRGVjbGFyYXRp
+b24uZ2V0TWV0aG9kcygpWzBdOwotCS8vCQlNZXRob2REZWNsYXJhdGlvbiBtZXRob2REZWNsYXJh
+dGlvbjIgPSB0eXBlRGVjbGFyYXRpb24uZ2V0TWV0aG9kcygpWzFdOwotCS8vCQlKYXZhZG9jIGph
+dmFkb2MxID0gbWV0aG9kRGVjbGFyYXRpb24xLmdldEphdmFkb2MoKTsKLQkvLwkJSmF2YWRvYyBq
+YXZhZG9jMiA9IChKYXZhZG9jKUFTVE5vZGUuY29weVN1YnRyZWUoYSwgamF2YWRvYzEpOwotCS8v
+CQltZXRob2REZWNsYXJhdGlvbjIuc2V0SmF2YWRvYyhqYXZhZG9jMik7Ci0JLy8KLQkvLwkJU3Ry
+aW5nIHByZXZpZXcgPSBldmFsdWF0ZVJld3JpdGUoY3UsIGFzdFJvb3QpOwotCS8vCi0JLy8JCWJ1
+Zj0gbmV3IFN0cmluZ0J1ZmZlcigpOwotCS8vCQlidWYuYXBwZW5kKCJwYWNrYWdlIHRlc3QwMDA3
+O1xuIik7Ci0JLy8JCWJ1Zi5hcHBlbmQoIlxuIik7Ci0JLy8JCWJ1Zi5hcHBlbmQoInB1YmxpYyBj
+bGFzcyBYIHtcbiIpOwotCS8vCQlidWYuYXBwZW5kKCIgICAgLyoqXG4iKTsKLQkvLwkJYnVmLmFw
+cGVuZCgiICAgICAqIE5PVEhJTkdcbiIpOwotCS8vCQlidWYuYXBwZW5kKCIgICAgICovXG4iKTsK
+LQkvLwkJYnVmLmFwcGVuZCgiICAgIHZvaWQgZm9vKCkge1xuIik7Ci0JLy8JCWJ1Zi5hcHBlbmQo
+IiAgICBcbiIpOwotCS8vCQlidWYuYXBwZW5kKCIgICAgfVxuIik7Ci0JLy8JCWJ1Zi5hcHBlbmQo
+IiAgICAvKipcbiIpOwotCS8vCQlidWYuYXBwZW5kKCIgICAgICogTk9USElOR1xuIik7Ci0JLy8J
+CWJ1Zi5hcHBlbmQoIiAgICAgKi9cbiIpOwotCS8vCQlidWYuYXBwZW5kKCIgICAgdm9pZCBiYXIo
+KSB7XG4iKTsKLQkvLwkJYnVmLmFwcGVuZCgiICAgIFxuIik7Ci0JLy8JCWJ1Zi5hcHBlbmQoIiAg
+ICB9XG4iKTsKLQkvLwkJYnVmLmFwcGVuZCgifVxuIik7Ci0JLy8JCWFzc2VydEVxdWFsU3RyaW5n
+KFV0aWwuY29udmVydFRvSW5kZXBlbmRhbnRMaW5lRGVsaW1pdGVyKHByZXZpZXcpLCBVdGlsLmNv
+bnZlcnRUb0luZGVwZW5kYW50TGluZURlbGltaXRlcihidWYudG9TdHJpbmcoKSkpOwotCS8vCX0K
+KwlwdWJsaWMgdm9pZCB0ZXN0MDAwOSgpIHRocm93cyBFeGNlcHRpb24geworCQlJUGFja2FnZUZy
+YWdtZW50IHBhY2sxPSB0aGlzLnNvdXJjZUZvbGRlci5jcmVhdGVQYWNrYWdlRnJhZ21lbnQoInRl
+c3QwMDA3IiwgZmFsc2UsIG51bGwpOworCQlTdHJpbmdCdWZmZXIgYnVmPSBuZXcgU3RyaW5nQnVm
+ZmVyKCk7CisJCWJ1Zi5hcHBlbmQoInBhY2thZ2UgdGVzdDAwMDc7XG4iKTsKKwkJYnVmLmFwcGVu
+ZCgiXG4iKTsKKwkJYnVmLmFwcGVuZCgicHVibGljIGNsYXNzIFgge1xuIik7CisJCWJ1Zi5hcHBl
+bmQoIiAgICAvKipcbiIpOworCQlidWYuYXBwZW5kKCIgICAgICogTk9USElOR1xuIik7CisJCWJ1
+Zi5hcHBlbmQoIiAgICAgKi9cbiIpOworCQlidWYuYXBwZW5kKCIgICAgdm9pZCBmb28oKSB7XG4i
+KTsKKwkJYnVmLmFwcGVuZCgiICAgIFxuIik7CisJCWJ1Zi5hcHBlbmQoIiAgICB9XG4iKTsKKwkJ
+YnVmLmFwcGVuZCgiICAgIHZvaWQgYmFyKCkge1xuIik7CisJCWJ1Zi5hcHBlbmQoIiAgICBcbiIp
+OworCQlidWYuYXBwZW5kKCIgICAgfVxuIik7CisJCWJ1Zi5hcHBlbmQoIn1cbiIpOworCQlJQ29t
+cGlsYXRpb25Vbml0IGN1PSBwYWNrMS5jcmVhdGVDb21waWxhdGlvblVuaXQoIlguamF2YSIsIGJ1
+Zi50b1N0cmluZygpLCBmYWxzZSwgbnVsbCk7CisKKwkJQVNUUGFyc2VyIGFzdFBhcnNlciA9IEFT
+VFBhcnNlci5uZXdQYXJzZXIoZ2V0SkxTMygpKTsKKwkJYXN0UGFyc2VyLnNldFNvdXJjZShjdSk7
+CisJCUNvbXBpbGF0aW9uVW5pdCBjb21waWxhdGlvblVuaXQgPSAoQ29tcGlsYXRpb25Vbml0KSBh
+c3RQYXJzZXIuY3JlYXRlQVNUKG5ldyBOdWxsUHJvZ3Jlc3NNb25pdG9yKCkpOworCQlBU1QgYXN0
+ID0gY29tcGlsYXRpb25Vbml0LmdldEFTVCgpOworCisJCWNvbXBpbGF0aW9uVW5pdC5yZWNvcmRN
+b2RpZmljYXRpb25zKCk7CisKKwkJTGlzdCB0eXBlcyA9IGNvbXBpbGF0aW9uVW5pdC50eXBlcygp
+OworCQlUeXBlRGVjbGFyYXRpb24gdHlwZURlY2xhcmF0aW9uID0gKFR5cGVEZWNsYXJhdGlvbil0
+eXBlcy5nZXQoMCk7CisJCU1ldGhvZERlY2xhcmF0aW9uIG1ldGhvZERlY2xhcmF0aW9uMSA9IHR5
+cGVEZWNsYXJhdGlvbi5nZXRNZXRob2RzKClbMF07CisJCU1ldGhvZERlY2xhcmF0aW9uIG1ldGhv
+ZERlY2xhcmF0aW9uMiA9IHR5cGVEZWNsYXJhdGlvbi5nZXRNZXRob2RzKClbMV07CisJCUphdmFk
+b2MgamF2YWRvYzEgPSBtZXRob2REZWNsYXJhdGlvbjEuZ2V0SmF2YWRvYygpOworCQlKYXZhZG9j
+IGphdmFkb2MyID0gKEphdmFkb2MpQVNUTm9kZS5jb3B5U3VidHJlZShhc3QsIGphdmFkb2MxKTsK
+KwkJbWV0aG9kRGVjbGFyYXRpb24yLnNldEphdmFkb2MoamF2YWRvYzIpOworCisJCVN0cmluZyBw
+cmV2aWV3ID0gZXZhbHVhdGVSZXdyaXRlKGN1LCBjb21waWxhdGlvblVuaXQpOworCisJCWJ1Zj0g
+bmV3IFN0cmluZ0J1ZmZlcigpOworCQlidWYuYXBwZW5kKCJwYWNrYWdlIHRlc3QwMDA3O1xuIik7
+CisJCWJ1Zi5hcHBlbmQoIlxuIik7CisJCWJ1Zi5hcHBlbmQoInB1YmxpYyBjbGFzcyBYIHtcbiIp
+OworCQlidWYuYXBwZW5kKCIgICAgLyoqXG4iKTsKKwkJYnVmLmFwcGVuZCgiICAgICAqIE5PVEhJ
+TkdcbiIpOworCQlidWYuYXBwZW5kKCIgICAgICovXG4iKTsKKwkJYnVmLmFwcGVuZCgiICAgIHZv
+aWQgZm9vKCkge1xuIik7CisJCWJ1Zi5hcHBlbmQoIiAgICBcbiIpOworCQlidWYuYXBwZW5kKCIg
+ICAgfVxuIik7CisJCWJ1Zi5hcHBlbmQoIiAgICAvKipcbiIpOworCQlidWYuYXBwZW5kKCIgICAg
+ICogTk9USElOR1xuIik7CisJCWJ1Zi5hcHBlbmQoIiAgICAgKi9cbiIpOworCQlidWYuYXBwZW5k
+KCIgICAgdm9pZCBiYXIoKSB7XG4iKTsKKwkJYnVmLmFwcGVuZCgiICAgIFxuIik7CisJCWJ1Zi5h
+cHBlbmQoIiAgICB9XG4iKTsKKwkJYnVmLmFwcGVuZCgifVxuIik7CisJCWFzc2VydEVxdWFsU3Ry
+aW5nKFV0aWwuY29udmVydFRvSW5kZXBlbmRhbnRMaW5lRGVsaW1pdGVyKHByZXZpZXcpLCBVdGls
+LmNvbnZlcnRUb0luZGVwZW5kYW50TGluZURlbGltaXRlcihidWYudG9TdHJpbmcoKSkpOworCX0K
+IH0KI1Agb3JnLmVjbGlwc2UuamR0LmNvcmUKZGlmZiAtLWdpdCBkb20vb3JnL2VjbGlwc2UvamR0
+L2NvcmUvZG9tL0ludGVybmFsQVNUUmV3cml0ZS5qYXZhIGRvbS9vcmcvZWNsaXBzZS9qZHQvY29y
+ZS9kb20vSW50ZXJuYWxBU1RSZXdyaXRlLmphdmEKaW5kZXggMDljZjJmZi4uZjIyZWZhNyAxMDA2
+NDQKLS0tIGRvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vSW50ZXJuYWxBU1RSZXdyaXRlLmph
+dmEKKysrIGRvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vSW50ZXJuYWxBU1RSZXdyaXRlLmph
+dmEKQEAgLTEsNSArMSw1IEBACiAvKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKgotICogQ29weXJpZ2h0
+IChjKSAyMDA0LCAyMDA5IElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgorICogQ29weXJpZ2h0
+IChjKSAyMDA0LCAyMDEzIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgogICogQWxsIHJpZ2h0
+cyByZXNlcnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVyaWFscwog
+ICogYXJlIG1hZGUgYXZhaWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0aGUgRWNsaXBzZSBQdWJs
+aWMgTGljZW5zZSB2MS4wCiAgKiB3aGljaCBhY2NvbXBhbmllcyB0aGlzIGRpc3RyaWJ1dGlvbiwg
+YW5kIGlzIGF2YWlsYWJsZSBhdApAQCAtNDQsNiArNDQsNyBAQAogCiAJcHJvdGVjdGVkIGZpbmFs
+IFJld3JpdGVFdmVudFN0b3JlIGV2ZW50U3RvcmU7CiAJcHJvdGVjdGVkIGZpbmFsIE5vZGVJbmZv
+U3RvcmUgbm9kZVN0b3JlOworCS8qKiBBU1ROb2RlIGNsb25lIC0+IEFTVE5vZGUgb3JpZ2luYWwg
+Ki8gCiAJcHJvdGVjdGVkIGZpbmFsIEhhc2h0YWJsZSBjbG9uZWROb2RlczsKIAogCWludCBjbG9u
+ZURlcHRoID0gMDsKQEAgLTEwMiw2ICsxMDMsNjIgQEAKIAl9CiAKIAlwcml2YXRlICB2b2lkIG1h
+cmtBc01vdmVPckNvcHlUYXJnZXQoQVNUTm9kZSBub2RlLCBBU1ROb2RlIG5ld0NoaWxkKSB7CisJ
+CWlmICh0aGlzLmNsb25lRGVwdGggPT0gMCkgeworCQkJd2hpbGUgKG5vZGUgIT0gbnVsbCAmJiB0
+aGlzLmNsb25lZE5vZGVzLmNvbnRhaW5zS2V5KG5vZGUpKSB7CisJCQkJLyoKKwkJCQkgKiBBIG1v
+ZGlmaWVkIG5vZGUgY2Fubm90IGJlIGNvbnNpZGVyZWQgYXMgY2xvbmVkIGFueSBtb3JlLgorCQkJ
+CSAqIHdlIGNhbid0IGNvcHkgdGhlIG9yaWdpbmFsIGZvcm1hdHRpbmcvY29tbWVudHMgYW5kIGF0
+IHRoZSBzYW1lIHRpbWUgbW9kaWZ5IHRoZSBub2RlLgorCQkJCSAqIFdvcmthcm91bmQgZm9yIGh0
+dHBzOi8vYnVncy5lY2xpcHNlLm9yZy80MDU2OTkgaXMgdG8gcmVtb3ZlIHN1Y2ggbm9kZXMgZnJv
+bSBjbG9uZWROb2RlcworCQkJCSAqIGFuZCBpbnN0ZWFkIG1hcmsgYWxsIGNoaWxkcmVuIGFzIGNs
+b25lZC4gCisJCQkJICovCisJCQkJQVNUTm9kZSBvcmlnID0gKEFTVE5vZGUpIHRoaXMuY2xvbmVk
+Tm9kZXMucmVtb3ZlKG5vZGUpOworCQkJCWlmIChvcmlnICE9IG51bGwpIHsKKwkJCQkJLy8gcmVw
+bGFjZSBjbG9uZWQgbm9kZSBieSBjbG9uZXMgb2YgaXRzIGNoaWxkcmVuIC0tIGJ1dCBub3QgaWYg
+YSBub2RlCisJCQkJCS8vIGhhcyBhbHJlYWR5IGJlZW4gJ3VuY2xvbmVkJyAoc2V0IHRvIG51bGwg
+aW4gY2xvbmVkTm9kZXMpCisJCQkJCUxpc3QgcHJvcGVydGllcyA9IG5vZGUuc3RydWN0dXJhbFBy
+b3BlcnRpZXNGb3JUeXBlKCk7CisJCQkJCWZvciAoaW50IGk9IDA7IGkgPCBwcm9wZXJ0aWVzLnNp
+emUoKTsgaSsrKSB7CisJCQkJCQlTdHJ1Y3R1cmFsUHJvcGVydHlEZXNjcmlwdG9yIHByb3BlcnR5
+ID0gKFN0cnVjdHVyYWxQcm9wZXJ0eURlc2NyaXB0b3IpIHByb3BlcnRpZXMuZ2V0KGkpOworCQkJ
+CQkJT2JqZWN0IGNoaWxkID0gbm9kZS5nZXRTdHJ1Y3R1cmFsUHJvcGVydHkocHJvcGVydHkpOwor
+CQkJCQkJaWYgKGNoaWxkIGluc3RhbmNlb2YgQVNUTm9kZSkgeworCQkJCQkJCUFTVE5vZGUgb3Jp
+Z0NoaWxkID0gKEFTVE5vZGUpIG9yaWcuZ2V0U3RydWN0dXJhbFByb3BlcnR5KHByb3BlcnR5KTsK
+KwkJCQkJCQlpZiAodGhpcy5jbG9uZWROb2Rlcy5jb250YWluc0tleShjaGlsZCkpIHsKKwkJCQkJ
+CQkJQVNUTm9kZSBzb3VyY2UgPSBvcmlnQ2hpbGQ7CisJCQkJCQkJCUFTVE5vZGUgY2xvbmVkQ2hp
+bGQgPSAoQVNUTm9kZSkgY2hpbGQ7CisJCQkJCQkJCVByb3BlcnR5TG9jYXRpb24gcHJvcGVydHlM
+b2NhdGlvbiA9IHRoaXMuZXZlbnRTdG9yZS5nZXRQcm9wZXJ0eUxvY2F0aW9uKHNvdXJjZSwgUmV3
+cml0ZUV2ZW50U3RvcmUuT1JJR0lOQUwpOworCQkJCQkJCQlDb3B5U291cmNlSW5mbyBzb3VyY2VJ
+bmZvID0KKwkJCQkJCQkJCXRoaXMuZXZlbnRTdG9yZS5tYXJrQXNDb3B5U291cmNlKAorCQkJCQkJ
+CQkJCXByb3BlcnR5TG9jYXRpb24uZ2V0UGFyZW50KCksCisJCQkJCQkJCQkJcHJvcGVydHlMb2Nh
+dGlvbi5nZXRQcm9wZXJ0eSgpLAorCQkJCQkJCQkJCXNvdXJjZSwKKwkJCQkJCQkJCQlmYWxzZSk7
+CisJCQkJCQkJCXRoaXMubm9kZVN0b3JlLm1hcmtBc0NvcHlUYXJnZXQoY2xvbmVkQ2hpbGQsIHNv
+dXJjZUluZm8pOworCQkJCQkJCX0JCQkJCQkJCisJCQkJCQl9IGVsc2UgaWYgKGNoaWxkIGluc3Rh
+bmNlb2YgTGlzdCkgeworCQkJCQkJCUxpc3Qgb3JpZ0NoaWxkcmVuID0gKExpc3QpIG9yaWcuZ2V0
+U3RydWN0dXJhbFByb3BlcnR5KHByb3BlcnR5KTsKKwkJCQkJCQlMaXN0IGNoaWxkcmVuID0gKExp
+c3QpIGNoaWxkOworCQkJCQkJCWZvciAoaW50IGo9IDA7IGogPCBjaGlsZHJlbi5zaXplKCk7IGor
+KykgeworCQkJCQkJCQlBU1ROb2RlIG9yaWdDaGlsZCA9IChBU1ROb2RlKSBvcmlnQ2hpbGRyZW4u
+Z2V0KGopOworCQkJCQkJCQlBU1ROb2RlIGNsb25lZENoaWxkID0gKEFTVE5vZGUpIGNoaWxkcmVu
+LmdldChqKTsKKwkJCQkJCQkJaWYgKHRoaXMuY2xvbmVkTm9kZXMuY29udGFpbnNLZXkoY2xvbmVk
+Q2hpbGQpKSB7CisJCQkJCQkJCQlBU1ROb2RlIHNvdXJjZSA9IG9yaWdDaGlsZDsKKwkJCQkJCQkJ
+CVByb3BlcnR5TG9jYXRpb24gcHJvcGVydHlMb2NhdGlvbiA9IHRoaXMuZXZlbnRTdG9yZS5nZXRQ
+cm9wZXJ0eUxvY2F0aW9uKHNvdXJjZSwgUmV3cml0ZUV2ZW50U3RvcmUuT1JJR0lOQUwpOworCQkJ
+CQkJCQkJQ29weVNvdXJjZUluZm8gc291cmNlSW5mbyA9CisJCQkJCQkJCQkJdGhpcy5ldmVudFN0
+b3JlLm1hcmtBc0NvcHlTb3VyY2UoCisJCQkJCQkJCQkJCXByb3BlcnR5TG9jYXRpb24uZ2V0UGFy
+ZW50KCksCisJCQkJCQkJCQkJCXByb3BlcnR5TG9jYXRpb24uZ2V0UHJvcGVydHkoKSwKKwkJCQkJ
+CQkJCQkJc291cmNlLAorCQkJCQkJCQkJCQlmYWxzZSk7CisJCQkJCQkJCQl0aGlzLm5vZGVTdG9y
+ZS5tYXJrQXNDb3B5VGFyZ2V0KGNsb25lZENoaWxkLCBzb3VyY2VJbmZvKTsKKwkJCQkJCQkJfQor
+CQkJCQkJCX0KKwkJCQkJCX0KKwkJCQkJfQorCQkJCX0KKwkJCQkKKwkJCQlub2RlID0gbm9kZS5n
+ZXRQYXJlbnQoKTsKKwkJCX0KKwkJfQorCQkKIAkJQVNUTm9kZSBzb3VyY2UgPSAoQVNUTm9kZSl0
+aGlzLmNsb25lZE5vZGVzLmdldChuZXdDaGlsZCk7CiAJCWlmKHNvdXJjZSAhPSBudWxsKSB7CiAJ
+CQlpZih0aGlzLmNsb25lRGVwdGggPT0gMCkgew==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

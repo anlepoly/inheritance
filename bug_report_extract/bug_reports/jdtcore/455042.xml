@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>455042</bug_id>
+          
+          <creation_ts>2014-12-12 09:54:00 -0500</creation_ts>
+          <short_desc>Enable the Java model caches to recover from IO errors</short_desc>
+          <delta_ts>2015-04-27 05:16:43 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/44153</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Terry Parker">tparker</reporter>
+          <assigned_to name="Terry Parker">tparker</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>eclipse.sprigogin</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="63887"
+          type_id="1"
+          status="+"
+          setter="jarthana"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2496435</commentid>
+    <comment_count>0</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2014-12-12 09:54:03 -0500</bug_when>
+    <thetext>The invalid archive cache is now evicted too infrequently. Since jars can come from network drives and be subject to transient I/O errors, it should be cleared on every build. As it stands now, the previously invalid jar will only get reevaluated if its timestamp changes or if the classpath is modified.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2496478</commentid>
+    <comment_count>1</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2014-12-12 10:53:17 -0500</bug_when>
+    <thetext>Sent up for review: https://git.eclipse.org/r/38155</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2513430</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-03 00:03:22 -0500</bug_when>
+    <thetext>For the records, this is done for a full build, right?
+
+Actually, I would like to know how frequently people run into this. In my development environment I have never seen this, of course, because it&apos;s all part of the eclipse installation.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2516097</commentid>
+    <comment_count>3</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2015-02-09 11:22:40 -0500</bug_when>
+    <thetext>(In reply to Jay Arthanareeswaran from comment #2)
+&gt; For the records, this is done for a full build, right?
+&gt; 
+&gt; Actually, I would like to know how frequently people run into this. In my
+&gt; development environment I have never seen this, of course, because it&apos;s all
+&gt; part of the eclipse installation.
+
+Steps or even a test case would be good.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518902</commentid>
+    <comment_count>4</comment_count>
+      <attachid>250797</attachid>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2015-02-13 19:40:57 -0500</bug_when>
+    <thetext>Created attachment 250797
+invalidArchivesCache marking org.eclipse.core.runtime as invalid</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518903</commentid>
+    <comment_count>5</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2015-02-13 19:43:45 -0500</bug_when>
+    <thetext>(In reply to Dani Megert from comment #3)
+&gt; (In reply to Jay Arthanareeswaran from comment #2)
+&gt; &gt; For the records, this is done for a full build, right?
+&gt; &gt; 
+&gt; &gt; Actually, I would like to know how frequently people run into this. In my
+&gt; &gt; development environment I have never seen this, of course, because it&apos;s all
+&gt; &gt; part of the eclipse installation.
+&gt; 
+&gt; Steps or even a test case would be good.
+
+Since items only get added to the invalid archive cache due to I/O erorrs, steps to reproduce are tough, but I fabricated a way. You can take the attached invalidArchivesCache file, which declares the org.eclipse.core.runtime* jars as invalid, and drop it in your workspace&apos;s .metadata/.plugins/org.eclipse.jdt.core directory before starting Eclipse. In the jdt.core project open JavaCore.java and see that the Platform and Plugin types are now unknown to the reconciler.
+
+Currently the only way to get these values evicted from the cache are to:
+1) Change the classpath, by doing something like going into the Java Build Path preferences and reordering the plug-in&apos;s access rules. 2) Change the timestamp on a jar, which results in a JavaProject.resetResolvedClasspath, which clears all JavaModelManager caches.
+
+These two ways to evict from the cache aren&apos;t sufficient if files got added to the cache due to transient I/O errors. My first patch was based on misinterpreting the red squigglies in the editor as compilation issues, but they are actually coming from the reconciler. So my first patch is bad. I propose instead keeping a timestamp for every path that is added to the invalid archives cache, and on each access to the cache, evicting the path if &quot;N&quot; seconds have elapsed since the path was added. Thoughts? 
+
+BTW, there is a second issue here, in that even evicting items from the cache doesn&apos;t tickle the reconciler to resolve the imports of  types from those jar files. After clearing out the invalid archive cache I expected closing and reopening the editor would resolve the imports, but the reconciler seems to be caching additonal state and only restarting Eclipse helped.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2519043</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-15 06:18:18 -0500</bug_when>
+    <thetext>(In reply to Terry Parker from comment #5)
+&gt; BTW, there is a second issue here, in that even evicting items from the
+&gt; cache doesn&apos;t tickle the reconciler to resolve the imports of  types from
+&gt; those jar files. After clearing out the invalid archive cache I expected
+&gt; closing and reopening the editor would resolve the imports, but the
+&gt; reconciler seems to be caching additonal state and only restarting Eclipse
+&gt; helped.
+
+Sounds like the JavaModelCache might hold some JavaModelCache.NON_EXISTING_JAR_TYPE_INFO in its jarTypeCache?
+That would raise the question how to find those entries in jarTypeCache (indexed by IType) that correspond to a jar that&apos;s being updated from invalid to valid?
+Not sure if updating is supposed to be happening eagerly (when the jar is validated) or lazily (when the IType is accessed for its info).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2534050</commentid>
+    <comment_count>7</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2015-03-19 02:22:09 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #6)
+&gt; (In reply to Terry Parker from comment #5)
+&gt; &gt; BTW, there is a second issue here, in that even evicting items from the
+&gt; &gt; cache doesn&apos;t tickle the reconciler to resolve the imports of  types from
+&gt; &gt; those jar files. After clearing out the invalid archive cache I expected
+&gt; &gt; closing and reopening the editor would resolve the imports, but the
+&gt; &gt; reconciler seems to be caching additonal state and only restarting Eclipse
+&gt; &gt; helped.
+&gt; 
+&gt; Sounds like the JavaModelCache might hold some
+&gt; JavaModelCache.NON_EXISTING_JAR_TYPE_INFO in its jarTypeCache?
+&gt; That would raise the question how to find those entries in jarTypeCache
+&gt; (indexed by IType) that correspond to a jar that&apos;s being updated from
+&gt; invalid to valid?
+&gt; Not sure if updating is supposed to be happening eagerly (when the jar is
+&gt; validated) or lazily (when the IType is accessed for its info).
+
+I abandoned the original patch.
+
+The issue here is similar to bug 162621 &quot;Validation errors do not clear after replacing jar file&quot;. That fix updated the DeltaProcessor to clear JavaProjectElementInfo caches on changes to the timestamp/size of a jar. 
+
+In this case, transient IO errors cause both the JavaProjectElementInfo and invalid archive caches get initialized with invalid jars. Re-reading those jars will succeed, but the invalid archive cache prevents the attempt from being made. The invalid archive cache only evicts items during classpath validations, which are mainly triggered by classpath updates. Even when the invalid archive paths are evicted from the cache, the JavaProjectElementInfo caches hold stale data. Since the timestamps and sizes of the initially invalid jars dont change, the fix for bug 162621 doesnt kick in. The result of these stale caches is that name lookups for symbols in these jars continue to fail, even though the jars are readable.
+
+We propose using time-based eviction of the entries in the invalid archive cache, and clearing the JavaProjectElementInfo caches for affected projects when an item is seen to transition from invalid to valid.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2534058</commentid>
+    <comment_count>8</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-03-19 02:45:08 -0400</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/44153</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2540497</commentid>
+    <comment_count>9</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-04-01 02:49:05 -0400</bug_when>
+    <thetext>(In reply to Terry Parker from comment #7)
+&gt; We propose using time-based eviction of the entries in the invalid archive
+&gt; cache, and clearing the JavaProjectElementInfo caches for affected projects
+&gt; when an item is seen to transition from invalid to valid.
+
+For the records, the patch no longer saves and reloads the invalid archive cache on exit and start respectively, which is okay for me.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2540598</commentid>
+    <comment_count>10</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-04-01 04:44:13 -0400</bug_when>
+    <thetext>Directly released in master:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=9359ba8e380aaa366dda637da6a8c80a24875b62
+
+Thanks Terry for the contribution.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2552067</commentid>
+    <comment_count>11</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-04-27 05:16:43 -0400</bug_when>
+    <thetext>Verified for 4.5 M7 with build I20150426-2000.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>250797</attachid>
+            <date>2015-02-13 19:40:00 -0500</date>
+            <delta_ts>2015-02-13 19:40:57 -0500</delta_ts>
+            <desc>invalidArchivesCache marking org.eclipse.core.runtime as invalid</desc>
+            <filename>invalidArchivesCache</filename>
+            <type>application/octet-stream</type>
+            <size>279</size>
+            <attacher name="Terry Parker">tparker</attacher>
+            
+              <data encoding="base64">AAAAAgBsL3Vzci9sb2NhbC9nb29nbGUvdXNlcnMvdHBhcmtlci9lY2xpcHNlNDUvZWNsaXBzZS9w
+bHVnaW5zL29yZy5lY2xpcHNlLmNvcmUucnVudGltZV8zLjEwLjAudjIwMTUwMTEyLTE0MjIuamFy
+AKMvdXNyL2xvY2FsL2dvb2dsZS91c2Vycy90cGFya2VyL2VjbGlwc2U0NS9lY2xpcHNlL3BsdWdp
+bnMvb3JnLmVjbGlwc2UuY29yZS5ydW50aW1lLmNvbXBhdGliaWxpdHkucmVnaXN0cnlfMy41LjMw
+MC52MjAxNDAxMjgtMDg1MS9ydW50aW1lX3JlZ2lzdHJ5X2NvbXBhdGliaWxpdHkuamFy
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

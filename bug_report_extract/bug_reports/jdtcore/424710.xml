@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>424710</bug_id>
+          
+          <creation_ts>2013-12-28 04:39:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler] CCE in SingleNameReference.localVariableBinding</short_desc>
+          <delta_ts>2014-01-18 14:16:28 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andrey Loskutov">loskutov</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>beders</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2345063</commentid>
+    <comment_count>0</comment_count>
+    <who name="Andrey Loskutov">loskutov</who>
+    <bug_when>2013-12-28 04:39:47 -0500</bug_when>
+    <thetext>Using Eclipse Java Development Tools Patch for Java 8 Support (BETA) 1.0.0.v20131228-0104_BETA_JAVA8
+
+Steps to reproduce:
+
+1 Create empty default 1.8 Java project with wizard
+2 Copy/paste this code (accepted by 1.8 javac) to the src folder:
+
+==============
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
+
+public class MapperTest {
+
+    public static void main( String... argv ){
+        List&lt;String&gt; data = Arrays.asList(&quot;abc&quot;, &quot;123&quot;, &quot;1a&quot;, &quot;?!?&quot;);
+        List&lt;Pattern&gt; patterns = Arrays.asList(Pattern.compile(&quot;[a-z]+&quot;), Pattern.compile(&quot;[0-9]+&quot;));
+		patterns.stream()
+				.flatMap(
+						p -&gt; {
+							Stream&lt;Matcher&gt; map = data.stream().map(p::matcher);
+							Stream&lt;Matcher&gt; filter = map.filter(Matcher::find);
+							Function&lt;? super Matcher, ? extends Object&gt; mapper = Matcher::group;
+							mapper = matcher -&gt; matcher.group();
+							return filter.map(mapper);
+						})
+				.forEach(System.out::println);
+    }
+}
+==============
+
+Exception below will be reported during build:
+
+Error
+Sat Dec 28 10:31:29 CET 2013
+Errors running builder &apos;Java Builder&apos; on project &apos;Java8Examples&apos;.
+
+java.lang.ClassCastException: org.eclipse.jdt.internal.compiler.lookup.ProblemFieldBinding cannot be cast to org.eclipse.jdt.internal.compiler.lookup.LocalVariableBinding
+	at org.eclipse.jdt.internal.compiler.ast.SingleNameReference.localVariableBinding(SingleNameReference.java:849)
+	at org.eclipse.jdt.internal.compiler.ast.Assignment.resolveType(Assignment.java:199)
+	at org.eclipse.jdt.internal.compiler.ast.Expression.resolve(Expression.java:1016)
+	at org.eclipse.jdt.internal.compiler.ast.Block.resolve(Block.java:123)
+	at org.eclipse.jdt.internal.compiler.ast.LambdaExpression.resolveType(LambdaExpression.java:367)
+	at org.eclipse.jdt.internal.compiler.ast.Expression.resolveTypeExpecting(Expression.java:1046)
+	at org.eclipse.jdt.internal.compiler.ast.FunctionalExpression.checkAgainstFinalTargetType(FunctionalExpression.java:140)
+	at org.eclipse.jdt.internal.compiler.ast.ASTNode.resolvePolyExpressionArguments(ASTNode.java:693)
+	at org.eclipse.jdt.internal.compiler.ast.MessageSend.findMethodBinding(MessageSend.java:854)
+	at org.eclipse.jdt.internal.compiler.ast.MessageSend.resolveType(MessageSend.java:683)
+	at org.eclipse.jdt.internal.compiler.ast.MessageSend.resolveType(MessageSend.java:591)
+	at org.eclipse.jdt.internal.compiler.ast.Expression.resolve(Expression.java:1016)
+	at org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration.resolveStatements(AbstractMethodDeclaration.java:620)
+	at org.eclipse.jdt.internal.compiler.ast.MethodDeclaration.resolveStatements(MethodDeclaration.java:303)
+	at org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration.resolve(AbstractMethodDeclaration.java:531)
+	at org.eclipse.jdt.internal.compiler.ast.TypeDeclaration.resolve(TypeDeclaration.java:1209)
+	at org.eclipse.jdt.internal.compiler.ast.TypeDeclaration.resolve(TypeDeclaration.java:1319)
+	at org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration.resolve(CompilationUnitDeclaration.java:570)
+	at org.eclipse.jdt.internal.compiler.Compiler.process(Compiler.java:770)
+	at org.eclipse.jdt.internal.compiler.ProcessTaskManager.run(ProcessTaskManager.java:137)
+	at java.lang.Thread.run(Thread.java:744)
+
+Removing line 20 (mapper = matcher -&gt; matcher.group();) fixes the problem, also changing the lines 19-20 to 
+Function&lt;? super Matcher, ? extends Object&gt; mapper = matcher -&gt; matcher.group();
+fixes the problem too.
+
+The assignment to the local variable doesn&apos;t work here...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2345564</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-01-03 01:59:19 -0500</bug_when>
+    <thetext>Stephan, please take a look. Problem comes from multiple evaluation of the
+lambda expression once in this call stack:
+
+LambdaExpression.resolveType(BlockScope) line: 187	
+LambdaExpression(Expression).resolveTypeExpecting(BlockScope, TypeBinding) line: 1046	
+LambdaExpression(FunctionalExpression).checkAgainstFinalTargetType(TypeBinding) line: 140	
+InferenceContext18.acceptPendingPolyArguments(BoundSet, TypeBinding[], boolean) line: 905	
+InferenceContext18.rebindInnerPolies(BoundSet, TypeBinding[]) line: 847	
+InferenceContext18.rebindInnerPolies(MethodBinding, InvocationSite) line: 833	
+InferenceContext18.inferInvocationType(Invocation, TypeBinding[], ParameterizedGenericMethodBinding) line: 475	
+MethodScope(Scope).inferInvocationType(InvocationSite, MethodBinding, TypeBinding[]) line: 4873	
+MethodScope(Scope).findMethod(ReferenceBinding, char[], TypeBinding[], InvocationSite, boolean) line: 1637	
+MethodScope(Scope).getMethod(TypeBinding, char[], TypeBinding[], InvocationSite) line: 2751	
+MessageSend.findMethodBinding(BlockScope, TypeBinding[], boolean) line: 851	
+MessageSend.resolveType(BlockScope) line: 683	
+MessageSend.resolveType(BlockScope) line: 591	
+MessageSend(Expression).resolve(BlockScope) line: 1016	
+MethodDeclaration(AbstractMethodDeclaration).resolveStatements() line: 620	
+MethodDeclaration.resolveStatements() line: 303	
+MethodDeclaration(AbstractMethodDeclaration).resolve(ClassScope) line: 531	
+TypeDeclaration.resolve() line: 1211	
+
+
+and once more in this:
+
+LambdaExpression.resolveType(BlockScope) line: 187	
+LambdaExpression(Expression).resolveTypeExpecting(BlockScope, TypeBinding) line: 1046	
+LambdaExpression(FunctionalExpression).checkAgainstFinalTargetType(TypeBinding) line: 140	
+ASTNode.resolvePolyExpressionArguments(Invocation, MethodBinding, TypeBinding[]) line: 696	
+MessageSend.findMethodBinding(BlockScope, TypeBinding[], boolean) line: 854	
+MessageSend.resolveType(BlockScope) line: 683	
+MessageSend.resolveType(BlockScope) line: 591	
+MessageSend(Expression).resolve(BlockScope) line: 1016	
+MethodDeclaration(AbstractMethodDeclaration).resolveStatements() line: 620	
+MethodDeclaration.resolveStatements() line: 303	
+MethodDeclaration(AbstractMethodDeclaration).resolve(ClassScope) line: 531	
+TypeDeclaration.resolve() line: 1211</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2346271</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-06 18:13:44 -0500</bug_when>
+    <thetext>Thanks, Srikanth, those stacks were very helpful, pointing me directly to the root cause (need to better distinguish various situations leading to the final resolution of poly expressions - here: as an argument to an inferred outer poly vs as an argument to a standalone expression).
+
+Fix has been released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=16bbff04917b9cd9bd7cceaf4adfc1563daef0bc</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2346272</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-06 18:14:08 -0500</bug_when>
+    <thetext>resolved</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2351508</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-18 14:16:28 -0500</bug_when>
+    <thetext>*** Bug 424906 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

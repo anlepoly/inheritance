@@ -1,0 +1,928 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>383400</bug_id>
+          
+          <creation_ts>2012-06-25 03:50:00 -0400</creation_ts>
+          <short_desc>MediaWikiApiImageFetchingStrategy.java does not fetch all images</short_desc>
+          <delta_ts>2013-11-18 10:25:31 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>14</classification_id>
+          <classification>Mylyn</classification>
+          <product>Mylyn Docs</product>
+          <component>Wikitext</component>
+          <version>1.7</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords>contributed</keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>2.0</target_milestone>
+          <dependson>418964</dependson>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Carsten Hammer">carsten.hammer</reporter>
+          <assigned_to name="Carsten Hammer">carsten.hammer</assigned_to>
+          <cc>david.green</cc>
+    
+    <cc>john_arthorne</cc>
+    
+    <cc>steffen.pingel</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2128475</commentid>
+    <comment_count>0</comment_count>
+    <who name="Carsten Hammer">carsten.hammer</who>
+    <bug_when>2012-06-25 03:50:03 -0400</bug_when>
+    <thetext>Build Identifier: 1.7.0-SNAPSHOT
+
+The mediawiki api limits the amount of entries sent back. You have to query several times to get all files. This is currently not implemented. I provide an implementation:
+
+/*******************************************************************************
+ * Copyright (c) 2007, 2010 David Green and others.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/legal/epl-v10.html
+ *
+ * Contributors:
+ *     David Green - initial API and implementation
+ *******************************************************************************/
+
+package org.eclipse.mylyn.internal.wikitext.mediawiki.core.tasks;
+
+import java.io.BufferedInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+import java.net.MalformedURLException;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
+
+import org.apache.tools.ant.BuildException;
+import org.apache.tools.ant.Project;
+import org.apache.tools.ant.taskdefs.Get;
+import org.eclipse.mylyn.wikitext.core.util.IgnoreDtdEntityResolver;
+import org.xml.sax.Attributes;
+import org.xml.sax.ContentHandler;
+import org.xml.sax.InputSource;
+import org.xml.sax.Locator;
+import org.xml.sax.SAXException;
+import org.xml.sax.XMLReader;
+
+class MediaWikiApiImageFetchingStrategy extends ImageFetchingStrategy {
+
+	private final Pattern imageTitlePattern = Pattern.compile(&quot;(?:Image|File):(.+)&quot;); //$NON-NLS-1$
+
+	private URL url;
+
+	private String pageName;
+
+	@Override
+	public Set&lt;String&gt; fetchImages() {
+		if (pageName == null || pageName.length() == 0) {
+			throw new BuildException(&quot;please specify @pageName&quot;); //$NON-NLS-1$
+		}
+		if (!pageName.equals(pageName.trim())) {
+			throw new BuildException(&quot;@pageName must not have leading or trailing whitespace&quot;); //$NON-NLS-1$
+		}
+
+		String base;
+		try {
+			base = url.toURI().toString();
+		} catch (URISyntaxException e) {
+			throw new BuildException(e);
+		}
+		if (!base.endsWith(&quot;/&quot;)) { //$NON-NLS-1$
+			base += &quot;/&quot;; //$NON-NLS-1$
+		}
+
+		ImageFetchingContentHandler contentHandler = new ImageFetchingContentHandler();
+		String gimcontinue = null;
+		Set&lt;String&gt; filenames = new HashSet&lt;String&gt;();
+		final SAXParserFactory parserFactory = SAXParserFactory.newInstance();
+		parserFactory.setNamespaceAware(true);
+		parserFactory.setValidating(false);
+		do {
+			contentHandler.setGimcontinue(null);
+			URL apiUrl;
+			try {
+				String queryString = String.format(
+						&quot;action=query&amp;titles=%s&amp;generator=images&amp;prop=imageinfo&amp;iiprop=url&amp;format=xml%s&quot;, //$NON-NLS-1$
+						URLEncoder.encode(pageName, &quot;UTF-8&quot;), (gimcontinue == null ? &quot;&quot; : &quot;&amp;gimcontinue=&quot; + URLEncoder.encode(gimcontinue, &quot;UTF-8&quot;))); //$NON-NLS-1$
+				apiUrl = new URL(base + &quot;api.php?&quot; + queryString); //$NON-NLS-1$
+			} catch (Exception e) {
+				throw new BuildException(&quot;Cannot compose API URL&quot;, e); //$NON-NLS-1$
+			}
+
+			Reader input;
+			try {
+				input = new InputStreamReader(new BufferedInputStream(apiUrl.openStream()), &quot;UTF-8&quot;); //$NON-NLS-1$
+			} catch (IOException e) {
+				throw new BuildException(String.format(&quot;Cannot contact %s: %s&quot;, apiUrl, e.getMessage()), e); //$NON-NLS-1$
+			}
+
+			try {
+				SAXParser saxParser = parserFactory.newSAXParser();
+				XMLReader xmlReader = saxParser.getXMLReader();
+				xmlReader.setEntityResolver(IgnoreDtdEntityResolver.getInstance());
+
+				xmlReader.setContentHandler(contentHandler);
+
+				try {
+					xmlReader.parse(new InputSource(input));
+					gimcontinue = contentHandler.getGimcontinue();
+				} catch (IOException e) {
+					throw new BuildException(String.format(&quot;Unexpected exception retrieving data from %s&quot;, apiUrl), e); //$NON-NLS-1$
+				} finally {
+					try {
+						input.close();
+					} catch (IOException e) {
+						// ignore
+					}
+				}
+			} catch (SAXException e) {
+				throw new BuildException(&quot;Unexpected error in XML content&quot;, e); //$NON-NLS-1$
+			} catch (ParserConfigurationException e) {
+				throw new BuildException(&quot;Cannot configure SAX parser&quot;, e); //$NON-NLS-1$
+			}
+
+		} while (gimcontinue != null);
+		int fileCount = 0;
+		for (Map.Entry&lt;String, String&gt; ent : contentHandler.imageTitleToUrl.entrySet()) {
+			String title = ent.getKey();
+			String imageUrl = ent.getValue();
+			Matcher titleMatcher = imageTitlePattern.matcher(title);
+			if (titleMatcher.matches()) {
+				String name = titleMatcher.group(1);
+				name = name.replace(&apos; &apos;, &apos;_&apos;);
+				String qualifiedUrl = base;
+				if (imageUrl.matches(&quot;https?://.*&quot;)) { //$NON-NLS-1$
+					qualifiedUrl = imageUrl;
+				} else {
+					if (imageUrl.startsWith(&quot;/&quot;)) { //$NON-NLS-1$
+						qualifiedUrl += imageUrl.substring(0);
+					} else {
+						qualifiedUrl += imageUrl;
+					}
+				}
+
+				log(&quot;Fetching &quot; + qualifiedUrl, Project.MSG_INFO); //$NON-NLS-1$
+				Get get = new Get();
+				get.setProject(getProject());
+				get.setLocation(getLocation());
+				try {
+					get.setSrc(new URL(qualifiedUrl));
+				} catch (MalformedURLException e) {
+					log(&quot;Skipping &quot; + url + &quot;: &quot; + e.getMessage(), Project.MSG_WARN); //$NON-NLS-1$ //$NON-NLS-2$
+					continue;
+				}
+				get.setDest(new File(dest, name));
+				get.execute();
+
+				filenames.add(name);
+				++fileCount;
+			} else {
+				log(String.format(&quot;Unexpected title format: %s&quot;, title), Project.MSG_WARN); //$NON-NLS-1$
+			}
+		}
+		log(&quot;Fetched &quot; + fileCount + &quot; image files for &quot; + pageName, Project.MSG_INFO); //$NON-NLS-1$ //$NON-NLS-2$
+
+		return filenames;
+	}
+
+	public URL getUrl() {
+		return url;
+	}
+
+	public void setUrl(URL url) {
+		this.url = url;
+	}
+
+	public String getPageName() {
+		return pageName;
+	}
+
+	public void setPageName(String pageName) {
+		this.pageName = pageName;
+	}
+
+	private class ImageFetchingContentHandler implements ContentHandler {
+
+		public void setGimcontinue(String gimcontinue) {
+			this.gimcontinue = gimcontinue;
+		}
+
+		public String getGimcontinue() {
+			return gimcontinue;
+		}
+
+		private final Map&lt;String, String&gt; imageTitleToUrl = new HashMap&lt;String, String&gt;();
+
+		private String currentPage = null;
+
+		private boolean inImageInfo = false;
+
+		private String gimcontinue = null;
+
+		public void startElement(String uri, String localName, String qName, Attributes atts) throws SAXException {
+			if (&quot;page&quot;.equals(localName)) { //$NON-NLS-1$
+				currentPage = atts.getValue(&quot;title&quot;); //$NON-NLS-1$
+			} else if (&quot;images&quot;.equals(localName)) { //$NON-NLS-1$
+				gimcontinue = atts.getValue(&quot;gimcontinue&quot;); //$NON-NLS-1$
+			} else if (&quot;imageinfo&quot;.equals(localName)) { //$NON-NLS-1$
+				inImageInfo = true;
+			} else if (inImageInfo &amp;&amp; &quot;ii&quot;.equals(localName)) { //$NON-NLS-1$
+				imageTitleToUrl.put(currentPage, atts.getValue(&quot;url&quot;)); //$NON-NLS-1$
+			}
+		}
+
+		public void endElement(String uri, String localName, String qName) throws SAXException {
+			if (&quot;page&quot;.equals(localName)) { //$NON-NLS-1$
+				currentPage = null;
+			} else if (&quot;imageinfo&quot;.equals(localName)) { //$NON-NLS-1$
+				inImageInfo = false;
+			}
+		}
+
+		public void characters(char[] ch, int start, int length) throws SAXException {
+		}
+
+		public void endDocument() throws SAXException {
+		}
+
+		public void endPrefixMapping(String prefix) throws SAXException {
+		}
+
+		public void ignorableWhitespace(char[] ch, int start, int length) throws SAXException {
+		}
+
+		public void processingInstruction(String target, String data) throws SAXException {
+		}
+
+		public void setDocumentLocator(Locator locator) {
+		}
+
+		public void skippedEntity(String name) throws SAXException {
+		}
+
+		public void startDocument() throws SAXException {
+		}
+
+		public void startPrefixMapping(String prefix, String uri) throws SAXException {
+		}
+
+	}
+
+}
+
+
+Reproducible: Always
+
+Steps to Reproduce:
+1.create a mediawiki page with more than 10 images while the configured limit is 10 for access through the api
+2.convert the mediawiki page to eclipse help
+3.look at the amount of pulled images</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2130002</commentid>
+    <comment_count>1</comment_count>
+    <who name="Carsten Hammer">carsten.hammer</who>
+    <bug_when>2012-06-27 17:29:20 -0400</bug_when>
+    <thetext>Trying to provide a patch file by dragging from git history does not work as expected. I generates a file too big to be attached for these few lines. Either the eclipse git support is buggy or I do something the wrong way. However commiting to gerrit does not work anyway. So here the diff as shown in eclipse git history:
+
+
+commit e2c6cca966e6d756ec0fc7f75ef76a046fe80e2c
+Author: chammera1a &lt;carsten.hammer@oce.com&gt; 2012-06-27 17:02:51
+Committer: chammera1a &lt;carsten.hammer@oce.com&gt; 2012-06-27 17:37:34
+Parent: 58b45e9c4b8bc1e12f986f7bb8887ae8fb2f5af8 (bug 348237: wikitext doesn&apos;t handle image file names properly  https://bugs.eclipse.org/bugs/show_bug.cgi?id=348237)
+Branches: master
+
+
+
+Change-Id: I56e5f418b8c746f1ddba362142d1d6e34588c4e6
+
+org.eclipse.mylyn.wikitext.mediawiki.core/src/org/eclipse/mylyn/internal/wikitext/mediawiki/core/tasks/MediaWikiApiImageFetchingStrategy.java
+diff --git a/org.eclipse.mylyn.wikitext.mediawiki.core/src/org/eclipse/mylyn/internal/wikitext/mediawiki/core/tasks/MediaWikiApiImageFetchingStrategy.java b/org.eclipse.mylyn.wikitext.mediawiki.core/src/org/eclipse/mylyn/internal/wikitext/mediawiki/core/tasks/MediaWikiApiImageFetchingStrategy.java
+index 2231f57..3c32ca5 100644
+--- a/org.eclipse.mylyn.wikitext.mediawiki.core/src/org/eclipse/mylyn/internal/wikitext/mediawiki/core/tasks/MediaWikiApiImageFetchingStrategy.java
++++ b/org.eclipse.mylyn.wikitext.mediawiki.core/src/org/eclipse/mylyn/internal/wikitext/mediawiki/core/tasks/MediaWikiApiImageFetchingStrategy.java
+@@ -56,7 +56,7 @@
+ 			throw new BuildException(&quot;please specify @pageName&quot;); //$NON-NLS-1$
+ 		}
+ 		if (!pageName.equals(pageName.trim())) {
+-			throw new BuildException(&quot;@pageName must not have leading or training whitespace&quot;); //$NON-NLS-1$
++			throw new BuildException(&quot;@pageName must not have leading or trailing whitespace&quot;); //$NON-NLS-1$
+ 		}
+ 
+ 		String base;
+@@ -69,90 +69,97 @@
+ 			base += &quot;/&quot;; //$NON-NLS-1$
+ 		}
+ 
+-		URL apiUrl;
+-		try {
+-			String queryString = String.format(
+-					&quot;action=query&amp;titles=%s&amp;generator=images&amp;prop=imageinfo&amp;iiprop=url&amp;format=xml&quot;, URLEncoder.encode(pageName, &quot;UTF-8&quot;)); //$NON-NLS-1$ //$NON-NLS-2$
+-			apiUrl = new URL(base + &quot;api.php?&quot; + queryString); //$NON-NLS-1$
+-		} catch (Exception e) {
+-			throw new BuildException(&quot;Cannot compose API URL&quot;, e); //$NON-NLS-1$
+-		}
+-
++		ImageFetchingContentHandler contentHandler = new ImageFetchingContentHandler();
++		String gimcontinue = null;
+ 		Set&lt;String&gt; filenames = new HashSet&lt;String&gt;();
+-
+ 		final SAXParserFactory parserFactory = SAXParserFactory.newInstance();
+ 		parserFactory.setNamespaceAware(true);
+ 		parserFactory.setValidating(false);
++		do {
++			contentHandler.setGimcontinue(null);
++			URL apiUrl;
++			try {
++				String queryString = String.format(
++						&quot;action=query&amp;titles=%s&amp;generator=images&amp;prop=imageinfo&amp;iiprop=url&amp;format=xml%s&quot;, //$NON-NLS-1$
++						URLEncoder.encode(pageName, &quot;UTF-8&quot;), (gimcontinue == null ? &quot;&quot; : &quot;&amp;gimcontinue=&quot; + URLEncoder.encode(gimcontinue, &quot;UTF-8&quot;))); //$NON-NLS-1$
++				apiUrl = new URL(base + &quot;api.php?&quot; + queryString); //$NON-NLS-1$
++			} catch (Exception e) {
++				throw new BuildException(&quot;Cannot compose API URL&quot;, e); //$NON-NLS-1$
++			}
+ 
+-		Reader input;
+-		try {
+-			input = new InputStreamReader(new BufferedInputStream(apiUrl.openStream()), &quot;UTF-8&quot;); //$NON-NLS-1$
+-		} catch (IOException e) {
+-			throw new BuildException(String.format(&quot;Cannot contact %s: %s&quot;, apiUrl, e.getMessage()), e); //$NON-NLS-1$
+-		}
+-		try {
+-			SAXParser saxParser = parserFactory.newSAXParser();
+-			XMLReader xmlReader = saxParser.getXMLReader();
+-			xmlReader.setEntityResolver(IgnoreDtdEntityResolver.getInstance());
+-
+-			ImageFetchingContentHandler contentHandler = new ImageFetchingContentHandler();
+-			xmlReader.setContentHandler(contentHandler);
++			Reader input;
++			try {
++				input = new InputStreamReader(new BufferedInputStream(apiUrl.openStream()), &quot;UTF-8&quot;); //$NON-NLS-1$
++			} catch (IOException e) {
++				throw new BuildException(String.format(&quot;Cannot contact %s: %s&quot;, apiUrl, e.getMessage()), e); //$NON-NLS-1$
++			}
+ 
+ 			try {
+-				xmlReader.parse(new InputSource(input));
+-			} catch (IOException e) {
+-				throw new BuildException(String.format(&quot;Unexpected exception retrieving data from %s&quot;, apiUrl), e); //$NON-NLS-1$
+-			} finally {
++				SAXParser saxParser = parserFactory.newSAXParser();
++				XMLReader xmlReader = saxParser.getXMLReader();
++				xmlReader.setEntityResolver(IgnoreDtdEntityResolver.getInstance());
++
++				xmlReader.setContentHandler(contentHandler);
++
+ 				try {
+-					input.close();
++					xmlReader.parse(new InputSource(input));
++					gimcontinue = contentHandler.getGimcontinue();
+ 				} catch (IOException e) {
+-					// ignore
+-				}
+-			}
+-			int fileCount = 0;
+-			for (Map.Entry&lt;String, String&gt; ent : contentHandler.imageTitleToUrl.entrySet()) {
+-				String title = ent.getKey();
+-				String imageUrl = ent.getValue();
+-				Matcher titleMatcher = imageTitlePattern.matcher(title);
+-				if (titleMatcher.matches()) {
+-					String name = titleMatcher.group(1);
+-					name = name.replace(&apos; &apos;, &apos;_&apos;);
+-					String qualifiedUrl = base;
+-					if (imageUrl.matches(&quot;https?://.*&quot;)) { //$NON-NLS-1$
+-						qualifiedUrl = imageUrl;
+-					} else {
+-						if (imageUrl.startsWith(&quot;/&quot;)) { //$NON-NLS-1$
+-							qualifiedUrl += imageUrl.substring(0);
+-						} else {
+-							qualifiedUrl += imageUrl;
+-						}
+-					}
+-
+-					log(&quot;Fetching &quot; + qualifiedUrl, Project.MSG_INFO); //$NON-NLS-1$
+-					Get get = new Get();
+-					get.setProject(getProject());
+-					get.setLocation(getLocation());
++					throw new BuildException(String.format(&quot;Unexpected exception retrieving data from %s&quot;, apiUrl), e); //$NON-NLS-1$
++				} finally {
+ 					try {
+-						get.setSrc(new URL(qualifiedUrl));
+-					} catch (MalformedURLException e) {
+-						log(&quot;Skipping &quot; + url + &quot;: &quot; + e.getMessage(), Project.MSG_WARN); //$NON-NLS-1$ //$NON-NLS-2$
+-						continue;
++						input.close();
++					} catch (IOException e) {
++						// ignore
+ 					}
+-					get.setDest(new File(dest, name));
+-					get.execute();
+-
+-					filenames.add(name);
+-					++fileCount;
+-				} else {
+-					log(String.format(&quot;Unexpected title format: %s&quot;, title), Project.MSG_WARN); //$NON-NLS-1$
+ 				}
++			} catch (SAXException e) {
++				throw new BuildException(&quot;Unexpected error in XML content&quot;, e); //$NON-NLS-1$
++			} catch (ParserConfigurationException e) {
++				throw new BuildException(&quot;Cannot configure SAX parser&quot;, e); //$NON-NLS-1$
+ 			}
+-			log(&quot;Fetched &quot; + fileCount + &quot; image files for &quot; + pageName, Project.MSG_INFO); //$NON-NLS-1$ //$NON-NLS-2$
+-		} catch (SAXException e) {
+-			throw new BuildException(&quot;Unexpected error in XML content&quot;, e); //$NON-NLS-1$
+-		} catch (ParserConfigurationException e) {
+-			throw new BuildException(&quot;Cannot configure SAX parser&quot;, e); //$NON-NLS-1$
++
++		} while (gimcontinue != null);
++		int fileCount = 0;
++		for (Map.Entry&lt;String, String&gt; ent : contentHandler.imageTitleToUrl.entrySet()) {
++			String title = ent.getKey();
++			String imageUrl = ent.getValue();
++			Matcher titleMatcher = imageTitlePattern.matcher(title);
++			if (titleMatcher.matches()) {
++				String name = titleMatcher.group(1);
++				name = name.replace(&apos; &apos;, &apos;_&apos;);
++				String qualifiedUrl = base;
++				if (imageUrl.matches(&quot;https?://.*&quot;)) { //$NON-NLS-1$
++					qualifiedUrl = imageUrl;
++				} else {
++					if (imageUrl.startsWith(&quot;/&quot;)) { //$NON-NLS-1$
++						qualifiedUrl += imageUrl.substring(0);
++					} else {
++						qualifiedUrl += imageUrl;
++					}
++				}
++
++				log(&quot;Fetching &quot; + qualifiedUrl, Project.MSG_INFO); //$NON-NLS-1$
++				Get get = new Get();
++				get.setProject(getProject());
++				get.setLocation(getLocation());
++				try {
++					get.setSrc(new URL(qualifiedUrl));
++				} catch (MalformedURLException e) {
++					log(&quot;Skipping &quot; + url + &quot;: &quot; + e.getMessage(), Project.MSG_WARN); //$NON-NLS-1$ //$NON-NLS-2$
++					continue;
++				}
++				get.setDest(new File(dest, name));
++				get.execute();
++
++				filenames.add(name);
++				++fileCount;
++			} else {
++				log(String.format(&quot;Unexpected title format: %s&quot;, title), Project.MSG_WARN); //$NON-NLS-1$
++			}
+ 		}
++		log(&quot;Fetched &quot; + fileCount + &quot; image files for &quot; + pageName, Project.MSG_INFO); //$NON-NLS-1$ //$NON-NLS-2$
++
+ 		return filenames;
+ 	}
+ 
+@@ -174,15 +181,27 @@
+ 
+ 	private class ImageFetchingContentHandler implements ContentHandler {
+ 
+-		final Map&lt;String, String&gt; imageTitleToUrl = new HashMap&lt;String, String&gt;();
++		public void setGimcontinue(String gimcontinue) {
++			this.gimcontinue = gimcontinue;
++		}
++
++		public String getGimcontinue() {
++			return gimcontinue;
++		}
++
++		private final Map&lt;String, String&gt; imageTitleToUrl = new HashMap&lt;String, String&gt;();
+ 
+ 		private String currentPage = null;
+ 
+ 		private boolean inImageInfo = false;
+ 
++		private String gimcontinue = null;
++
+ 		public void startElement(String uri, String localName, String qName, Attributes atts) throws SAXException {
+ 			if (&quot;page&quot;.equals(localName)) { //$NON-NLS-1$
+ 				currentPage = atts.getValue(&quot;title&quot;); //$NON-NLS-1$
++			} else if (&quot;images&quot;.equals(localName)) { //$NON-NLS-1$
++				gimcontinue = atts.getValue(&quot;gimcontinue&quot;); //$NON-NLS-1$
+ 			} else if (&quot;imageinfo&quot;.equals(localName)) { //$NON-NLS-1$
+ 				inImageInfo = true;
+ 			} else if (inImageI</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2133936</commentid>
+    <comment_count>2</comment_count>
+    <who name="Carsten Hammer">carsten.hammer</who>
+    <bug_when>2012-07-07 05:27:17 -0400</bug_when>
+    <thetext>I added a patch fixing this as gerrit commit at https://git.eclipse.org/r/#/c/6537/. Is there something wrong with this approach to contribute? Or is there another better way to transfer contributions?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2134558</commentid>
+    <comment_count>3</comment_count>
+    <who name="David Green">david.green</who>
+    <bug_when>2012-07-09 11:47:57 -0400</bug_when>
+    <thetext>Carsten, thanks for posting a review.  I apologize for the slow response on this one.  
+
+Creating a bug referencing a Gerrit review is definitely the best way to provide contributions.  Alternatively you can attach your changes to the bug by creating a patch.  It&apos;s very difficult to grok changes in a comment on a task.
+
+It would be great to have some unit tests for this one.  Consider mocking up some of the components to avoid having to hit a server.
+
+I&apos;ve commented on the review.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2134759</commentid>
+    <comment_count>4</comment_count>
+      <attachid>218470</attachid>
+    <who name="Carsten Hammer">carsten.hammer</who>
+    <bug_when>2012-07-09 18:22:41 -0400</bug_when>
+    <thetext>Created attachment 218470
+change to take into account review</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2134760</commentid>
+    <comment_count>5</comment_count>
+      <attachid>218471</attachid>
+    <who name="Carsten Hammer">carsten.hammer</who>
+    <bug_when>2012-07-09 18:22:44 -0400</bug_when>
+    <thetext>Created attachment 218471
+mylyn/context/zip</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2135354</commentid>
+    <comment_count>6</comment_count>
+    <who name="Carsten Hammer">carsten.hammer</who>
+    <bug_when>2012-07-10 17:44:04 -0400</bug_when>
+    <thetext>I finally created a gerrit review containing your suggestions at https://git.eclipse.org/r/#/c/6710/
+It seems by abandoning a unchanged second patchset at the old gerrit review I abandened not only the patch but the whole review. The gerrit user interface is somewhat confusing in parts.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2136881</commentid>
+    <comment_count>7</comment_count>
+    <who name="David Green">david.green</who>
+    <bug_when>2012-07-13 19:15:19 -0400</bug_when>
+    <thetext>Carsten, can you please answer these questions[1] as a comment on this bug
+
+1. I have authored 100% of the content I&apos;m contributing
+2. I have the rights to donate the content to Eclipse
+3. I contribute the content under the EPL
+
+fn1. http://wiki.eclipse.org/Development_Resources/Handling_Git_Contributions</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2136905</commentid>
+    <comment_count>8</comment_count>
+    <who name="Carsten Hammer">carsten.hammer</who>
+    <bug_when>2012-07-14 05:18:20 -0400</bug_when>
+    <thetext>Hi David,
+
+1. I have authored 100% of the content I&apos;m contributing
+2. I have the rights to donate the content to Eclipse
+3. I contribute the content under the EPL
+
+Best regards,
+Carsten Hammer</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2139857</commentid>
+    <comment_count>9</comment_count>
+    <who name="Carsten Hammer">carsten.hammer</who>
+    <bug_when>2012-07-21 04:22:59 -0400</bug_when>
+    <thetext>Hi David,
+anything else that I have to do to make it possible to merge it into mainstream? I think I dont have the right to do it myself. 
+Best regards,
+Carsten</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2142659</commentid>
+    <comment_count>10</comment_count>
+    <who name="David Green">david.green</who>
+    <bug_when>2012-07-27 10:17:30 -0400</bug_when>
+    <thetext>Carsten, I&apos;ve checked this change manually and it seems to work as expected, however I would like to see some unit tests to verify that it works as expected for responses containing a gimcontinue and responses without.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2291128</commentid>
+    <comment_count>11</comment_count>
+    <who name="David Green">david.green</who>
+    <bug_when>2013-08-02 12:43:05 -0400</bug_when>
+    <thetext>Closed as part of backlog clean-up.  Please re-open if you&apos;d like to see this revisited, perhaps with a contribution.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2321898</commentid>
+    <comment_count>12</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-10-22 16:57:19 -0400</bug_when>
+    <thetext>Reopening since this bug has been confirmed and there appears to be a fix in Gerrit. David, I think it would be good to consider this for the next (service) release.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2323545</commentid>
+    <comment_count>13</comment_count>
+    <who name="David Green">david.green</who>
+    <bug_when>2013-10-25 19:39:51 -0400</bug_when>
+    <thetext>Thanks for the contribution Carsten, sorry this has taken so long to get in.  I&apos;ve merged the review.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2323547</commentid>
+    <comment_count>14</comment_count>
+    <who name="David Green">david.green</who>
+    <bug_when>2013-10-25 19:40:50 -0400</bug_when>
+    <thetext>*** Bug 418964 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2323742</commentid>
+    <comment_count>15</comment_count>
+    <who name="John Arthorne">john_arthorne</who>
+    <bug_when>2013-10-27 16:44:30 -0400</bug_when>
+    <thetext>I grabbed the latest nightly snapshot from Mylyn downloads page and tried but still have the same problem. I&apos;m guess it just hasn&apos;t been picked up by a build yet.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2331349</commentid>
+    <comment_count>16</comment_count>
+    <who name="David Green">david.green</who>
+    <bug_when>2013-11-18 10:25:31 -0500</bug_when>
+    <thetext>John, for a short period there new builds were not being published correctly.  It should be up there now.  Let me know if you have any problems.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>218470</attachid>
+            <date>2012-07-09 18:22:00 -0400</date>
+            <delta_ts>2012-07-09 18:22:41 -0400</delta_ts>
+            <desc>change to take into account review</desc>
+            <filename>ChangeId-I7222e16b9edfda161e34fad37338a35217916c7d.patch</filename>
+            <type>text/plain</type>
+            <size>2686</size>
+            <attacher name="Carsten Hammer">carsten.hammer</attacher>
+            
+              <data encoding="base64">RnJvbSBhZmU2ZTkyOTEwOWY2Mjk1N2RiNmEzZGNlYjE2MWEzOTQyNzkxZjdmIFR1ZSwgMTAgSnVs
+IDIwMTIgMDA6MjE6NTIgKzAyMDAKRnJvbTogY2Fyc3RlbiBoYW1tZXIgPGNhcnN0ZW4uaGFtbWVy
+QG9jZS5jb20+CkRhdGU6IFR1ZSwgMTAgSnVsIDIwMTIgMDA6MDM6NDQgKzAyMDAKU3ViamVjdDog
+W1BBVENIXSBDaGFuZ2UtSWQ6IEk3MjIyZTE2YjllZGZkYTE2MWUzNGZhZDM3MzM4YTM1MjE3OTE2
+YzdkCgoKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLm15bHluLndpa2l0ZXh0Lm1lZGlhd2lraS5j
+b3JlL3NyYy9vcmcvZWNsaXBzZS9teWx5bi9pbnRlcm5hbC93aWtpdGV4dC9tZWRpYXdpa2kvY29y
+ZS90YXNrcy9NZWRpYVdpa2lBcGlJbWFnZUZldGNoaW5nU3RyYXRlZ3kuamF2YSBiL29yZy5lY2xp
+cHNlLm15bHluLndpa2l0ZXh0Lm1lZGlhd2lraS5jb3JlL3NyYy9vcmcvZWNsaXBzZS9teWx5bi9p
+bnRlcm5hbC93aWtpdGV4dC9tZWRpYXdpa2kvY29yZS90YXNrcy9NZWRpYVdpa2lBcGlJbWFnZUZl
+dGNoaW5nU3RyYXRlZ3kuamF2YQppbmRleCAzYzMyY2E1Li5lZmFhMmQwIDEwMDY0NAotLS0gYS9v
+cmcuZWNsaXBzZS5teWx5bi53aWtpdGV4dC5tZWRpYXdpa2kuY29yZS9zcmMvb3JnL2VjbGlwc2Uv
+bXlseW4vaW50ZXJuYWwvd2lraXRleHQvbWVkaWF3aWtpL2NvcmUvdGFza3MvTWVkaWFXaWtpQXBp
+SW1hZ2VGZXRjaGluZ1N0cmF0ZWd5LmphdmEKKysrIGIvb3JnLmVjbGlwc2UubXlseW4ud2lraXRl
+eHQubWVkaWF3aWtpLmNvcmUvc3JjL29yZy9lY2xpcHNlL215bHluL2ludGVybmFsL3dpa2l0ZXh0
+L21lZGlhd2lraS9jb3JlL3Rhc2tzL01lZGlhV2lraUFwaUltYWdlRmV0Y2hpbmdTdHJhdGVneS5q
+YXZhCkBAIC0xLDUgKzEsNSBAQAogLyoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioKLSAqIENvcHlyaWdo
+dCAoYykgMjAwNywgMjAxMCBEYXZpZCBHcmVlbiBhbmQgb3RoZXJzLgorICogQ29weXJpZ2h0IChj
+KSAyMDA3LCAyMDEyIERhdmlkIEdyZWVuIGFuZCBvdGhlcnMuCiAgKiBBbGwgcmlnaHRzIHJlc2Vy
+dmVkLiBUaGlzIHByb2dyYW0gYW5kIHRoZSBhY2NvbXBhbnlpbmcgbWF0ZXJpYWxzCiAgKiBhcmUg
+bWFkZSBhdmFpbGFibGUgdW5kZXIgdGhlIHRlcm1zIG9mIHRoZSBFY2xpcHNlIFB1YmxpYyBMaWNl
+bnNlIHYxLjAKICAqIHdoaWNoIGFjY29tcGFuaWVzIHRoaXMgZGlzdHJpYnV0aW9uLCBhbmQgaXMg
+YXZhaWxhYmxlIGF0CkBAIC03NSw2ICs3NSw3IEBACiAJCWZpbmFsIFNBWFBhcnNlckZhY3Rvcnkg
+cGFyc2VyRmFjdG9yeSA9IFNBWFBhcnNlckZhY3RvcnkubmV3SW5zdGFuY2UoKTsKIAkJcGFyc2Vy
+RmFjdG9yeS5zZXROYW1lc3BhY2VBd2FyZSh0cnVlKTsKIAkJcGFyc2VyRmFjdG9yeS5zZXRWYWxp
+ZGF0aW5nKGZhbHNlKTsKKwkJaW50IG1heGxvb3AgPSAxMDA7CiAJCWRvIHsKIAkJCWNvbnRlbnRI
+YW5kbGVyLnNldEdpbWNvbnRpbnVlKG51bGwpOwogCQkJVVJMIGFwaVVybDsKQEAgLTExOSw3ICsx
+MjAsNyBAQAogCQkJCXRocm93IG5ldyBCdWlsZEV4Y2VwdGlvbigiQ2Fubm90IGNvbmZpZ3VyZSBT
+QVggcGFyc2VyIiwgZSk7IC8vJE5PTi1OTFMtMSQKIAkJCX0KIAotCQl9IHdoaWxlIChnaW1jb250
+aW51ZSAhPSBudWxsKTsKKwkJfSB3aGlsZSAoZ2ltY29udGludWUgIT0gbnVsbCAmJiBtYXhsb29w
+LS0gPiAwKTsKIAkJaW50IGZpbGVDb3VudCA9IDA7CiAJCWZvciAoTWFwLkVudHJ5PFN0cmluZywg
+U3RyaW5nPiBlbnQgOiBjb250ZW50SGFuZGxlci5pbWFnZVRpdGxlVG9VcmwuZW50cnlTZXQoKSkg
+ewogCQkJU3RyaW5nIHRpdGxlID0gZW50LmdldEtleSgpOwpAQCAtMTgxLDE0ICsxODIsNiBAQAog
+CiAJcHJpdmF0ZSBjbGFzcyBJbWFnZUZldGNoaW5nQ29udGVudEhhbmRsZXIgaW1wbGVtZW50cyBD
+b250ZW50SGFuZGxlciB7CiAKLQkJcHVibGljIHZvaWQgc2V0R2ltY29udGludWUoU3RyaW5nIGdp
+bWNvbnRpbnVlKSB7Ci0JCQl0aGlzLmdpbWNvbnRpbnVlID0gZ2ltY29udGludWU7Ci0JCX0KLQot
+CQlwdWJsaWMgU3RyaW5nIGdldEdpbWNvbnRpbnVlKCkgewotCQkJcmV0dXJuIGdpbWNvbnRpbnVl
+OwotCQl9Ci0KIAkJcHJpdmF0ZSBmaW5hbCBNYXA8U3RyaW5nLCBTdHJpbmc+IGltYWdlVGl0bGVU
+b1VybCA9IG5ldyBIYXNoTWFwPFN0cmluZywgU3RyaW5nPigpOwogCiAJCXByaXZhdGUgU3RyaW5n
+IGN1cnJlbnRQYWdlID0gbnVsbDsKQEAgLTE5Nyw2ICsxOTAsMTQgQEAKIAogCQlwcml2YXRlIFN0
+cmluZyBnaW1jb250aW51ZSA9IG51bGw7CiAKKwkJcHVibGljIHZvaWQgc2V0R2ltY29udGludWUo
+U3RyaW5nIGdpbWNvbnRpbnVlKSB7CisJCQl0aGlzLmdpbWNvbnRpbnVlID0gZ2ltY29udGludWU7
+CisJCX0KKworCQlwdWJsaWMgU3RyaW5nIGdldEdpbWNvbnRpbnVlKCkgeworCQkJcmV0dXJuIGdp
+bWNvbnRpbnVlOworCQl9CisKIAkJcHVibGljIHZvaWQgc3RhcnRFbGVtZW50KFN0cmluZyB1cmks
+IFN0cmluZyBsb2NhbE5hbWUsIFN0cmluZyBxTmFtZSwgQXR0cmlidXRlcyBhdHRzKSB0aHJvd3Mg
+U0FYRXhjZXB0aW9uIHsKIAkJCWlmICgicGFnZSIuZXF1YWxzKGxvY2FsTmFtZSkpIHsgLy8kTk9O
+LU5MUy0xJAogCQkJCWN1cnJlbnRQYWdlID0gYXR0cy5nZXRWYWx1ZSgidGl0bGUiKTsgLy8kTk9O
+LU5MUy0xJA==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>218471</attachid>
+            <date>2012-07-09 18:22:00 -0400</date>
+            <delta_ts>2012-07-09 18:22:44 -0400</delta_ts>
+            <desc>mylyn/context/zip</desc>
+            <filename>mylyn-context.zip</filename>
+            <type>application/octet-stream</type>
+            <size>9854</size>
+            <attacher name="Carsten Hammer">carsten.hammer</attacher>
+            
+              <data encoding="base64">UEsDBBQACAgIANYC6kAAAAAAAAAAAAAAAAAwAAAAaHR0cHMlM0ElMkYlMkZidWdzLmVjbGlwc2Uu
+b3JnJTJGYnVncy0zODM0MDAueG1s7V1rj9zIdf0rwiyQb6ohi+9ey0Ygyw8EedhrJx8WCDCR2nKv
+RyNhprXZRYD97SHZ7GlW9W12D5tVdQ95B0HgjCXlnqpi1X2ce+6vfvPTp/tXP64fnzafH97cxCq6
+ebV+eP/5w+bh45ubv/7ld6/Lm9/8+ld/fNiuH+/eb+s/9IfN0/bz48+v/vjhzc3ft9svT6vb2//5
++vFJrd/fb748rdXnx4/tL14nZZJG9b/3n8//+o3xL737cf2wffXb9f327s3Nw9f7+5tX7x4+/PZu
+u35zo6NYv46K13H0KopWcbJKS1Vmyau37777y82r9h9ZP207g/9l81Ab8+Xx85e7j3fNv3zz6t/u
+ftzs/vObm9qgZ+M+/Xz/84N6//mx/o+fP6zv1frDx/VT/YuH7d3m4VNt0M2rf3/cfNw8NPgG/+am
+M0IZ/4+/2949bi/B8N328ev77dfH9R/uHj7c13/8tve7HaL6X//89fH9+ub2xesWVa90ssr0KqpU
+pjPIdaMxuF23bq/0Kk1Unsej1m33T9Or8cOHrfq6UW8/f/qyuW///F8fNtt3Hzb1NzV0eCyDjhfh
+eMn/d/OPzXb901Z9Wn/Y3DX/V7sLt0+P75s/fdv96dv2T9+2u/Jwd3+7/2u3z3/ttv1r27unfzzd
+/mvzy/+qf/nPXzZ//HT3cf279fb93+vLoraotvvjz+qHux/vpt+RKF3FkdJJwWVHbINC7cj0l0Za
+rLJKFTnwnWFBmHxvpj/fOl7p+gNnc7wte+ZwurubtAWWJRXk8aYxTLA7Tq4RHalCj7tHJj3StEFz
+ONPGdTfoHT+t79fvfa1z35qjZX7zomX+p7tPX7693357/Jf2q33qb6t2tf/vMo/l+7N/7Hvjt2/r
+r7zenh2mx6MtbZ2g0b5OUv+P0jHmC0xjAHiCI73SlcqzCHnZLQwe7jgnG1EHO1WBGbXSGDA3Qi6i
+6159N1sSq3TklriIgy2DFpSZ2Lk7SbqKc5UMpopq07bO/S7LkNB+1wv2YKS31OUHk5UuVRGXkJcU
+jYFZQGdmvKBfAwvDhLeVuyy05nLX2wbNIYJ+fsXiVGWYdwgJgenJ7p6qYhVn6vhcR6pqfxL2a07h
+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
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

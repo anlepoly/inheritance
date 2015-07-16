@@ -1,0 +1,384 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>425687</bug_id>
+          
+          <creation_ts>2014-01-14 12:36:00 -0500</creation_ts>
+          <short_desc>Invalid annotation inference when 2 classes have the same (simple) name</short_desc>
+          <delta_ts>2014-04-29 04:55:59 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>APT</component>
+          <version>4.3.1</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Fred Bricon">fbricon</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>andre.dietisheim</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2349586</commentid>
+    <comment_count>0</comment_count>
+      <attachid>238978</attachid>
+    <who name="Fred Bricon">fbricon</who>
+    <bug_when>2014-01-14 12:36:16 -0500</bug_when>
+    <thetext>Created attachment 238978
+Project reproducing the bug
+
+In the Wildfly project, the CacheGroupService class is annotated with @Listener, from the Infinispan project (org.infinispan.notifications.Listener)[1]. CacheGroupService implements org.wildfly.clustering.group.Group, which itself defines an inner interface named Listener[2]
+
+When JDT APT is enabled, there&apos;s a compilation error appearing on CacheGroupService[3] : Type mismatch: cannot convert from Group.Listener to Annotation
+
+Without APT enabled, there&apos;s no error.
+
+I managed to reproduce the issue with a simpler setup (attached). Unzip and import as an eclipse project. You&apos;ll see an error on test.Foo, annotated with @Something from the annotation package. Foo extends SomeClassDeclaringSomethingToo. Disabling APT makes the error go away. 
+
+[1] https://github.com/wildfly/wildfly/blob/5670d12b5576d2695f9af7114e548805c87d302e/clustering/server/src/main/java/org/wildfly/clustering/server/group/CacheGroupService.java#L32
+[2] https://github.com/wildfly/wildfly/blob/5670d12b5576d2695f9af7114e548805c87d302e/clustering/api/src/main/java/org/wildfly/clustering/group/Group.java#L32
+[3] http://i.imgur.com/hRor2Gd.png</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2349883</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-01-15 06:50:10 -0500</bug_when>
+    <thetext>Thanks for the testcase. I can reproduce it in 4.3.1. Here&apos;s a quick analysis of what&apos;s going on:
+
+ For some reason, before calling ASTNode#resolveAnnotations(), we flip the MethodScope.insideTypeAnnotation and reset it back to the old self after resolving annotations.
+
+ This flag is later used in Scope.getTypeOrPackage() in deciding to prioritize member types over others. Look for the following comment:
+
+ // member types take precedence over type variables
+
+We seem to be doing this for all resolveAnnotations() invocations, except from AnnotationDiscoveryVisitor, which gets invoked when APT is enabled. Looking at the uniform use of this flag across all other places, I guess we need to put code like we have inside SourceTypeBinding.getAnnotationTagBits().</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2350003</commentid>
+    <comment_count>2</comment_count>
+      <attachid>239015</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-01-15 09:47:28 -0500</bug_when>
+    <thetext>Created attachment 239015
+Proposed fix
+
+Patch with test. This is a straight forward fix, though I haven&apos;t tested the patch extensively. Will take this up later during the week and see if I can push this for M5.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2383495</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-04-02 08:50:58 -0400</bug_when>
+    <thetext>Released in master via:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=b254baac66bf2889dacf5067873dc414e39763d4</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394501</commentid>
+    <comment_count>4</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-04-29 04:55:59 -0400</bug_when>
+    <thetext>Verified for Eclipse Luna 4.4 M7 Build id: I20140428-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>238978</attachid>
+            <date>2014-01-14 12:36:00 -0500</date>
+            <delta_ts>2014-01-14 12:36:16 -0500</delta_ts>
+            <desc>Project reproducing the bug</desc>
+            <filename>AptBug.zip</filename>
+            <type>application/x-zip-compressed</type>
+            <size>8624</size>
+            <attacher name="Fred Bricon">fbricon</attacher>
+            
+              <data encoding="base64">UEsDBBQAAAAAAFWQLkQAAAAAAAAAAAAAAAAHAAAAQXB0QnVnL1BLAwQUAAAAAACZXJRDAAAAAAAA
+AAAAAAAAFgAAAEFwdEJ1Zy8uYXB0X2dlbmVyYXRlZC9QSwMEFAAAAAgAL5AuRIiCal/wAAAAxAEA
+ABEAAABBcHRCdWcvLmNsYXNzcGF0aI2PQUsDMRCFzxX8D0vuzdqLeOhaRFawYIV29Vpmk2EbTSch
+mSz235utFluh0Nu8x3sz30xnX1tb9BiicVSJibwRBZJy2lBXibfmaXwnZvfXV1NlIUYPvMli9KeQ
+OOyKT0O6EjEoUQzmz1ieTypHh6QLnURljY8oPzRLC4nUJl+X82W9fnxdNA/Pi3pZ/s8ZYgwEVmps
+UyeT+W1ikCsG0hD0+0uz81jOoYdVPZ7IW1FeBC/B87pDwgCMWgyd0RSYg2kTYxz0sVEQbDE/4tm4
+DCSKHmzKBoeE+eK+XZ7Usz5lOI/lEvvEB7LW0H7jUT+rb1BLAwQUAAAACAClkC5EPheR1ZwAAAAM
+AQAAEwAAAEFwdEJ1Zy8uZmFjdG9yeXBhdGiNj00KwjAUhPeeImTf5AKt0G6k/lEUcZ2mr21qTMLL
+K9LbG3ChbsRZzQwDH5P3SpPHJSga1yuW9NmAI1zYzbiu4M3+sqmPnJnkPQ4CtDUhgpgiiUcUyjlP
+iox3UWiPwBk41VpIa8I5RZxd7SpFejz4DgreKxuBy9/Q6+7cbMvTiyrLQNU8SGtaeV+yNzEL6DXE
+6FFMCv8n5/Lr/RNQSwMEFAAAAAgAEpAuRHYgtA++AAAAfgEAAA8AAABBcHRCdWcvLnByb2plY3R9
+kDkOwjAQRWuQuEOUnhg6CicRi7gAcADjjCJH8SIvEcfHGwqLROV53zPzv43bBx+LCbRhUtTlttqU
+BQgqOyb6urxdz+td2TarJVZaDkDtCQzVTFnf7dUFFoRDs1f24HqMAkSVSs5B2AajXAX1tcJEQB90
+d2zsLgpooIxHP0pEF5VsJHVfAR2ZMlANna2o1L4gE4kDoFOEPEF074K3yYzehcBfLlGZYwRL6zTE
+7gx/EqR7jNKZ1s0L4nN//+8JUEsDBBQAAAAAAFWQLkQAAAAAAAAAAAAAAAARAAAAQXB0QnVnLy5z
+ZXR0aW5ncy9QSwMEFAAAAAgAMY8uRLUePjxcAAAAnQAAAC8AAABBcHRCdWcvLnNldHRpbmdzL29y
+Zy5lY2xpcHNlLmpkdC5hcHQuY29yZS5wcmVmc23MywmAMBRE0b1gKwELyE4rsACJL6NEwkuYROv3
+Ay4EF7O4cBhIDLnAZGIBoYJiDrCEpLZrm8TVvGTz1bj8bFA3R3hbueMfrdCR0gfaO6crQVfh/zUh
+SSVEfI9PUEsDBBQAAAAIAC+QLkR16IZMTAAAAFkAAAArAAAAQXB0QnVnLy5zZXR0aW5ncy9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS5wcmVmczXLMQ6AIAxG4Z2EqzTxAAweBeHXYLAlbeP57eLypvehzbEM
+tBQnFNxg9EJtCJctJ9GL/uXuTk0UkWeNCQ0k8dvOLF49iBVwPSZ6Th9QSwMEFAAAAAgAEpAuRDV1
+19lNAAAAXwAAADQAAABBcHRCdWcvLnNldHRpbmdzL29yZy5qYm9zcy5pZGUuZWNsaXBzZS5hcy5j
+b3JlLnByZWZzRcrLCYAwEATQeyCtLFhAOrCJfMawErJhRwS79yTe3uGhDl2ELMcBx6yg3HCqzbTF
+YN7lLEaKNsiXM6WaQ6izDzSsYU8uA/JzV14phhdQSwMEFAAAAAAAtJAuRAAAAAAAAAAAAAAAAAsA
+AABBcHRCdWcvYmluL1BLAwQUAAAAAAC0kC5EAAAAAAAAAAAAAAAAFwAAAEFwdEJ1Zy9iaW4vYW5u
+b3RhdGlvbnMvUEsDBBQAAAAIALSQLkTDwMKheAAAAJYAAAAmAAAAQXB0QnVnL2Jpbi9hbm5vdGF0
+aW9ucy9Tb21ldGhpbmcuY2xhc3NFTDsOgzAU86OftB2qLp27dWyGnqBLVwZO8EARBMGLBIHDMXAA
+DoUIC1jyR5bsaR5GAF9cFSLCk0WcZ2+dtDpxtfGFlVzhSHiU3LOuWHIdp6XJvMKZ8Nrbfap/WyTc
+Etc1mfnbyhDu2+dnHb4JhEPgCQHBVdAIlwVQSwMEFAAAAAAAtJAuRAAAAAAAAAAAAAAAABIAAABB
+cHRCdWcvYmluL290aGVycy9QSwMEFAAAAAgAtJAuRLApRUaWAAAA9AAAAEAAAABBcHRCdWcvYmlu
+L290aGVycy9Tb21lQ2xhc3NEZWNsYXJpbmdTb21ldGhpbmdUb28kU29tZXRoaW5nLmNsYXNzjU47
+DsIwDH0u0NDCwB2AlQwcAYTExFAuECqrH4VESgKHY+AAHArRFKkjwoPtZ7/39F7vxxPAFjOBhCBt
+qNl5Wdgr77Tyfs+lVq4xVbyEulvO1q4GIDAmLFp1V1IrU8nTpeUyEPLC3lzJh0YzYfnbbRPlhPnR
+GHY9jb1ARlj/FYaQDTAlEEb4VoJJ31OIbuaIvynyNPsAUEsDBBQAAAAIALSQLkQ1SA9L+gAAAKkB
+AAA2AAAAQXB0QnVnL2Jpbi9vdGhlcnMvU29tZUNsYXNzRGVjbGFyaW5nU29tZXRoaW5nVG9vLmNs
+YXNzjU/NSsNAEP6mTRMTo63VFxAVfw7m4FHxUhGEoIeW3jdxaFPSXdhNfS9PggcfwIcSZ6P0WLrL
+fDPf/PDNfP98fgG4wVGEDuHMNHO2LhubJY9q5dwDl7WylZ75TDOXYGJMhIAwWKg3ldVKz7KXYsFl
+QwjvKl0194TuxeWUEIzMKyfoIk7RQ0jo55Xm59WyYDtRRc2EYW5KVU9FwfP/ZCA6jnCeb7XMLSEZ
+m5Ut+bHy0yeb26/92oT0SWu2bRu7CENCtpXa6ZoQ4nWMY5Dc6R/Jl2MFI2GZ5+J7Vx/YeZegg0Qw
+9EkZ2BVM/xrE77X1/Rb7GIhPpHYgdhjGv1BLAwQUAAAAAAC0kC5EAAAAAAAAAAAAAAAAEAAAAEFw
+dEJ1Zy9iaW4vdGVzdC9QSwMEFAAAAAgAtJAuRL7RGYN8AQAAewIAABkAAABBcHRCdWcvYmluL3Rl
+c3QvRm9vLmNsYXNzlVFNSxxBEH2t687sZJNNNjFfXjqQgLk4hOSkIRD8AGHw4K6Cx3Zs3ZaZrqW7
+d0HwfwkKevdHidWrrjfRbqiqV/2q6lF9fXN+CeA3FhLMCKRB+5BvECVoCPygMNDO5z2q9WqlvF/T
+ZaWcsUcxEwYc9IkEmn+NNeGfwOziz12Bxiod6AQtgc6xGqu8UvYoX3eOXIpXAqc71mlP1VgfyJLq
+oalUMGTl0NF+petlmbX6J0Mta+NrFcrBsiyVtRSYbMfaBXnoqJZPa1qaAhlI/o/lkyFZhhSv25jD
+G4H5xeJRXy/EHitRf6cwVm+N6n3t+oolCXQLKlW1y2Mivk82uL8XyIqHna0w6NHIlXrDRELKuaU4
+QWBhe2SDqfWmHRtvuPxRErf4VTxr0d+ngCe1N63VbkLWPsEXgfyFTQRa0xjfwL+HeATfOTTZJoz+
+cFawzy6Q7nWzM7SvGM2gw5Y5E/uWbfuOhXfosp/F+wnrA+bveR/Zf4oMjj/z+9dm6xZQSwMEFAAA
+AAAAVZAuRAAAAAAAAAAAAAAAAAsAAABBcHRCdWcvbGliL1BLAwQUAAAACAByYpRDwDUegtAIAAC0
+CgAAJgAAAEFwdEJ1Zy9saWIvbXktYW5ub3RhdGlvbi1wcm9jZXNzb3IuamFynVZ5ONR5GB9Hmhgl
+xm0aOTbEjBlFOTbnOMYYMeO2Gte6hzFEhJA7rCtCOcpRtDEiR9Y6dnJkGh1CipwlV4ga7I7aDT3P
+Hs/+fs/7z+/5fj/v8/4+n/fzvqZoNnYwAAgEAvwcM3QAOx4wgB2A0cNpKRiaoOAYLRNDlJ45DoZB
+bXYBAEuYnm5jtAKMzo1WkOvtoVHMFJ8ojUy8nmAFmKL3AqvDWedEmRDCzNhOUEDYnUCSGa5EItyR
+QIJjgrV8fIhkAtmd6GNKIjq5+PsTSTAnL4K/fz5+2EIUD97cHw0yLBGoMtXRa3HEaBM+RfHvs2DF
+ZAYCM87UVNpg03ROBCD5fuy9M2i5uKdpEXX5lj39rt0PIaNKa1LPNNJTF+okshNP/ugazhj6XS18
+c2lmHuBTUFKYQgil+iUhz15amTo5FAi27KtSsS+VUKf5HdcVcr32XmOzZwRSRXfrvGGvRHLB1jcV
+qcqB6NLu6IDcwlOZMISuRf7NuGIoAsIWh8xTuaHAGXZf/oX3D7XsbXfe4O7hX98GvRyCSnpYngPx
+uWIPUEA2Q5CYiQzhNY81IxvU6bKKge4VBWrdreAQbEOyvWBtVwkU0Z5Q7eo/0Th+QV277tjjScqJ
+8n5Z+W6eLCD50uwU90/EYUodzUuFI0aFbNcCbKuHZWiCVELSvA+xnxXiuxd3PUZF+PY1a2uqEAwh
+5aFdmZ7az/70WKbRKtkJaphFRRSOeieMmc6RjR0TCKZyoyT+mk633Oo91p7hRyK7gyzbjgV0+JUn
+Hw1KsWkToIHbLp6PuXNIdKK0qKhapA/0uLTcHKSU/dQ3c9SM67YY9X2SWlq/F9W8GnneYRAP8Vd8
+4ExwUsOOOX6ISJudAQk2wvgz0Z3Wizfw/HPiPmYWjQrqwtTjTdCedoWYnzKCcQq5MOnU1sjkA1UP
+FHVXgkb80XMGpxUWVFemcKUyR9hFNKsvxEtDoBdKEF2i3ARL96vmVErW967NswEGVRWSsfw3r5Js
+WovriSF5LZAXT1PnwQVnKdNr7NeQ09xmL+ePx1zE0cSgdxoauoeL1noFA/WiBxqSQlTn2q7n3+m+
+r/1cqibarYLPHtt0hg3yAx84Z+iQUUw9hRv+5pmaE2mCrNP6qFRXcAM6E42aWAiTsg7Rh62/2qM3
+Zo1rej+rSozGiRxC2mmgR0CLRWON/H6WHFeT8u/lT7GiYsaziEetBaXfGCKz1KwSbTXMLZZFuan4
+osGn+1gXZSIuaPh8dM5xEZrE6veR7knZpfDoIoLV7fUPV1U25dD4l7BuBivHhwTmbnZoYINEHnyY
+7sw3mpGYxhvTbeb1F2aKRTc+0s2LVaJMUFOak9Ic4ZwdfudQbSk6Bo/MiSzT6vpH2jxPYMsKeRjn
+DN6fNQBm5zgovmiX0SGUxNcJCewNa7EjFcSfFdrU9EAgGUrIX0YH20ZF4YhrSccWWdq4nB1Gxr6z
+YBzU7BdqDl+xHNd/nRjdnMSrNu0glSx1ERHjojpP9zkQmnvAxXWobqQ2WXv653hurxh6xQhLrcya
+rHFBnLfjRgUfPgJOn/VvSCmc50fxPG05luS5pl0MKaJLSeoMprQGQcfQqulkRkJNcxhocnRf8745
+VjEXnIFYab8wroqSty64ZSOX1FOBH9gAgDHgP9mIxL/aiAchkJBphsa2avI0py9Av8uzkQ5ZFi9K
+fZ7OahRvSfHeW90w7P2Brgn8fXg4qzYC8Wv9O6dm4mSuvtZjYoOWFdqQ9yZq49ByiDz8OnJBD21U
+Qchrd8ub6qmSxgHdywhmqdqd4Luujjol8coJJZOVm2nfj/PX5KjlJx+lo931BOLTZGVJ4ElVCy+u
+lF+9BhssG1lXTg1U1ch1HMANHobV56m6wZTImEbeWLHz3O2e8W8Z0oMGnceDXcmS15XlpeHGzisV
+34Xj+TMybKMR7wi+ShE6QQkajwXy7j9AnrtU4rccPCV0EXMCfXgC55k92wCeDWKp49ArGe0fITjs
+Y8+WN8IluExDqXHxt4DlEU5RbPPvJ5VnR8svBfel6U//VhTLvU46qAk51aqspkmxTVW5jCBHBZyp
+1nocEen7hLf/dtyILptQNMMcEpDVdeW5j0u2W9GeMBPnZis9HSHywyiWlkquyaVm266BKwTl0pMc
+hMzhgUL+wkdW0i0yiZm04P2ntqgcWkMphrAAALVsO6k8+M3IUWHG15Hj70IKdGcyCN+iLwhG+Eos
+zPcLs+4+P8K+kozupvWjjeT7lirJPd3dcEP5zh4al0wX1kQB1gv/MpUUDai+UGYGyK6pRPhGTpzM
++DJ4fAlkt/MpaK5WRZ5oGudmbFqj7f24WIuD5QUFkRY/86bfQI2VjB/+8IqBOrisrBTa3Su1sXRa
+/0iNibCRtaiNvDYvSk7OrLZL/yFsZlVkRddtzq5zY87Dgxg77s0PAXdmnDxqReaCIjcxnDrwvues
+pm541ej7ywXB4lWNYbGdEkOgKUqo4lWXxLVc83E6b7+4nygn8G1wvEDW1fRxi9ulwXhH9dEjzT1X
+vKfXbzlHwqPC7w7KNbQZrtczWLfK9f5Ek6tjFqPA8k/lApmx9UM9XJzIAabo/a3iPPaeryHGqwLD
+9S0ixX7eZhqAPsMoWZBw2eIaawcW8+Iho6dpbyjj0fD6/nHwFUyV3OUOsaR2VE6guV0vtaPhuQVF
+ti5aJXUTYJJW/f09NrVRlFuZxw3vvWpOjxLL8oDSJ2LbrfuKTxc9OxPaMeCZ4NX8lveMJHkW3/9E
+wFlXeK7tpiLGkaRsZhv5LiPA9KWIg9F1xbhGA64F/GEvoAcjexbp6hRJeZXR0+QRbfCKz3kVsKki
+tGwl/rGvnnZh1Z/q8Il9q3q4Tkj7A2ZtP32unoUVDNjecr6uJ39uObuev9l5/kLZ9qCd7iS5C4Hw
+r470WV/fAu7sEYldgGXsgP9gcV/wtjtrp95VduH5c/zvPvuSZFtLO1XGuSvJKsfORvr23k5+gLvu
+Te7dVqQpeg/H1jcO5tvAPDn++egfUEsDBBQAAAAAAFWQLkQAAAAAAAAAAAAAAAALAAAAQXB0QnVn
+L3NyYy9QSwMEFAAAAAAAVZAuRAAAAAAAAAAAAAAAABcAAABBcHRCdWcvc3JjL2Fubm90YXRpb25z
+L1BLAwQKAAAAAACqYpRD++RWlzwAAAA8AAAAJQAAAEFwdEJ1Zy9zcmMvYW5ub3RhdGlvbnMvU29t
+ZXRoaW5nLmphdmFwYWNrYWdlIGFubm90YXRpb25zOw0KDQpwdWJsaWMgQGludGVyZmFjZSBTb21l
+dGhpbmcgew0KDQp9DQpQSwMEFAAAAAAAVZAuRAAAAAAAAAAAAAAAABIAAABBcHRCdWcvc3JjL290
+aGVycy9QSwMEFAAAAAgAKY8uRA5qza9aAAAAcQAAADUAAABBcHRCdWcvc3JjL290aGVycy9Tb21l
+Q2xhc3NEZWNsYXJpbmdTb21ldGhpbmdUb28uamF2YT2LQQ6AIAwEz5Dwh/7Do/5AP4BNFSJSAngy
+/t02MR52s9nMFI+H3wm4B6ptcNbZcq0pImDyrcHMJ426JpKjxrzr04OMhRluFcxnxNypbh4JfkYB
+YySPxFnpF1BLAwQUAAAAAABVkC5EAAAAAAAAAAAAAAAAEAAAAEFwdEJ1Zy9zcmMvdGVzdC9QSwME
+FAAAAAgAKI8uRJUw0W9zAAAArQAAABgAAABBcHRCdWcvc3JjL3Rlc3QvRm9vLmphdmF9jVEKwjAQ
+RP8DucOewAv0R1C8gF5gjUsbTHdCdgVBvLuN0H72b2aYeVM5PXkUcjEfYoghzxXNCT5Js8MVs5wK
+m50lFW5Zx574tIgbMGx1VoWzZ+iyWRt/3nGzMdTXveREqQPpApC8XfRhtH9Dnw76xvADUEsBAj8A
+FAAAAAAAVZAuRAAAAAAAAAAAAAAAAAcAJAAAAAAAAAAQAAAAAAAAAEFwdEJ1Zy8KACAAAAAAAAEA
+GAAIMDtvShHPAQgwO29KEc8B3LUzb0oRzwFQSwECPwAUAAAAAACZXJRDAAAAAAAAAAAAAAAAFgAk
+AAAAAAAAABAAAAAlAAAAQXB0QnVnLy5hcHRfZ2VuZXJhdGVkLwoAIAAAAAAAAQAYADkOGmNv/c4B
+SRE3b0oRzwFJETdvShHPAVBLAQI/ABQAAAAIAC+QLkSIgmpf8AAAAMQBAAARACQAAAAAAAAAIAAA
+AFkAAABBcHRCdWcvLmNsYXNzcGF0aAoAIAAAAAAAAQAYAH0WmkRKEc8B1f81b0oRzwHV/zVvShHP
+AVBLAQI/ABQAAAAIAKWQLkQ+F5HVnAAAAAwBAAATACQAAAAAAAAAIAAAAHgBAABBcHRCdWcvLmZh
+Y3RvcnlwYXRoCgAgAAAAAAABABgALuw0x0oRzwH2TTZvShHPAfZNNm9KEc8BUEsBAj8AFAAAAAgA
+EpAuRHYgtA++AAAAfgEAAA8AJAAAAAAAAAAgAAAARQIAAEFwdEJ1Zy8ucHJvamVjdAoAIAAAAAAA
+AQAYAB9YlyRKEc8BKMM2b0oRzwEowzZvShHPAVBLAQI/ABQAAAAAAFWQLkQAAAAAAAAAAAAAAAAR
+ACQAAAAAAAAAEAAAADADAABBcHRCdWcvLnNldHRpbmdzLwoAIAAAAAAAAQAYAL0iOG9KEc8BvSI4
+b0oRzwFZODdvShHPAVBLAQI/ABQAAAAIADGPLkS1Hj48XAAAAJ0AAAAvACQAAAAAAAAAIAAAAF8D
+AABBcHRCdWcvLnNldHRpbmdzL29yZy5lY2xpcHNlLmpkdC5hcHQuY29yZS5wcmVmcwoAIAAAAAAA
+AQAYAFnD9LdJEc8Bi603b0oRzwGLrTdvShHPAVBLAQI/ABQAAAAIAC+QLkR16IZMTAAAAFkAAAAr
+ACQAAAAAAAAAIAAAAAgEAABBcHRCdWcvLnNldHRpbmdzL29yZy5lY2xpcHNlLmpkdC5jb3JlLnBy
+ZWZzCgAgAAAAAAABABgA0QDKREoRzwGc1DdvShHPAZzUN29KEc8BUEsBAj8AFAAAAAgAEpAuRDV1
+19lNAAAAXwAAADQAJAAAAAAAAAAgAAAAnQQAAEFwdEJ1Zy8uc2V0dGluZ3Mvb3JnLmpib3NzLmlk
+ZS5lY2xpcHNlLmFzLmNvcmUucHJlZnMKACAAAAAAAAEAGABVatAkShHPAaz7N29KEc8BrPs3b0oR
+zwFQSwECPwAUAAAAAAC0kC5EAAAAAAAAAAAAAAAACwAkAAAAAAAAABAAAAA8BQAAQXB0QnVnL2Jp
+bi8KACAAAAAAAAEAGADajbHZShHPAdqNsdlKEc8BzUk4b0oRzwFQSwECPwAUAAAAAAC0kC5EAAAA
+AAAAAAAAAAAAFwAkAAAAAAAAABAAAABlBQAAQXB0QnVnL2Jpbi9hbm5vdGF0aW9ucy8KACAAAAAA
+AAEAGABG6bTZShHPAUbptNlKEc8B2o2x2UoRzwFQSwECPwAUAAAACAC0kC5Ew8DCoXgAAACWAAAA
+JgAkAAAAAAAAACAAAACaBQAAQXB0QnVnL2Jpbi9hbm5vdGF0aW9ucy9Tb21ldGhpbmcuY2xhc3MK
+ACAAAAAAAAEAGABXELXZShHPAUbptNlKEc8BRum02UoRzwFQSwECPwAUAAAAAAC0kC5EAAAAAAAA
+AAAAAAAAEgAkAAAAAAAAABAAAABWBgAAQXB0QnVnL2Jpbi9vdGhlcnMvCgAgAAAAAAABABgAJZu0
+2UoRzwElm7TZShHPAclmsdlKEc8BUEsBAj8AFAAAAAgAtJAuRLApRUaWAAAA9AAAAEAAJAAAAAAA
+AAAgAAAAhgYAAEFwdEJ1Zy9iaW4vb3RoZXJzL1NvbWVDbGFzc0RlY2xhcmluZ1NvbWV0aGluZ1Rv
+byRTb21ldGhpbmcuY2xhc3MKACAAAAAAAAEAGAA2wrTZShHPASWbtNlKEc8BJZu02UoRzwFQSwEC
+PwAUAAAACAC0kC5ENUgPS/oAAACpAQAANgAkAAAAAAAAACAAAAB6BwAAQXB0QnVnL2Jpbi9vdGhl
+cnMvU29tZUNsYXNzRGVjbGFyaW5nU29tZXRoaW5nVG9vLmNsYXNzCgAgAAAAAAABABgAFXS02UoR
+zwEETbTZShHPAQRNtNlKEc8BUEsBAj8AFAAAAAAAtJAuRAAAAAAAAAAAAAAAABAAJAAAAAAAAAAQ
+AAAAyAgAAEFwdEJ1Zy9iaW4vdGVzdC8KACAAAAAAAAEAGADS17PZShHPAdLXs9lKEc8ByWax2UoR
+zwFQSwECPwAUAAAACAC0kC5EvtEZg3wBAAB7AgAAGQAkAAAAAAAAACAAAAD2CAAAQXB0QnVnL2Jp
+bi90ZXN0L0Zvby5jbGFzcwoAIAAAAAAAAQAYAPMltNlKEc8B0tez2UoRzwHS17PZShHPAVBLAQI/
+ABQAAAAAAFWQLkQAAAAAAAAAAAAAAAALACQAAAAAAAAAEAAAAKkKAABBcHRCdWcvbGliLwoAIAAA
+AAAAAQAYAPgIO29KEc8B+Ag7b0oRzwHWujpvShHPAVBLAQI/ABQAAAAIAHJilEPANR6C0AgAALQK
+AAAmACQAAAAAAAAAIAAAANIKAABBcHRCdWcvbGliL215LWFubm90YXRpb24tcHJvY2Vzc29yLmph
+cgoAIAAAAAAAAQAYAD4AQl11/c4B+Ag7b0oRzwH4CDtvShHPAVBLAQI/ABQAAAAAAFWQLkQAAAAA
+AAAAAAAAAAALACQAAAAAAAAAEAAAAOYTAABBcHRCdWcvc3JjLwoAIAAAAAAAAQAYAI1oPG9KEc8B
+jWg8b0oRzwEIMDtvShHPAVBLAQI/ABQAAAAAAFWQLkQAAAAAAAAAAAAAAAAXACQAAAAAAAAAEAAA
+AA8UAABBcHRCdWcvc3JjL2Fubm90YXRpb25zLwoAIAAAAAAAAQAYAErMO29KEc8BSsw7b0oRzwEp
+fjtvShHPAVBLAQI/AAoAAAAAAKpilEP75FaXPAAAADwAAAAlACQAAAAAAAAAIAAAAEQUAABBcHRC
+dWcvc3JjL2Fubm90YXRpb25zL1NvbWV0aGluZy5qYXZhCgAgAAAAAAABABgAuNvTmnX9zgFKzDtv
+ShHPAUrMO29KEc8BUEsBAj8AFAAAAAAAVZAuRAAAAAAAAAAAAAAAABIAJAAAAAAAAAAQAAAAwxQA
+AEFwdEJ1Zy9zcmMvb3RoZXJzLwoAIAAAAAAAAQAYAHxBPG9KEc8BfEE8b0oRzwFb8ztvShHPAVBL
+AQI/ABQAAAAIACmPLkQOas2vWgAAAHEAAAA1ACQAAAAAAAAAIAAAAPMUAABBcHRCdWcvc3JjL290
+aGVycy9Tb21lQ2xhc3NEZWNsYXJpbmdTb21ldGhpbmdUb28uamF2YQoAIAAAAAAAAQAYAKYu2a1J
+Ec8BfEE8b0oRzwF8QTxvShHPAVBLAQI/ABQAAAAAAFWQLkQAAAAAAAAAAAAAAAAQACQAAAAAAAAA
+EAAAAKAVAABBcHRCdWcvc3JjL3Rlc3QvCgAgAAAAAAABABgAvt08b0oRzwG+3TxvShHPAY1oPG9K
+Ec8BUEsBAj8AFAAAAAgAKI8uRJUw0W9zAAAArQAAABgAJAAAAAAAAAAgAAAAzhUAAEFwdEJ1Zy9z
+cmMvdGVzdC9Gb28uamF2YQoAIAAAAAAAAQAYAARVcq1JEc8Bvt08b0oRzwG+3TxvShHPAVBLBQYA
+AAAAGgAaACMLAAB3FgAAAAA=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>239015</attachid>
+            <date>2014-01-15 09:47:00 -0500</date>
+            <delta_ts>2014-01-15 09:47:28 -0500</delta_ts>
+            <desc>Proposed fix</desc>
+            <filename>Fixed-Bug-425687.patch</filename>
+            <type>text/plain</type>
+            <size>4485</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29tcGls
+ZXIuYXB0LnRlc3RzCmRpZmYgLS1naXQgcmVzb3VyY2VzL3RhcmdldHMvbW9kZWwvcGQvTWFya2Vy
+LmphdmEgcmVzb3VyY2VzL3RhcmdldHMvbW9kZWwvcGQvTWFya2VyLmphdmEKbmV3IGZpbGUgbW9k
+ZSAxMDA2NDQKaW5kZXggMDAwMDAwMC4uMDI5MDQ3ZAotLS0gL2Rldi9udWxsCisrKyByZXNvdXJj
+ZXMvdGFyZ2V0cy9tb2RlbC9wZC9NYXJrZXIuamF2YQpAQCAtMCwwICsxLDE1IEBACisvKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKgorICogQ29weXJpZ2h0IChjKSAyMDE0IElCTSBDb3Jwb3JhdGlvbi4K
+KyAqIEFsbCByaWdodHMgcmVzZXJ2ZWQuIFRoaXMgcHJvZ3JhbSBhbmQgdGhlIGFjY29tcGFueWlu
+ZyBtYXRlcmlhbHMKKyAqIGFyZSBtYWRlIGF2YWlsYWJsZSB1bmRlciB0aGUgdGVybXMgb2YgdGhl
+IEVjbGlwc2UgUHVibGljIExpY2Vuc2UgdjEuMAorICogd2hpY2ggYWNjb21wYW5pZXMgdGhpcyBk
+aXN0cmlidXRpb24sIGFuZCBpcyBhdmFpbGFibGUgYXQKKyAqIGh0dHA6Ly93d3cuZWNsaXBzZS5v
+cmcvbGVnYWwvZXBsLXYxMC5odG1sCisgKgorICogQ29udHJpYnV0b3JzOgorICogICAgIElCTSBD
+b3Jwb3JhdGlvbiAtIGluaXRpYWwgQVBJIGFuZCBpbXBsZW1lbnRhdGlvbgorICoqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKiovCisKK3BhY2thZ2UgdGFyZ2V0cy5tb2RlbC5wZDsKKworcHVibGljIEBpbnRl
+cmZhY2UgTWFya2VyIHsKK30KZGlmZiAtLWdpdCByZXNvdXJjZXMvdGFyZ2V0cy9tb2RlbC9wZC9v
+dXRlci9PdXRlckNsYXNzLmphdmEgcmVzb3VyY2VzL3RhcmdldHMvbW9kZWwvcGQvb3V0ZXIvT3V0
+ZXJDbGFzcy5qYXZhCm5ldyBmaWxlIG1vZGUgMTAwNjQ0CmluZGV4IDAwMDAwMDAuLjBkYzgzZWQK
+LS0tIC9kZXYvbnVsbAorKysgcmVzb3VyY2VzL3RhcmdldHMvbW9kZWwvcGQvb3V0ZXIvT3V0ZXJD
+bGFzcy5qYXZhCkBAIC0wLDAgKzEsMTYgQEAKKy8qKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqCisgKiBD
+b3B5cmlnaHQgKGMpIDIwMTQgSUJNIENvcnBvcmF0aW9uLgorICogQWxsIHJpZ2h0cyByZXNlcnZl
+ZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVyaWFscworICogYXJlIG1h
+ZGUgYXZhaWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0aGUgRWNsaXBzZSBQdWJsaWMgTGljZW5z
+ZSB2MS4wCisgKiB3aGljaCBhY2NvbXBhbmllcyB0aGlzIGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2
+YWlsYWJsZSBhdAorICogaHR0cDovL3d3dy5lY2xpcHNlLm9yZy9sZWdhbC9lcGwtdjEwLmh0bWwK
+KyAqCisgKiBDb250cmlidXRvcnM6CisgKiAgICAgSUJNIENvcnBvcmF0aW9uIC0gaW5pdGlhbCBB
+UEkgYW5kIGltcGxlbWVudGF0aW9uCisgKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKi8KKworcGFja2Fn
+ZSB0YXJnZXRzLm1vZGVsLnBkLm91dGVyOworcHVibGljIGNsYXNzIE91dGVyQ2xhc3MgeworCXB1
+YmxpYyBpbnRlcmZhY2UgTWFya2VyIHsKKwl9Cit9CmRpZmYgLS1naXQgcmVzb3VyY2VzL3Rhcmdl
+dHMvbW9kZWwvcGQvdGVzdC9Gb28uamF2YSByZXNvdXJjZXMvdGFyZ2V0cy9tb2RlbC9wZC90ZXN0
+L0Zvby5qYXZhCm5ldyBmaWxlIG1vZGUgMTAwNjQ0CmluZGV4IDAwMDAwMDAuLjQxZmIzYjMKLS0t
+IC9kZXYvbnVsbAorKysgcmVzb3VyY2VzL3RhcmdldHMvbW9kZWwvcGQvdGVzdC9Gb28uamF2YQpA
+QCAtMCwwICsxLDE4IEBACisvKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKgorICogQ29weXJpZ2h0IChj
+KSAyMDE0IElCTSBDb3Jwb3JhdGlvbi4KKyAqIEFsbCByaWdodHMgcmVzZXJ2ZWQuIFRoaXMgcHJv
+Z3JhbSBhbmQgdGhlIGFjY29tcGFueWluZyBtYXRlcmlhbHMKKyAqIGFyZSBtYWRlIGF2YWlsYWJs
+ZSB1bmRlciB0aGUgdGVybXMgb2YgdGhlIEVjbGlwc2UgUHVibGljIExpY2Vuc2UgdjEuMAorICog
+d2hpY2ggYWNjb21wYW5pZXMgdGhpcyBkaXN0cmlidXRpb24sIGFuZCBpcyBhdmFpbGFibGUgYXQK
+KyAqIGh0dHA6Ly93d3cuZWNsaXBzZS5vcmcvbGVnYWwvZXBsLXYxMC5odG1sCisgKgorICogQ29u
+dHJpYnV0b3JzOgorICogICAgIElCTSBDb3Jwb3JhdGlvbiAtIGluaXRpYWwgQVBJIGFuZCBpbXBs
+ZW1lbnRhdGlvbgorICoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKiovCitwYWNrYWdlIHRhcmdldHMubW9k
+ZWwucGQudGVzdDsKKworaW1wb3J0IHRhcmdldHMubW9kZWwucGQuTWFya2VyOworaW1wb3J0IHRh
+cmdldHMubW9kZWwucGQub3V0ZXIuT3V0ZXJDbGFzczsKKworQE1hcmtlcgorcHVibGljIGNsYXNz
+IEZvbyBleHRlbmRzIE91dGVyQ2xhc3MgeworfQojUCBvcmcuZWNsaXBzZS5qZHQuY29tcGlsZXIu
+YXB0CmRpZmYgLS1naXQgc3JjL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hcHQv
+ZGlzcGF0Y2gvQW5ub3RhdGlvbkRpc2NvdmVyeVZpc2l0b3IuamF2YSBzcmMvb3JnL2VjbGlwc2Uv
+amR0L2ludGVybmFsL2NvbXBpbGVyL2FwdC9kaXNwYXRjaC9Bbm5vdGF0aW9uRGlzY292ZXJ5Vmlz
+aXRvci5qYXZhCmluZGV4IDQ1MTY4ZjcuLjQzMzQ4Y2EgMTAwNjQ0Ci0tLSBzcmMvb3JnL2VjbGlw
+c2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FwdC9kaXNwYXRjaC9Bbm5vdGF0aW9uRGlzY292ZXJ5
+VmlzaXRvci5qYXZhCisrKyBzcmMvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Fw
+dC9kaXNwYXRjaC9Bbm5vdGF0aW9uRGlzY292ZXJ5VmlzaXRvci5qYXZhCkBAIC0xNzgsNSArMTc4
+LDkgQEAKIAkJCUFubm90YXRpb25bXSBhbm5vdGF0aW9ucywKIAkJCUJpbmRpbmcgY3VycmVudEJp
+bmRpbmcpIHsKKwkJCisJCWJvb2xlYW4gb2xkID0gc2NvcGUuaW5zaWRlVHlwZUFubm90YXRpb247
+CisJCXNjb3BlLmluc2lkZVR5cGVBbm5vdGF0aW9uID0gdHJ1ZTsKIAkJQVNUTm9kZS5yZXNvbHZl
+QW5ub3RhdGlvbnMoc2NvcGUsIGFubm90YXRpb25zLCBjdXJyZW50QmluZGluZyk7CisJCXNjb3Bl
+Lmluc2lkZVR5cGVBbm5vdGF0aW9uID0gb2xkOwogCQkKIAkJZm9yIChBbm5vdGF0aW9uIGFubm90
+YXRpb24gOiBhbm5vdGF0aW9ucykgewojUCBvcmcuZWNsaXBzZS5qZHQuY29yZQpkaWZmIC0tZ2l0
+IGNvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvQmxvY2tT
+Y29wZS5qYXZhIGNvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29r
+dXAvQmxvY2tTY29wZS5qYXZhCmluZGV4IDJhODRjYWEuLmM0ZjExYzYgMTAwNjQ0Ci0tLSBjb21w
+aWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL0Jsb2NrU2NvcGUu
+amF2YQorKysgY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1
+cC9CbG9ja1Njb3BlLmphdmEKQEAgLTU5LDQgKzU5LDcgQEAKIAogCXB1YmxpYyBmaW5hbCBzdGF0
+aWMgVmFyaWFibGVCaW5kaW5nW10gTm9FbmNsb3NpbmdJbnN0YW5jZUluU3RhdGljQ29udGV4dCA9
+IHt9OworCQorCS8vIGFubm90YXRpb24gc3VwcG9ydAorCXB1YmxpYyBib29sZWFuIGluc2lkZVR5
+cGVBbm5vdGF0aW9uID0gZmFsc2U7CiAKIHB1YmxpYyBCbG9ja1Njb3BlKEJsb2NrU2NvcGUgcGFy
+ZW50KSB7CmRpZmYgLS1naXQgY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2xvb2t1cC9NZXRob2RTY29wZS5qYXZhIGNvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRl
+cm5hbC9jb21waWxlci9sb29rdXAvTWV0aG9kU2NvcGUuamF2YQppbmRleCAyMmI1ZGExLi5iMjI4
+OWQxIDEwMDY0NAotLS0gY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L2xvb2t1cC9NZXRob2RTY29wZS5qYXZhCisrKyBjb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50
+ZXJuYWwvY29tcGlsZXIvbG9va3VwL01ldGhvZFNjb3BlLmphdmEKQEAgLTQ3LDcgKzQ3LDQgQEAK
+IAlwdWJsaWMgbG9uZ1tdW10gZXh0cmFEZWZpbml0ZUluaXRzID0gbmV3IGxvbmdbNF1bXTsKIAot
+CS8vIGFubm90YXRpb24gc3VwcG9ydAotCXB1YmxpYyBib29sZWFuIGluc2lkZVR5cGVBbm5vdGF0
+aW9uID0gZmFsc2U7Ci0KIAkvLyBpbm5lci1lbXVsYXRpb24KIAlwdWJsaWMgU3ludGhldGljQXJn
+dW1lbnRCaW5kaW5nW10gZXh0cmFTeW50aGV0aWNBcmd1bWVudHM7
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>435767</bug_id>
+          
+          <creation_ts>2014-05-26 07:42:00 -0400</creation_ts>
+          <short_desc>[1.8][inference] Problem in inferrence of type : The method in the type is not applicable for the arguments (Object)</short_desc>
+          <delta_ts>2014-10-25 09:25:09 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>432682</dup_id>
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>---</target_milestone>
+          
+          <blocked>428061</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Gautier de SAINT MARTIN LACAZE">gautier.desaintmartinlacaze</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2407040</commentid>
+    <comment_count>0</comment_count>
+    <who name="Gautier de SAINT MARTIN LACAZE">gautier.desaintmartinlacaze</who>
+    <bug_when>2014-05-26 07:42:11 -0400</bug_when>
+    <thetext>I have some compilation error in Eclipse 4.4M7 with the 1.8 compilation level. In fact when I use lambda and Generics, there is one case where I have the following error : 
+The method getKey(String) in the type DummyClass is not applicable for the arguments (Object).
+
+But if I watch the tooltip to see the inference of the parameter. It is the good type of parameter.
+
+The following code illustrate my problem. 
+
+////
+public class DummyClass {
+
+	public void method() {
+
+		// Cases where there is no error
+		final Supplier&lt;Set&lt;String&gt;&gt; suppliers = this.memoize(() -&gt; new HashSet&lt;&gt;());
+
+		final Supplier&lt;Map&lt;Object, Object&gt;&gt; noMemoize = () -&gt; suppliers.get().stream()
+				.filter(path -&gt; path.startsWith(&quot;&quot;))
+				.collect(Collectors.toMap(path -&gt; this.getKey(path), path -&gt; this.getValue(path)));
+
+		// Case where there is errors.
+		final Supplier&lt;Map&lt;Object, Object&gt;&gt; memoize = this.memoize(() -&gt; suppliers.get().stream()
+				.filter(path -&gt; path.startsWith(&quot;&quot;))
+				.collect(Collectors.toMap(path -&gt; this.getKey(path), path -&gt; this.getValue(path))));
+
+		// Error message are : Description
+		// Resource	Path	Location	Type
+		// The method getKey(String) in the type DummyClass is not applicable for the arguments (Object)	DummyClass.java line 23	Java Problem
+		// The method getValue(String) in the type DummyClass is not applicable for the arguments (Object)	DummyClass.java line 23	Java Problem
+
+	}
+
+	private &lt;T&gt; Supplier&lt;T&gt; memoize(final Supplier&lt;T&gt; delegate) {
+		return delegate;
+	}
+
+	private Object getKey(final String path) {
+		return path;
+	}
+
+	private Object getValue(final String path) {
+		return path;
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2417140</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-06-15 13:00:50 -0400</bug_when>
+    <thetext>Thanks for the report.
+
+This one looks tricky.
+
+I&apos;ll take a look.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434925</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-02 18:32:43 -0400</bug_when>
+    <thetext>During debugging I actually see inference for toMap() fail. This is, however, not directly reported, because we fall back to the previous candidate method, as controlled by the flag SIMULATE_BUG_JDK_8026527.
+
+At this point we use a non-optimal binding for toMap(), with some types inferred to Object, which then propagates into the inner lambdas where it causes the incompatibility observed in comment 0.
+
+
+
+Here&apos;s why inference fails:
+
+We perform invocation type inference for toMap() with this target type:
+  Collector&lt;? super String,Object,Map&lt;Object,Object&gt;&gt;
+
+This looks fine, as it contains the hint about String which should be passed down into the inner lambdas.
+
+During this inference we introduce two conflicting constraints from 18.5.2 bullet 3.2, which are:
+Type Constraint:
+    Collector&lt;T#0,?#3,Map&lt;K#1,U#2&gt;#4&gt;
+                      Collector&lt;? super String,Object,Map&lt;Object,Object&gt;&gt;
+and Capture Bound:
+    Collector&lt;T#0,?#3,Map&lt;K#1,U#2&gt;#4&gt; = capt(Collector&lt;T#0,?,Map&lt;K#1,U#2&gt;&gt;)
+
+From the Type Constraint we derive among others:
+  ?#3 &lt;= java.lang.Object
+  ?#3 = java.lang.Object
+and finally the Type Bound
+  ?#3 = java.lang.Object
+
+The next round of incorporation inspects the Capture Bound using JLS 18.3.2:
+
+We match the bound against the form &quot;G&lt;1, ..., n&gt; = capture(G&lt;A1, ..., An&gt;)&quot; and find at i=2:
+  A2 = ?
+  2 = ?#3 (an inference variable)
+we also find this existing type bound:
+  ?#3 = java.lang.Object
+
+Now 18.3.2 bullet 2.1 applies:
+&quot;If Ai is a wildcard of the form ?:
+ *  i = R implies the bound false&quot;
+
+The only constraint for &quot;R&quot; is: &quot;Let R be a type that is not an inference variable&quot;, hence &quot;?#3 = java.lang.Object&quot; is a valid match. Hence failing seems to be the correct answer from inference.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434927</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-02 19:17:33 -0400</bug_when>
+    <thetext>Which points in the above analysis are weak / could be wrong?
+
+
+First, the first type constraint and capture bound mentioned in comment 2 could be wrong, but from manual inspection all looks correct to me.
+
+
+Second, if the target type for toMap() had an inference variable as its 2nd type argument, we would probably succeed. So maybe this target type is wrong?
+  Collector&lt;? super String,Object,Map&lt;Object,Object&gt;&gt;
+
+This type is the parameter of the inferred resolution for collect(). Interestingly, during this outer inference we already perform *most* of the inference for toMap(), too, and at this stage we succeed, because we use the following target type:
+  Collector&lt;? super String,A#1,R#0&gt;
+
+with inference variables as type arguments we do not create the conflict mentioned above.
+
+However, at this stage we don&apos;t perform full inference for toMap, only what is needed to complete the outer inference (for collect).
+
+When later we perform invocation type inference for toMap, the target type can no longer mention inference variables of the outer inference, but A#1 and R#0 have been instantiated with j.l.Object (any &quot;real&quot; type would suffice to create the conflict).
+
+I could imagine, that this failure is not intended by the spec, perhaps, some more information flow from outer to inner inference was envisioned, but I don&apos;t see the spec achieving this.
+
+Also note, that the first partial inference for toMap happens during collect&apos;s Invocation Applicability Inference, i.e., during a tentative attempt (before overload resolution completes). It would be wrong to perform final Invocation Type Inference for toMap at this point already.
+I don&apos;t think the Invocation Applicability Inference for collect and the Invocation Type Inference for toMap can share any inference variables.
+
+
+So maybe javac behavior was intended by the JSR 335 EG, but ecj behavior is what I see the spec requiring us to do.
+
+No quick solution, enqueueing this issue for coordination with javac and spec.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434959</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-03 08:43:48 -0400</bug_when>
+    <thetext>I&apos;ve released:
+
+A negative regression test
+
+Some optimization found during debugging:
+
+ - avoid duplicates in InferenceContext18.inferenceVariables
+   This could happen when inner and outer inference share an inference variable
+
+ - directly exit when incorporation fails during invocation type inference
+
+To be found in http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=dc2b5ae9776368d6bc02c0700f41658b033db2c3</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2453446</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-18 00:05:51 -0400</bug_when>
+    <thetext>Targetting for 4.5 M3. While ATM ownership is left unchanged, Stephan is under
+time constraint during this window, so I will likely take this over or assign to someone else to load balance later on.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2454056</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-19 03:49:26 -0400</bug_when>
+    <thetext>The proposed patch at https://bugs.eclipse.org/bugs/show_bug.cgi?id=432682#c10
+solves this problem.
+
+*** This bug has been marked as a duplicate of bug 432682 ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471745</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-25 09:20:03 -0400</bug_when>
+    <thetext>For posterity: after some back and forth I think that https://bugs.openjdk.java.net/browse/JDK-8038747 made the difference, changed spec&apos;d behavior from reject to accept, right?
+
+This matches the fact that this bug is already a transitive duplicate of bug 444891.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471747</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-25 09:25:09 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #7)
+&gt; For posterity: after some back and forth I think that
+&gt; https://bugs.openjdk.java.net/browse/JDK-8038747 made the difference,
+&gt; changed spec&apos;d behavior from reject to accept, right?
+
+Yes, correct. This one was fixed only by adopting the spec change at 
+https://bugs.openjdk.java.net/browse/JDK-8038747 made post Java 8 GA and
+is still in Unresolved state.
+
+The said change actually backports javac behavior to JLS, so we are safe
+in adopting this change.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

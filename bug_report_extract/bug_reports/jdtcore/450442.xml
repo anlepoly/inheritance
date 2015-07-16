@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>450442</bug_id>
+          
+          <creation_ts>2014-11-07 04:30:00 -0500</creation_ts>
+          <short_desc>[1.8] NPE at HandleFactory.createElement on hover</short_desc>
+          <delta_ts>2014-12-09 04:50:40 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://bugs.eclipse.org/bugs/show_bug.cgi?id=450454</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M4</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Noopur Gupta">noopur_gupta</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2478554</commentid>
+    <comment_count>0</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2014-11-07 04:30:39 -0500</bug_when>
+    <thetext>package meth.refs;
+import java.util.function.Consumer;
+
+public class Claxx {
+	void post(Runnable r) {
+		r.run();
+	}
+	void absorb(Consumer&lt;Claxx&gt; c) throws Exception {
+		c.accept(this);
+	}
+	
+	static void execute() {
+		System.out.println(&quot;exec!&quot;);
+	}
+	static void executeGiven(Object o) {
+		System.out.println(&quot;exec &quot; + o);
+	}
+	void executeObject() {
+		System.out.println(&quot;exec &quot; + this);
+	}	
+}
+
+class ClaxxTest {
+	Claxx claxx = new Claxx();
+	
+	void doInBackground() throws Exception {
+		claxx.post(Claxx::execute); // Hover over &quot;post&quot;
+		absorb(Claxx::executeGiven);
+		post(this::executeObject);
+		
+		absorb(Claxx::executeObject);
+		post(() -&gt; execute());
+		post(() -&gt; executeGiven(this)); // not convertible
+		post(() -&gt; executeObject());
+	}
+	
+}
+
+------------------------------------------------------
+
+In the above example, hover over &quot;post&quot; at the specified location.
+We get the following exception:
+
+java.lang.NullPointerException
+	at org.eclipse.jdt.internal.core.util.HandleFactory.createElement(HandleFactory.java:177)
+	at org.eclipse.jdt.internal.core.util.HandleFactory.createLambdaTypeElement(HandleFactory.java:168)
+	at org.eclipse.jdt.internal.core.hierarchy.HierarchyResolver.rememberAllTypes(HierarchyResolver.java:495)
+	at org.eclipse.jdt.internal.core.hierarchy.HierarchyResolver.resolve(HierarchyResolver.java:829)
+	at org.eclipse.jdt.internal.core.hierarchy.HierarchyResolver.resolve(HierarchyResolver.java:628)
+	at org.eclipse.jdt.internal.core.hierarchy.HierarchyBuilder.buildSupertypes(HierarchyBuilder.java:116)
+	at org.eclipse.jdt.internal.core.hierarchy.IndexBasedHierarchyBuilder.build(IndexBasedHierarchyBuilder.java:136)
+	at org.eclipse.jdt.internal.core.hierarchy.TypeHierarchy.compute(TypeHierarchy.java:301)
+	at org.eclipse.jdt.internal.core.hierarchy.TypeHierarchy.refresh(TypeHierarchy.java:1268)
+	at org.eclipse.jdt.internal.core.CreateTypeHierarchyOperation.executeOperation(CreateTypeHierarchyOperation.java:90)
+	at org.eclipse.jdt.internal.core.JavaModelOperation.run(JavaModelOperation.java:729)
+	at org.eclipse.jdt.internal.core.JavaModelOperation.runOperation(JavaModelOperation.java:789)
+	at org.eclipse.jdt.internal.core.SourceType.newSupertypeHierarchy(SourceType.java:743)
+	at org.eclipse.jdt.internal.core.SourceType.newSupertypeHierarchy(SourceType.java:695)
+	at org.eclipse.jdt.internal.corext.util.SuperTypeHierarchyCache.getTypeHierarchy(SuperTypeHierarchyCache.java:144)
+...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2478598</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-11-07 04:58:07 -0500</bug_when>
+    <thetext>I can reproduce this on master. Looks like in LambdaExpression.resolveType(BlockScope), we are returning a PolyTypeBinding before setting the scope. I guess when we eventually resolve the lambda, we don&apos;t revisit the scope.
+
+Srikanth, what do you think?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2479248</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-08 03:03:49 -0500</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #1)
+&gt; I can reproduce this on master. Looks like in
+&gt; LambdaExpression.resolveType(BlockScope), we are returning a PolyTypeBinding
+&gt; before setting the scope. I guess when we eventually resolve the lambda, we
+&gt; don&apos;t revisit the scope.
+&gt; 
+&gt; Srikanth, what do you think?
+
+I think with the recent changes I made, poly type bindings are escaping
+to the outside world when there are errors. I&apos;ll look into the problem.
+In the meantime, I released a point fix for the present problem here: 
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=978b63f3dcf47c1265663042fb2652bb563387ac
+
+Shankha, could you please add a test and close this ? TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2479253</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-08 03:51:28 -0500</bug_when>
+    <thetext>The behavior of a lambda/reference expression setting its resolved type
+to be the poly type binding is a recent (post M3) behavior created to
+save myself some time in creating two new methods. I think it is not
+such a great idea to do this as it provides an avenue for poly type
+bindings to be exposed to the outside world when overload resolution
+fails. 
+
+Eliminated this new behavior via a proper fix with tests here:
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=702c62fec0923d7526ca23efea5c1bb4f5a2ef27</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494365</commentid>
+    <comment_count>4</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-12-09 04:50:40 -0500</bug_when>
+    <thetext>Verified for 4.5 M4 using build I20141208-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

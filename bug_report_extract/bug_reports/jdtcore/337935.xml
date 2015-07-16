@@ -1,0 +1,604 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>337935</bug_id>
+          
+          <creation_ts>2011-02-23 00:47:00 -0500</creation_ts>
+          <short_desc>Test failures when run as an IDE (org.eclipse.sdk.ide)</short_desc>
+          <delta_ts>2011-09-13 15:21:45 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.7</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows XP</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>3.8 M2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jay Arthanareeswaran">jarthana</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>Olivier_Thomann</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>1887571</commentid>
+    <comment_count>0</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2011-02-23 00:47:38 -0500</bug_when>
+    <thetext>The following tests are failing when the Program to Run is pointed to:
+Run a product -&gt; org.eclipse.sdk.ide
+
+ClassFileTests#testWorkingCopy01
+ClassFileTests#testWorkingCopy02
+ClassFileTests#testWorkingCopy05
+ClassFileTests#testWorkingCopy10
+
+The failures don&apos;t occur when run as Headless application.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1897858</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-03-12 08:29:10 -0500</bug_when>
+    <thetext>I was affected by this, too, so I did some delta debugging and this is the
+point where I see behavior starting to differ:
+
+
+DefaultWorkingCopyOwner.createBuffer(ICompilationUnit) line: 32	
+ClassFileWorkingCopy.openBuffer(IProgressMonitor, Object) line: 84	
+ClassFileWorkingCopy(CompilationUnit).buildStructure(OpenableElementInfo, IProgressMonitor, Map, IResource) line: 116	
+ClassFileWorkingCopy(Openable).generateInfos(Object, HashMap, IProgressMonitor) line: 258	
+ClassFileWorkingCopy(JavaElement).openWhenClosed(Object, IProgressMonitor) line: 518	
+BecomeWorkingCopyOperation.executeOperation() line: 38	
+BecomeWorkingCopyOperation(JavaModelOperation).run(IProgressMonitor) line: 728	
+BecomeWorkingCopyOperation(JavaModelOperation).runOperation(IProgressMonitor) line: 788	
+ClassFile.getWorkingCopy(WorkingCopyOwner, IProgressMonitor) line: 571	
+ClassFileTests.testWorkingCopy01() line: 1238	
+
+In createBuffer, in the good case we have no primaryBufferProvider and
+proceed to super.createBuffer(), in the bad case, however, we do have one,
+an instance of JavaPlugin$2, and that unfortunate instance starts creating
+a Document for the jar file! As a consequence later the content of the 
+jar file (undecoded zip!) is fed verbatim into the SourceElementParser,
+with expectable havoc.
+
+So if the jdt.ui has already started things go awry. I no longer think that
+just the test is broken, but we seem to have a real bug here.
+Someone has to check if the working copy is a ClassFileWorkingCopy.
+Since that class is internal, jdt.ui won&apos;t be able to. So the easiest fix
+would be this one-line change in DefaultWorkingCopyOwner:
+
+ if (this.primaryBufferProvider != null &amp;&amp; !(workingCopy instanceof ClassFileWorkingCopy)) return this.primaryBufferProvider.createBuffer(workingCopy);
+
+I have no idea what else this would break, though.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1907843</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-04-03 15:04:08 -0400</bug_when>
+    <thetext>Alternatively, would JDT/UI have a chance to determine 
+if an ICompilationUnit actually represents a class file, 
+so they can avoid creating a bogus Document for those?
+
+Perhaps by checking the underlying resource for a &quot;.class&quot; suffix?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1978563</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-08-14 12:35:39 -0400</bug_when>
+    <thetext>Given that the tested behavior is effectively broken in the IDE and
+since the Object Teams test suite is constantly affected by this I&apos;d like
+to help resolve this bug. 
+
+I don&apos;t see how a DocumentAdapter for a ClassFileWorkingCopy could ever
+make any sense? So wouldn&apos;t it indeed be best if UI&apos;s JavaPlugin
+avoids creating these bogus DocumentAdapters? (see JavaPlugin.java:368).
+
+Question remains: how can UI determine if a ICompilationUnit represents
+a class file? What would be cheaper, adding isBinary() to ICompilationUnit
+or letting ClassFileWorkingCopy implement a new public marker interface
+IClassFileWorkingCopy or just IClassFile to check against?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1978567</commentid>
+    <comment_count>4</comment_count>
+      <attachid>201477</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-08-14 13:44:24 -0400</bug_when>
+    <thetext>Created attachment 201477
+sketch of the simplest fix
+
+I did briefly play with letting ClassFileWorkingCopy implement IClassFile,
+which looked convincing at first, but it seems the hierarchies of
+  ICompilationUnit
+    CompilationUnit
+      ClassFileWorkingCopy
+and
+  IClassFile
+     ClassFile
+cannot easily be made more symmetric, so I gave up on that.
+
+However, the attached patch (combined Core &amp; UI) seems to do the trick 
+ - using indeed a new marker interface IClassFileWorkingCopy.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1978637</commentid>
+    <comment_count>5</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2011-08-15 05:15:09 -0400</bug_when>
+    <thetext>The patch is a no go. At the API level a working copy is for CUs if someone calls org.eclipse.jdt.core.WorkingCopyOwner.createBuffer(ICompilationUnit) for something else then an ICompiltaionUnit then this is just wrong. If JDT Core does this internally, then JDT Core must also internally protect itself.
+
+Having said that: AFAIK only JDT Core tests are affected. Hence the simplest fix is to call WorkingCopyOwner.setPrimaryBufferProvider(null) during test setup.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1979047</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-08-15 19:42:22 -0400</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; The patch is a no go. At the API level a working copy is for CUs if someone
+&gt; calls org.eclipse.jdt.core.WorkingCopyOwner.createBuffer(ICompilationUnit) for
+&gt; something else then an ICompiltaionUnit then this is just wrong.
+
+Please help me understand what exactly is wrong. 
+The tests show that it is possible that the argument to createBuffer
+is a ClassFileWorkingCopy, which is a subtype of ICompilationUnit.
+When wrapped in a DocumentAdapter this causes a text buffer to be created 
+from the binary file content (we see a jar), causing havoc down the road.
+
+Are you saying the existence of class ClassFileWorkingCopy as a subclass
+of CompilationUnit is a bug?
+Or is it wrong to pass such an instance to createBuffer()?
+(I don&apos;t see this prohibited by the API doc).
+Maybe we have an impossible/inconsistent API contract here?
+
+&gt; If JDT Core
+&gt; does this internally, then JDT Core must also internally protect itself.
+
+I.e., must ensure that instances of ClassFileWorkingCopy *never* leak to 
+any client? In that case I wouldn&apos;t know how 
+IClassFile.getWorkingCopy(WorkingCopyOwner, IProgressMonitor) should be
+implemented.
+ 
+&gt; Having said that: AFAIK only JDT Core tests are affected. Hence the simplest
+&gt; fix is to call WorkingCopyOwner.setPrimaryBufferProvider(null) during test
+&gt; setup.
+
+I&apos;m not sure why you think so. Do these tests perform anything that
+can never happen in real life? They look pretty unsuspicious to me.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1979114</commentid>
+    <comment_count>7</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2011-08-16 02:45:30 -0400</bug_when>
+    <thetext>The API expects an ICompilationUnit and the client can do what it wants with it and he definitely has not to expect that he gets some binary stuff. If internal code passes something to that API which then blows up, then it&apos;s an internal implementation problem. The inheritance in this case is implementation based which often causes trouble. Look for example at &apos;ISourceManipulation&apos; which is implemented an ICU: it clearly states:
+
+&gt; Common protocol for Java elements that support source code manipulations such
+&gt; * as copy, move, rename, and delete.
+
+So - if JDT Core passes binary elements to such an interface then this is just wrong.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1979954</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-08-17 09:51:30 -0400</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; The API expects an ICompilationUnit and the client can do what it wants with it
+&gt; and he definitely has not to expect that he gets some binary stuff.
+
+Sorry, I was looking at various potential sources for inconsistencies.
+It seems I missed that all your concerns were just about the contract
+of WorkingCopyOwner.createBuffer(ICompilationUnit).
+
+Investigating further I see that it was bug 110160 where Jerome
+&quot;Added API IClassFile#becomeWorkingCopy(IProblemRequestor, WorkingCopyOwner,
+ IProgressMonitor) that returns an ICompilationUnit in working copy mode on
+ the given class file.&quot;
+
+As part of the patch the first real implementation was added to class
+ClassFileWorkingCopy, incl. method openBuffer which calls 
+  IBuffer buffer = this.owner.createBuffer(this);
+
+Strictly speaking this line breaks API, but actually the whole notion
+of a ClassFileWorkingCopy is problematic, no?
+
+Question: have the split refactorings mentioned in bug 110160 ever been
+implemented? If so, which tests relate to that feature?
+
+I tried to fix this by avoiding the above call to createBuffer.
+I succeeded to make all of AllJavaModelTests pass which one exception:
+org.eclipse.jdt.core.tests.model.WorkingCopyTests.testOnClassFile()
+which explicitly tests use of a custom working copy owner for creating
+custom buffers for class files. This particular test is not related to
+any bug, as it is older than the eclipse CVS. So, how relevant is that
+test, anyone know any use cases diving into this pond?
+
+According to how I understand Dani, that test case cannot PASS without
+breaking an API contract, right?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1979955</commentid>
+    <comment_count>9</comment_count>
+      <attachid>201644</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-08-17 09:55:26 -0400</bug_when>
+    <thetext>Created attachment 201644
+alternative fix
+
+This is how we can avoid breaking the contract of createBuffer for
+the price of breaking
+org.eclipse.jdt.core.tests.model.WorkingCopyTests.testOnClassFile()</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1980579</commentid>
+    <comment_count>10</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2011-08-18 04:12:06 -0400</bug_when>
+    <thetext>&gt; Strictly speaking this line breaks API, but actually the whole notion
+&gt; of a ClassFileWorkingCopy is problematic, no?
+Yes, this is due to the implementation inheritance.
+
+&gt; Question: have the split refactorings mentioned in bug 110160 ever been
+&gt; implemented?
+Yes, see bug 106207.
+
+The patch looks good to me but I would use
+IBuffer buffer = BufferManager.createBuffer(this);</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1988789</commentid>
+    <comment_count>11</comment_count>
+      <attachid>202725</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-09-04 17:50:36 -0400</bug_when>
+    <thetext>Created attachment 202725
+improved fix
+
+OK, this patch adopts Dani&apos;s suggestion from comment 10 and disables
+the bogus test WorkingCopyTests.testOnClassFile().
+
+It&apos;d be cool if anyone new the answer to part two of this:
+
+&gt; Question: have the split refactorings mentioned in bug 110160 ever been
+&gt; implemented? If so, which tests relate to that feature?
+
+Anyway, all java model tests pass with this patch, even in the IDE :)
+
+Jay, what do you think?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1988790</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-09-04 17:52:58 -0400</bug_when>
+    <thetext>(In reply to comment #11)
+&gt; It&apos;d be cool if anyone new the answer to part two of this:
+
+Pls. read phonetically: &quot;new&quot; -&gt; &quot;knew&quot; :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1989463</commentid>
+    <comment_count>13</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2011-09-06 11:25:00 -0400</bug_when>
+    <thetext>The tests are all passing. Perfect! Thanks Stephan and I am assigning the bug to you.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1989596</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-09-06 15:16:51 -0400</bug_when>
+    <thetext>Released for 3.8 M2.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1992841</commentid>
+    <comment_count>15</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2011-09-13 12:33:39 -0400</bug_when>
+    <thetext>I cannot even start the tests in that mode.
+I am using a 4.2 I-build.
+I am getting:
+java.lang.IllegalArgumentException: Argument cannot be null
+	at org.eclipse.swt.SWT.error(SWT.java:4264)
+	at org.eclipse.swt.SWT.error(SWT.java:4198)
+	at org.eclipse.swt.SWT.error(SWT.java:4169)
+	at org.eclipse.swt.widgets.Widget.error(Widget.java:468)
+	at org.eclipse.swt.widgets.Widget.checkParent(Widget.java:277)
+	at org.eclipse.swt.widgets.Widget.&lt;init&gt;(Widget.java:149)
+	at org.eclipse.swt.widgets.Control.&lt;init&gt;(Control.java:110)
+	at org.eclipse.swt.widgets.Scrollable.&lt;init&gt;(Scrollable.java:75)
+	at org.eclipse.swt.widgets.Composite.&lt;init&gt;(Composite.java:95)
+	at org.eclipse.ui.splash.BasicSplashHandler.getBundleProgressMonitor(BasicSplashHandler.java:159)
+	at org.eclipse.ui.internal.Workbench$3.run(Workbench.java:543)
+	at org.eclipse.core.databinding.observable.Realm.runWithDefault(Realm.java:332)
+	at org.eclipse.ui.internal.Workbench.createAndRunWorkbench(Workbench.java:519)
+	at org.eclipse.ui.PlatformUI.createAndRunWorkbench(PlatformUI.java:149)
+	at org.eclipse.ui.internal.ide.application.IDEApplication.start(IDEApplication.java:123)
+	at org.eclipse.pde.internal.junit.runtime.NonUIThreadTestApplication.runApp(NonUIThreadTestApplication.java:54)
+	at org.eclipse.pde.internal.junit.runtime.UITestApplication.runApp(UITestApplication.java:41)
+	at org.eclipse.pde.internal.junit.runtime.NonUIThreadTestApplication.start(NonUIThreadTestApplication.java:48)
+	at org.eclipse.equinox.internal.app.EclipseAppHandle.run(EclipseAppHandle.java:196)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.runApplication(EclipseAppLauncher.java:110)
+	at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.start(EclipseAppLauncher.java:79)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:344)
+	at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:179)
+	at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:39)
+	at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:25)
+	at java.lang.reflect.Method.invoke(Method.java:597)
+	at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:624)
+	at org.eclipse.equinox.launcher.Main.basicRun(Main.java:579)
+	at org.eclipse.equinox.launcher.Main.run(Main.java:1431)
+	at org.eclipse.equinox.launcher.Main.main(Main.java:1407)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1992850</commentid>
+    <comment_count>16</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2011-09-13 12:47:05 -0400</bug_when>
+    <thetext>In fact even UI tests don&apos;t run fine using that build. Investigating.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1992859</commentid>
+    <comment_count>17</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2011-09-13 13:06:13 -0400</bug_when>
+    <thetext>This is related to bug 357521.
+Once this is fixed, I should be able to verify this fix.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1992978</commentid>
+    <comment_count>18</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2011-09-13 15:21:45 -0400</bug_when>
+    <thetext>With a fix from Bodgan, I could finally start UI tests and verify this fix. I am surprised nobody noticed that UI tests don&apos;t start in a 4.2 workspace.
+Verified for 3.8M2.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>201477</attachid>
+            <date>2011-08-14 13:44:00 -0400</date>
+            <delta_ts>2011-08-17 09:55:26 -0400</delta_ts>
+            <desc>sketch of the simplest fix</desc>
+            <filename>Bug_337935_v1.patch</filename>
+            <type>text/plain</type>
+            <size>3469</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZQpJ
+bmRleDogbW9kZWwvb3JnL2VjbGlwc2UvamR0L2NvcmUvSUNsYXNzRmlsZVdvcmtpbmdDb3B5Lmph
+dmEKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PQpSQ1MgZmlsZTogbW9kZWwvb3JnL2VjbGlwc2UvamR0L2NvcmUvSUNsYXNz
+RmlsZVdvcmtpbmdDb3B5LmphdmEKZGlmZiAtTiBtb2RlbC9vcmcvZWNsaXBzZS9qZHQvY29yZS9J
+Q2xhc3NGaWxlV29ya2luZ0NvcHkuamF2YQotLS0gL2Rldi9udWxsCTEgSmFuIDE5NzAgMDA6MDA6
+MDAgLTAwMDAKKysrIG1vZGVsL29yZy9lY2xpcHNlL2pkdC9jb3JlL0lDbGFzc0ZpbGVXb3JraW5n
+Q29weS5qYXZhCTEgSmFuIDE5NzAgMDA6MDA6MDAgLTAwMDAKQEAgLTAsMCArMSw1IEBACitwYWNr
+YWdlIG9yZy5lY2xpcHNlLmpkdC5jb3JlOworCitwdWJsaWMgaW50ZXJmYWNlIElDbGFzc0ZpbGVX
+b3JraW5nQ29weSB7CisKK30KSW5kZXg6IG1vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9j
+b3JlL0NsYXNzRmlsZVdvcmtpbmdDb3B5LmphdmEKPT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2N2c3Jv
+b3QvZWNsaXBzZS9vcmcuZWNsaXBzZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50
+ZXJuYWwvY29yZS9DbGFzc0ZpbGVXb3JraW5nQ29weS5qYXZhLHYKcmV0cmlldmluZyByZXZpc2lv
+biAxLjUzCmRpZmYgLXUgLXIxLjUzIENsYXNzRmlsZVdvcmtpbmdDb3B5LmphdmEKLS0tIG1vZGVs
+L29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NsYXNzRmlsZVdvcmtpbmdDb3B5LmphdmEJ
+MjcgSnVuIDIwMDggMTY6MDM6NTEgLTAwMDAJMS41MworKysgbW9kZWwvb3JnL2VjbGlwc2UvamR0
+L2ludGVybmFsL2NvcmUvQ2xhc3NGaWxlV29ya2luZ0NvcHkuamF2YQkxNCBBdWcgMjAxMSAxNzoz
+Mzo0NCAtMDAwMApAQCAtMSw1ICsxLDUgQEAKIC8qKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqCi0gKiBD
+b3B5cmlnaHQgKGMpIDIwMDAsIDIwMDggSUJNIENvcnBvcmF0aW9uIGFuZCBvdGhlcnMuCisgKiBD
+b3B5cmlnaHQgKGMpIDIwMDAsIDIwMTEgSUJNIENvcnBvcmF0aW9uIGFuZCBvdGhlcnMuCiAgKiBB
+bGwgcmlnaHRzIHJlc2VydmVkLiBUaGlzIHByb2dyYW0gYW5kIHRoZSBhY2NvbXBhbnlpbmcgbWF0
+ZXJpYWxzCiAgKiBhcmUgbWFkZSBhdmFpbGFibGUgdW5kZXIgdGhlIHRlcm1zIG9mIHRoZSBFY2xp
+cHNlIFB1YmxpYyBMaWNlbnNlIHYxLjAKICAqIHdoaWNoIGFjY29tcGFuaWVzIHRoaXMgZGlzdHJp
+YnV0aW9uLCBhbmQgaXMgYXZhaWxhYmxlIGF0CkBAIC0xNCw2ICsxNCw3IEBACiBpbXBvcnQgb3Jn
+LmVjbGlwc2UuY29yZS5ydW50aW1lLklQYXRoOwogaW1wb3J0IG9yZy5lY2xpcHNlLmNvcmUucnVu
+dGltZS5JUHJvZ3Jlc3NNb25pdG9yOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLklCdWZm
+ZXI7CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuSUNsYXNzRmlsZVdvcmtpbmdDb3B5Owog
+aW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLklKYXZhRWxlbWVudDsKIGltcG9ydCBvcmcuZWNs
+aXBzZS5qZHQuY29yZS5JSmF2YU1vZGVsU3RhdHVzQ29uc3RhbnRzOwogaW1wb3J0IG9yZy5lY2xp
+cHNlLmpkdC5jb3JlLkphdmFNb2RlbEV4Y2VwdGlvbjsKQEAgLTI4LDcgKzI5LDcgQEAKIC8qKgog
+ICogQSB3b3JraW5nIGNvcHkgb24gYW4gPGNvZGU+SUNsYXNzRmlsZTwvY29kZT4uCiAgKi8KLXB1
+YmxpYyBjbGFzcyBDbGFzc0ZpbGVXb3JraW5nQ29weSBleHRlbmRzIENvbXBpbGF0aW9uVW5pdCB7
+CitwdWJsaWMgY2xhc3MgQ2xhc3NGaWxlV29ya2luZ0NvcHkgZXh0ZW5kcyBDb21waWxhdGlvblVu
+aXQgaW1wbGVtZW50cyBJQ2xhc3NGaWxlV29ya2luZ0NvcHkgewogCiAJcHVibGljIENsYXNzRmls
+ZSBjbGFzc0ZpbGU7CiAKI1Agb3JnLmVjbGlwc2UuamR0LnVpCkluZGV4OiB1aS9vcmcvZWNsaXBz
+ZS9qZHQvaW50ZXJuYWwvdWkvSmF2YVBsdWdpbi5qYXZhCj09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0KUkNTIGZpbGU6IC9j
+dnNyb290L2VjbGlwc2Uvb3JnLmVjbGlwc2UuamR0LnVpL3VpL29yZy9lY2xpcHNlL2pkdC9pbnRl
+cm5hbC91aS9KYXZhUGx1Z2luLmphdmEsdgpyZXRyaWV2aW5nIHJldmlzaW9uIDEuMjI3CmRpZmYg
+LXUgLXIxLjIyNyBKYXZhUGx1Z2luLmphdmEKLS0tIHVpL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5h
+bC91aS9KYXZhUGx1Z2luLmphdmEJMSBNYXIgMjAxMSAxMTo1MDo1OSAtMDAwMAkxLjIyNworKysg
+dWkvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL3VpL0phdmFQbHVnaW4uamF2YQkxNCBBdWcgMjAx
+MSAxNzozMzo0NyAtMDAwMApAQCAtNjksNiArNjksNyBAQAogaW1wb3J0IG9yZy5lY2xpcHNlLnVp
+LmVkaXRvcnMudGV4dC50ZW1wbGF0ZXMuQ29udHJpYnV0aW9uVGVtcGxhdGVTdG9yZTsKIAogaW1w
+b3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLklCdWZmZXI7CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0
+LmNvcmUuSUNsYXNzRmlsZVdvcmtpbmdDb3B5OwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3Jl
+LklDb21waWxhdGlvblVuaXQ7CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuSmF2YUNvcmU7
+CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuV29ya2luZ0NvcHlPd25lcjsKQEAgLTM2Myw5
+ICszNjQsMTMgQEAKIAkJCUBPdmVycmlkZQogCQkJcHVibGljIElCdWZmZXIgY3JlYXRlQnVmZmVy
+KElDb21waWxhdGlvblVuaXQgd29ya2luZ0NvcHkpIHsKIAkJCQlJQ29tcGlsYXRpb25Vbml0IG9y
+aWdpbmFsPSB3b3JraW5nQ29weS5nZXRQcmltYXJ5KCk7Ci0JCQkJSVJlc291cmNlIHJlc291cmNl
+PSBvcmlnaW5hbC5nZXRSZXNvdXJjZSgpOwotCQkJCWlmIChyZXNvdXJjZSBpbnN0YW5jZW9mIElG
+aWxlKQotCQkJCQlyZXR1cm4gbmV3IERvY3VtZW50QWRhcHRlcih3b3JraW5nQ29weSwgKElGaWxl
+KSByZXNvdXJjZSk7CisJCQkJaWYgKG9yaWdpbmFsIGluc3RhbmNlb2YgSUNsYXNzRmlsZVdvcmtp
+bmdDb3B5KSB7CisJCQkJCXJldHVybiBzdXBlci5jcmVhdGVCdWZmZXIod29ya2luZ0NvcHkpOwor
+CQkJCX0gZWxzZSB7CisJCQkJCUlSZXNvdXJjZSByZXNvdXJjZT0gb3JpZ2luYWwuZ2V0UmVzb3Vy
+Y2UoKTsKKwkJCQkJaWYgKHJlc291cmNlIGluc3RhbmNlb2YgSUZpbGUpCisJCQkJCQlyZXR1cm4g
+bmV3IERvY3VtZW50QWRhcHRlcih3b3JraW5nQ29weSwgKElGaWxlKSByZXNvdXJjZSk7CisJCQkJ
+fQogCQkJCXJldHVybiBEb2N1bWVudEFkYXB0ZXIuTlVMTDsKIAkJCX0KIAkJfSk7Cg==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>201644</attachid>
+            <date>2011-08-17 09:55:00 -0400</date>
+            <delta_ts>2011-09-04 17:50:36 -0400</delta_ts>
+            <desc>alternative fix</desc>
+            <filename>Bug_337935_v2.patch</filename>
+            <type>text/plain</type>
+            <size>2452</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZQpJ
+bmRleDogbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvQ2xhc3NGaWxlV29ya2lu
+Z0NvcHkuamF2YQo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAvY3Zzcm9vdC9lY2xpcHNlL29yZy5lY2xp
+cHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NsYXNzRmls
+ZVdvcmtpbmdDb3B5LmphdmEsdgpyZXRyaWV2aW5nIHJldmlzaW9uIDEuNTMKZGlmZiAtdSAtcjEu
+NTMgQ2xhc3NGaWxlV29ya2luZ0NvcHkuamF2YQotLS0gbW9kZWwvb3JnL2VjbGlwc2UvamR0L2lu
+dGVybmFsL2NvcmUvQ2xhc3NGaWxlV29ya2luZ0NvcHkuamF2YQkyNyBKdW4gMjAwOCAxNjowMzo1
+MSAtMDAwMAkxLjUzCisrKyBtb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29yZS9DbGFz
+c0ZpbGVXb3JraW5nQ29weS5qYXZhCTE3IEF1ZyAyMDExIDEzOjUyOjMxIC0wMDAwCkBAIC0xLDUg
+KzEsNSBAQAogLyoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioKLSAqIENvcHlyaWdodCAoYykgMjAwMCwg
+MjAwOCBJQk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy4KKyAqIENvcHlyaWdodCAoYykgMjAwMCwg
+MjAxMSBJQk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy4KICAqIEFsbCByaWdodHMgcmVzZXJ2ZWQu
+IFRoaXMgcHJvZ3JhbSBhbmQgdGhlIGFjY29tcGFueWluZyBtYXRlcmlhbHMKICAqIGFyZSBtYWRl
+IGF2YWlsYWJsZSB1bmRlciB0aGUgdGVybXMgb2YgdGhlIEVjbGlwc2UgUHVibGljIExpY2Vuc2Ug
+djEuMAogICogd2hpY2ggYWNjb21wYW5pZXMgdGhpcyBkaXN0cmlidXRpb24sIGFuZCBpcyBhdmFp
+bGFibGUgYXQKQEAgLTgxLDIxICs4MSwxOCBAQAogcHJvdGVjdGVkIElCdWZmZXIgb3BlbkJ1ZmZl
+cihJUHJvZ3Jlc3NNb25pdG9yIHBtLCBPYmplY3QgaW5mbykgdGhyb3dzIEphdmFNb2RlbEV4Y2Vw
+dGlvbiB7CiAKIAkvLyBjcmVhdGUgYnVmZmVyCi0JSUJ1ZmZlciBidWZmZXIgPSB0aGlzLm93bmVy
+LmNyZWF0ZUJ1ZmZlcih0aGlzKTsKLQlpZiAoYnVmZmVyID09IG51bGwpIHJldHVybiBudWxsOwor
+CUlCdWZmZXIgYnVmZmVyID0gbmV3IEJ1ZmZlcihudWxsIC8qbm8gZmlsZSA9IGNhbm5vdCBzYXZl
+Ki8sIHRoaXMsIGZhbHNlIC8qaXNSZWFkT25seSovKTsKIAogCS8vIHNldCB0aGUgYnVmZmVyIHNv
+dXJjZQotCWlmIChidWZmZXIuZ2V0Q2hhcmFjdGVycygpID09IG51bGwpIHsKLQkJSUJ1ZmZlciBj
+bGFzc0ZpbGVCdWZmZXIgPSB0aGlzLmNsYXNzRmlsZS5nZXRCdWZmZXIoKTsKLQkJaWYgKGNsYXNz
+RmlsZUJ1ZmZlciAhPSBudWxsKSB7Ci0JCQlidWZmZXIuc2V0Q29udGVudHMoY2xhc3NGaWxlQnVm
+ZmVyLmdldENoYXJhY3RlcnMoKSk7Ci0JCX0gZWxzZSB7Ci0JCQkvLyBEaXNhc3NlbWJsZQotCQkJ
+SUNsYXNzRmlsZVJlYWRlciByZWFkZXIgPSBUb29sRmFjdG9yeS5jcmVhdGVEZWZhdWx0Q2xhc3NG
+aWxlUmVhZGVyKHRoaXMuY2xhc3NGaWxlLCBJQ2xhc3NGaWxlUmVhZGVyLkFMTCk7Ci0JCQlEaXNh
+c3NlbWJsZXIgZGlzYXNzZW1ibGVyID0gbmV3IERpc2Fzc2VtYmxlcigpOwotCQkJU3RyaW5nIGNv
+bnRlbnRzID0gZGlzYXNzZW1ibGVyLmRpc2Fzc2VtYmxlKHJlYWRlciwgVXRpbC5nZXRMaW5lU2Vw
+YXJhdG9yKCIiLCBnZXRKYXZhUHJvamVjdCgpKSwgQ2xhc3NGaWxlQnl0ZXNEaXNhc3NlbWJsZXIu
+V09SS0lOR19DT1BZKTsgLy8kTk9OLU5MUy0xJAotCQkJYnVmZmVyLnNldENvbnRlbnRzKGNvbnRl
+bnRzKTsKLQkJfQorCUlCdWZmZXIgY2xhc3NGaWxlQnVmZmVyID0gdGhpcy5jbGFzc0ZpbGUuZ2V0
+QnVmZmVyKCk7CisJaWYgKGNsYXNzRmlsZUJ1ZmZlciAhPSBudWxsKSB7CisJCWJ1ZmZlci5zZXRD
+b250ZW50cyhjbGFzc0ZpbGVCdWZmZXIuZ2V0Q2hhcmFjdGVycygpKTsKKwl9IGVsc2UgeworCQkv
+LyBEaXNhc3NlbWJsZQorCQlJQ2xhc3NGaWxlUmVhZGVyIHJlYWRlciA9IFRvb2xGYWN0b3J5LmNy
+ZWF0ZURlZmF1bHRDbGFzc0ZpbGVSZWFkZXIodGhpcy5jbGFzc0ZpbGUsIElDbGFzc0ZpbGVSZWFk
+ZXIuQUxMKTsKKwkJRGlzYXNzZW1ibGVyIGRpc2Fzc2VtYmxlciA9IG5ldyBEaXNhc3NlbWJsZXIo
+KTsKKwkJU3RyaW5nIGNvbnRlbnRzID0gZGlzYXNzZW1ibGVyLmRpc2Fzc2VtYmxlKHJlYWRlciwg
+VXRpbC5nZXRMaW5lU2VwYXJhdG9yKCIiLCBnZXRKYXZhUHJvamVjdCgpKSwgQ2xhc3NGaWxlQnl0
+ZXNEaXNhc3NlbWJsZXIuV09SS0lOR19DT1BZKTsgLy8kTk9OLU5MUy0xJAorCQlidWZmZXIuc2V0
+Q29udGVudHMoY29udGVudHMpOwogCX0KIAogCS8vIGFkZCBidWZmZXIgdG8gYnVmZmVyIGNhY2hl
+Cg==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>202725</attachid>
+            <date>2011-09-04 17:50:00 -0400</date>
+            <delta_ts>2011-09-04 17:50:36 -0400</delta_ts>
+            <desc>improved fix</desc>
+            <filename>Bug_337935_v3.patch</filename>
+            <type>text/plain</type>
+            <size>3761</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZQpJ
+bmRleDogbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvQ2xhc3NGaWxlV29ya2lu
+Z0NvcHkuamF2YQo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09ClJDUyBmaWxlOiAvY3Zzcm9vdC9lY2xpcHNlL29yZy5lY2xp
+cHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NsYXNzRmls
+ZVdvcmtpbmdDb3B5LmphdmEsdgpyZXRyaWV2aW5nIHJldmlzaW9uIDEuNTMKZGlmZiAtdSAtcjEu
+NTMgQ2xhc3NGaWxlV29ya2luZ0NvcHkuamF2YQotLS0gbW9kZWwvb3JnL2VjbGlwc2UvamR0L2lu
+dGVybmFsL2NvcmUvQ2xhc3NGaWxlV29ya2luZ0NvcHkuamF2YQkyNyBKdW4gMjAwOCAxNjowMzo1
+MSAtMDAwMAkxLjUzCisrKyBtb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29yZS9DbGFz
+c0ZpbGVXb3JraW5nQ29weS5qYXZhCTQgU2VwIDIwMTEgMjE6Mzk6NDYgLTAwMDAKQEAgLTEsNSAr
+MSw1IEBACiAvKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKgotICogQ29weXJpZ2h0IChjKSAyMDAwLCAy
+MDA4IElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgorICogQ29weXJpZ2h0IChjKSAyMDAwLCAy
+MDExIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgogICogQWxsIHJpZ2h0cyByZXNlcnZlZC4g
+VGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVyaWFscwogICogYXJlIG1hZGUg
+YXZhaWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0aGUgRWNsaXBzZSBQdWJsaWMgTGljZW5zZSB2
+MS4wCiAgKiB3aGljaCBhY2NvbXBhbmllcyB0aGlzIGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2YWls
+YWJsZSBhdApAQCAtODEsMjEgKzgxLDE4IEBACiBwcm90ZWN0ZWQgSUJ1ZmZlciBvcGVuQnVmZmVy
+KElQcm9ncmVzc01vbml0b3IgcG0sIE9iamVjdCBpbmZvKSB0aHJvd3MgSmF2YU1vZGVsRXhjZXB0
+aW9uIHsKIAogCS8vIGNyZWF0ZSBidWZmZXIKLQlJQnVmZmVyIGJ1ZmZlciA9IHRoaXMub3duZXIu
+Y3JlYXRlQnVmZmVyKHRoaXMpOwotCWlmIChidWZmZXIgPT0gbnVsbCkgcmV0dXJuIG51bGw7CisJ
+SUJ1ZmZlciBidWZmZXIgPSBCdWZmZXJNYW5hZ2VyLmNyZWF0ZUJ1ZmZlcih0aGlzKTsKIAogCS8v
+IHNldCB0aGUgYnVmZmVyIHNvdXJjZQotCWlmIChidWZmZXIuZ2V0Q2hhcmFjdGVycygpID09IG51
+bGwpIHsKLQkJSUJ1ZmZlciBjbGFzc0ZpbGVCdWZmZXIgPSB0aGlzLmNsYXNzRmlsZS5nZXRCdWZm
+ZXIoKTsKLQkJaWYgKGNsYXNzRmlsZUJ1ZmZlciAhPSBudWxsKSB7Ci0JCQlidWZmZXIuc2V0Q29u
+dGVudHMoY2xhc3NGaWxlQnVmZmVyLmdldENoYXJhY3RlcnMoKSk7Ci0JCX0gZWxzZSB7Ci0JCQkv
+LyBEaXNhc3NlbWJsZQotCQkJSUNsYXNzRmlsZVJlYWRlciByZWFkZXIgPSBUb29sRmFjdG9yeS5j
+cmVhdGVEZWZhdWx0Q2xhc3NGaWxlUmVhZGVyKHRoaXMuY2xhc3NGaWxlLCBJQ2xhc3NGaWxlUmVh
+ZGVyLkFMTCk7Ci0JCQlEaXNhc3NlbWJsZXIgZGlzYXNzZW1ibGVyID0gbmV3IERpc2Fzc2VtYmxl
+cigpOwotCQkJU3RyaW5nIGNvbnRlbnRzID0gZGlzYXNzZW1ibGVyLmRpc2Fzc2VtYmxlKHJlYWRl
+ciwgVXRpbC5nZXRMaW5lU2VwYXJhdG9yKCIiLCBnZXRKYXZhUHJvamVjdCgpKSwgQ2xhc3NGaWxl
+Qnl0ZXNEaXNhc3NlbWJsZXIuV09SS0lOR19DT1BZKTsgLy8kTk9OLU5MUy0xJAotCQkJYnVmZmVy
+LnNldENvbnRlbnRzKGNvbnRlbnRzKTsKLQkJfQorCUlCdWZmZXIgY2xhc3NGaWxlQnVmZmVyID0g
+dGhpcy5jbGFzc0ZpbGUuZ2V0QnVmZmVyKCk7CisJaWYgKGNsYXNzRmlsZUJ1ZmZlciAhPSBudWxs
+KSB7CisJCWJ1ZmZlci5zZXRDb250ZW50cyhjbGFzc0ZpbGVCdWZmZXIuZ2V0Q2hhcmFjdGVycygp
+KTsKKwl9IGVsc2UgeworCQkvLyBEaXNhc3NlbWJsZQorCQlJQ2xhc3NGaWxlUmVhZGVyIHJlYWRl
+ciA9IFRvb2xGYWN0b3J5LmNyZWF0ZURlZmF1bHRDbGFzc0ZpbGVSZWFkZXIodGhpcy5jbGFzc0Zp
+bGUsIElDbGFzc0ZpbGVSZWFkZXIuQUxMKTsKKwkJRGlzYXNzZW1ibGVyIGRpc2Fzc2VtYmxlciA9
+IG5ldyBEaXNhc3NlbWJsZXIoKTsKKwkJU3RyaW5nIGNvbnRlbnRzID0gZGlzYXNzZW1ibGVyLmRp
+c2Fzc2VtYmxlKHJlYWRlciwgVXRpbC5nZXRMaW5lU2VwYXJhdG9yKCIiLCBnZXRKYXZhUHJvamVj
+dCgpKSwgQ2xhc3NGaWxlQnl0ZXNEaXNhc3NlbWJsZXIuV09SS0lOR19DT1BZKTsgLy8kTk9OLU5M
+Uy0xJAorCQlidWZmZXIuc2V0Q29udGVudHMoY29udGVudHMpOwogCX0KIAogCS8vIGFkZCBidWZm
+ZXIgdG8gYnVmZmVyIGNhY2hlCiNQIG9yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsCklu
+ZGV4OiBzcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvbW9kZWwvV29ya2luZ0NvcHlUZXN0
+cy5qYXZhCj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT0KUkNTIGZpbGU6IC9jdnNyb290L2VjbGlwc2Uvb3JnLmVjbGlwc2Uu
+amR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21vZGVs
+L1dvcmtpbmdDb3B5VGVzdHMuamF2YSx2CnJldHJpZXZpbmcgcmV2aXNpb24gMS40NgpkaWZmIC11
+IC1yMS40NiBXb3JraW5nQ29weVRlc3RzLmphdmEKLS0tIHNyYy9vcmcvZWNsaXBzZS9qZHQvY29y
+ZS90ZXN0cy9tb2RlbC9Xb3JraW5nQ29weVRlc3RzLmphdmEJMjggQXByIDIwMDkgMTc6NDk6Mjgg
+LTAwMDAJMS40NgorKysgc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21vZGVsL1dvcmtp
+bmdDb3B5VGVzdHMuamF2YQk0IFNlcCAyMDExIDIxOjM5OjQ4IC0wMDAwCkBAIC0xLDUgKzEsNSBA
+QAogLyoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioKLSAqIENvcHlyaWdodCAoYykgMjAwMCwgMjAwOSBJ
+Qk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy4KKyAqIENvcHlyaWdodCAoYykgMjAwMCwgMjAxMSBJ
+Qk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy4KICAqIEFsbCByaWdodHMgcmVzZXJ2ZWQuIFRoaXMg
+cHJvZ3JhbSBhbmQgdGhlIGFjY29tcGFueWluZyBtYXRlcmlhbHMKICAqIGFyZSBtYWRlIGF2YWls
+YWJsZSB1bmRlciB0aGUgdGVybXMgb2YgdGhlIEVjbGlwc2UgUHVibGljIExpY2Vuc2UgdjEuMAog
+ICogd2hpY2ggYWNjb21wYW5pZXMgdGhpcyBkaXN0cmlidXRpb24sIGFuZCBpcyBhdmFpbGFibGUg
+YXQKQEAgLTIwMiw4ICsyMDIsOSBAQAogCiAvKioKICAqIFRlc3QgY3JlYXRpbmcgYSB3b3JraW5n
+IGNvcHkgb24gYSBjbGFzcyBmaWxlIHdpdGggYSBjdXN0b21pemVkIGJ1ZmZlci4KKyAqIEFzIG9m
+IGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy8zMzc5MzUgdGhpcyB0ZXN0IGlzIG5vIGxvbmdlciB2
+YWxpZC4KICAqLwotcHVibGljIHZvaWQgdGVzdE9uQ2xhc3NGaWxlKCkgdGhyb3dzIEphdmFNb2Rl
+bEV4Y2VwdGlvbiwgSU9FeGNlcHRpb24geworcHVibGljIHZvaWQgX3Rlc3RPbkNsYXNzRmlsZSgp
+IHRocm93cyBKYXZhTW9kZWxFeGNlcHRpb24sIElPRXhjZXB0aW9uIHsKIAkvLyBlbnN1cmUgdGhl
+IGV4dGVybmFsIEpDTCBpcyBjb3BpZWQKIAlzZXR1cEV4dGVybmFsSkNMKCJqY2xNaW4iKTsKIAo=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

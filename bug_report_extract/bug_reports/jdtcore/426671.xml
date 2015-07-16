@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>426671</bug_id>
+          
+          <creation_ts>2014-01-26 13:53:00 -0500</creation_ts>
+          <short_desc>[1.8][inference] inference cannot leverage information from reference expression</short_desc>
+          <delta_ts>2014-02-24 16:14:26 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>427059</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>anchakrk</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2354648</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-26 13:53:38 -0500</bug_when>
+    <thetext>Spawned from bug 426540:
+
+Complex example:
+
+Arrays.asList((List&lt;Integer&gt;) null).stream().collect(collectingAndThen(toList(), Collections::unmodifiableList)).remove(0);
+
+Compiler says: &quot;The method remove(int) is undefined for the type Object&quot;
+
+We find an inference solutions that seems to satisfy all constraints except the signature of Collections::unmodifiableList, which is
+
+  &lt;T&gt; List&lt;T&gt; unmodifiableList(List&lt;? extends T&gt; list)
+
+This would be the only place that would connect the third and forth type variables of
+  &lt;T,A,R,RR&gt; collectingAndThen
+Without inspecing the signature of unmodifiableList, RR is completely unconstrained and thus inferred as Object.
+
+Since I don&apos;t see any path how inference would be allowed to look at the signature of the reference expression, let&apos;s start with simpler examples:
+
+interface I&lt;X,Y&gt; {
+    Y fun(X y);
+}
+public class Test {
+    static &lt;S&gt; S id(S s) { return s; }
+    void test() {
+        m1(Test::id, &quot;Hi&quot;);                // (1)
+        m2(Test::id, &quot;Hi&quot;).toUpperCase();  // (2)
+        m3(Test::id, &quot;Hi&quot;).toUpperCase();  // (3)
+    }
+    
+    &lt;U,V&gt; void m1(I&lt;V,U&gt; i, U u) { }
+    &lt;U,V&gt; V m2(I&lt;V,U&gt; i, U u) { return null; }
+    &lt;U,V&gt; V m3(I&lt;U,V&gt; i, U u) { return null; }
+}
+
+The naive idea is: by passing Test::id for parameter I&lt;V,U&gt; one could equate U and V and with further equating U with String the results of methods m2 and m3 should be String, right?
+
+Actual results:
+javac 1 error:
+- error at (2): cannot find symbol 
+  symbol: method toUpperCase() 
+  location: class Object
+
+ecj-1.8-head 4 errors:
+(1) The type of id(Object) from the type Test is Object, this is incompatible with the descriptor&apos;s return type: String
+(2.a) The type of id(Object) from the type Test is Object, this is incompatible with the descriptor&apos;s return type: String
+(2.b) The method toUpperCase() is undefined for the type Object
+(3) The method toUpperCase() is undefined for the type Object
+
+The difference between (2) and (3) looks funny.
+
+Back to debugger &amp; spec.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2354660</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-26 15:20:35 -0500</bug_when>
+    <thetext>The differences in my simple examples could be easily identified: if inference has no target type (in vanilla expression contexts), we didn&apos;t perform the final part of inference.
+
+Fixed via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=a40625e8b71686fab9f6c8b263e48ade1ab498db
+
+This doesn&apos;t, however, fix the complex example.
+
+Back to debugger &amp; spec.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2355346</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-28 06:42:30 -0500</bug_when>
+    <thetext>I&apos;ve released two more tests (1 passing, 1 disabled) via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=a8ae4c61c3fd8e7af5944aa40683b300c7cbf9e8
+
+These demonstrate how we fail to extract type information from the method reference, whereas an exact method reference would direct inference towards the desired solution.
+
+Unfortunately I can&apos;t find a bug in the implementation, the problem seems to be inherent in the inference as spec&apos;d. Hence I asked for clarification: http://mail.openjdk.java.net/pipermail/lambda-spec-experts/2014-January/000495.html
+
+Suspending work on this bug until I get an answer...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2355347</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-28 06:43:31 -0500</bug_when>
+    <thetext>Srikanth: FYI (see comment 2).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2357494</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-01 07:30:07 -0500</bug_when>
+    <thetext>The problem has been acknowledged as a spec issue in http://mail.openjdk.java.net/pipermail/lambda-spec-experts/2014-January/000498.html</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2358289</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-03 21:11:23 -0500</bug_when>
+    <thetext>Dan has fixed the spec bug via https://bugs.openjdk.java.net/browse/JDK-8033488
+
+I have fixed the compiler via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=641db1701cbce57a1e73a64de662de098370be6e</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367885</commentid>
+    <comment_count>6</comment_count>
+    <who name="ANIRBAN CHAKRABORTY">anchakrk</who>
+    <bug_when>2014-02-24 16:14:26 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC1 using Kepler SR1 + Eclipse Java Development Tools Patch for Java 8 Support (BETA) 1.0.0.v20140220-2054</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

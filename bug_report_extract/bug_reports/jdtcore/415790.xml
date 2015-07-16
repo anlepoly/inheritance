@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>415790</bug_id>
+          
+          <creation_ts>2013-08-23 15:07:00 -0400</creation_ts>
+          <short_desc>[compiler][resource]Incorrect potential resource leak warning in for loop with close in try/catch</short_desc>
+          <delta_ts>2015-01-28 00:10:55 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows XP</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Robert Kish">robert.kish</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2298538</commentid>
+    <comment_count>0</comment_count>
+    <who name="Robert Kish">robert.kish</who>
+    <bug_when>2013-08-23 15:07:42 -0400</bug_when>
+    <thetext>I&apos;m getting incorrect potential resource leaks in a for loop, with the close inside a try/catch. Let me show examples:
+
+    public void example1() throws IOException {
+        for (final File file : new File[] { new File(&quot;/&quot;) }) {
+            BufferedReader reader = null;
+            try {
+                reader = new BufferedReader(new InputStreamReader(new FileInputStream(file)));
+            }
+            finally {
+                reader.close();
+            }
+        }
+    }
+
+example1() has no problems.
+
+    public void example2() throws IOException {
+        for (final File file : new File[] { new File(&quot;/&quot;) }) {
+            BufferedReader reader = null;
+            try {
+                reader = new BufferedReader(new InputStreamReader(new FileInputStream(file)));
+            }
+            finally {
+                try {
+                    reader.close();
+                }
+                catch (IOException e) {
+                }
+            }
+        }
+    }
+
+example2() shows the warning on variable &quot;reader&quot; - the difference between this and example1() is the try/catch around reader.close().
+
+    public void example3() throws IOException {
+        final File file = new File(&quot;/&quot;); 
+        BufferedReader reader = null;
+        try {
+            reader = new BufferedReader(new InputStreamReader(new FileInputStream(file)));
+        }
+        finally {
+            try {
+                reader.close();
+            }
+            catch (IOException e) {
+            }
+        }
+    }
+
+example3() does NOT give me the warning - it is the same as example2() with the the for loop removed.
+
+    public void example4() throws IOException {
+        final File[] files = new File[] { new File(&quot;/&quot;) }; 
+        for (int i = 0; i &lt; files.length; i++) {
+            File file = files[i];
+            BufferedReader reader = null;
+            try {
+                reader = new BufferedReader(new InputStreamReader(new FileInputStream(file)));
+            }
+            finally {
+                try {
+                    reader.close();
+                }
+                catch (IOException e) {
+                }
+            }
+        }
+    }
+
+example4() is an equivalent of example2(), with a regular for loop instead of enhanced-for loop. This showed a warning also.
+
+All I can conclude is potential resource leak is not working with for loop (of either type) and a try/catch around the close.
+
+I was compiling with Compiler compliance level of 1.6.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298606</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-08-23 23:56:03 -0400</bug_when>
+    <thetext>Thanks for taking a look, Stephan.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298618</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-24 06:42:18 -0400</bug_when>
+    <thetext>Thanks for the report, this looks buggy indeed.
+While we have some related bugs pending, I could not find a direct duplicate.
+
+I&apos;ll try to address this within the Luna time frame.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2388335</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-12 09:19:49 -0400</bug_when>
+    <thetext>Java 8 work had priority, deferring to 4.5</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501109</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-30 12:30:37 -0500</bug_when>
+    <thetext>This bug relates to a number of previous bugs:
+
+In Bug 384380 I implemented two alternative strategies inside TryStatement.prepareCatchInfo(), depending on whether or not we&apos;re inside a deferring LoopingFlowContext. In the deferring case initsOnException are incomplete, which I tried to compensate by giving priority to upstream flowInfo.
+For improved precision prepareCatchInfo() should not consider any null info other than from initsOnException, so reverting the intermediate fix from bug 384380 basically fixes this bug.
+To address the original issue in bug 384380, we are now more careful in recordHandlingException(): if a previously recorded flow info had no null info, we don&apos;t let this lack of information weaken the upstream flowInfo, but use the upstream flowInfo unchanged, see also the next paragraph.
+This change also fixes bug 406160.
+
+The fix for bug 321926 introduced the concept of EscapingExceptionCatchSite to model a throw inside an infinite loop: in this case the downstream flowInfo is DEAD_END, and hence we need to combine different flows to compute the state at the throw. It turns out that the flowInfo used by this mechanism lacks some information, as can be demonstrated by this case (variant from bug 321926):
+//---
+import java.io.IOException;
+public class X {
+  @SuppressWarnings(&quot;null&quot;)
+  public static void main(String[] args) {
+    String someVariable = null;
+    int i = 0;
+    try {
+        while (true) {
+            if (i == 0){
+                someVariable = &quot;not null&quot;;
+                i++;
+            }
+            else {
+                someVariable = &quot;value&quot;;
+                throw new IOException();
+            }
+        }
+    } catch (IOException e) {
+        // broken from loop, continue on
+    }
+    if (someVariable == null) {
+        System.out.println(&quot;Compiler buggy&quot;);
+    } else {
+        System.out.println(&quot;Compiler good&quot;);
+    }
+  }
+}
+//---
+We want to see someVariable as definitely non-null in the catch block (and hence also after the try-catch). To achieve this, the EscapingExceptionCatchSite now stores the flowInfo leading into the throw statement (during analysis of the loop body). That info is later appended to the flowInfo towards the top of the loop. This is similar to the flow algebra added in Bug 453483.
+Conversely, the preliminary call to recordHandlingException() was feeding misleading information into initsOnException, which is now avoided by passing DEAD_END when an exception escaping situation has been detected.
+Real flow info will follow during the simulated throw after loop back, for which we now assemble more precise info: &quot;upstream | upstream+action&quot;, thus prepending the missing prefix before action.
+This simulated throw thing was missing from ForeachStatement - added.
+
+Several tests from bug 321926 now change to reporting a redundant null check (which looks OK, based on more precise analysis). I&apos;m updating the tests to suppress that warning and focus on the correct (unchanged) result from test program execution. Basic pattern is:
+//---
+	 String someVariable = null;
+	 try {
+       someVariable = &quot;not null&quot;;
+       ...
+	 } catch (IOException e) {}
+	 if (someVariable == null) { // this *is* redundant.
+//---
+
+See https://git.eclipse.org/r/#/c/38852/</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501112</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-30 12:41:21 -0500</bug_when>
+    <thetext>(In reply to comment #4)
+&gt; To address the original issue in bug 384380, we are now more careful in
+&gt; recordHandlingException(): if a previously recorded flow info had no null info,
+&gt; we don&apos;t let this lack of information weaken the upstream flowInfo, but use the
+&gt; upstream flowInfo unchanged, see also the next paragraph.
+
+Just after pushing to gerrit I realized that this part is fully superseded by:
+
+
+&gt; Conversely, the preliminary call to recordHandlingException() was feeding
+&gt; misleading information into initsOnException, which is now avoided by passing
+&gt; DEAD_END when an exception escaping situation has been detected.
+
+Thus I&apos;m reverting the change in ExceptionHandlingFlowContext.recordHandlingException() and let hudson restart.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501148</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-30 15:01:09 -0500</bug_when>
+    <thetext>Released for 4.5 M5 via commit fe8f03030c996e7f3abaa101bf62fc6c88122090</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501150</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-30 15:05:41 -0500</bug_when>
+    <thetext>*** Bug 406160 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511096</commentid>
+    <comment_count>8</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-28 00:10:55 -0500</bug_when>
+    <thetext>Verified for 4.5 M5 with build I20150127-0900</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

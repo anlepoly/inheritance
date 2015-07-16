@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>432619</bug_id>
+          
+          <creation_ts>2014-04-11 08:50:00 -0400</creation_ts>
+          <short_desc>[1.8] Bogus error from method reference: &quot;should be accessed in a static way&quot;</short_desc>
+          <delta_ts>2014-04-29 08:27:30 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 8</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Timo Kinnunen">timo.kinnunen</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2388046</commentid>
+    <comment_count>0</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-04-11 08:50:28 -0400</bug_when>
+    <thetext>Using this code, ECJ reports 6 errors, all of them of the &quot;should be accessed in a static way&quot; kind. Compiling with javac works fine. For some reason removing the unused (not unused in the real version) type parameter E from the top-level interface makes the errors go away.
+
+package snippet;
+
+import java.util.Map;
+import java.util.stream.Collector;
+
+public interface StreamInterface&lt;E extends Exception&gt; {
+
+	static class DoubleCo {
+
+		private static class Re2 {
+
+			static &lt;K, E extends Exception&gt; Map&lt;K, double[]&gt; internalToMapToList2() {
+				Collector&lt;Double, double[][], double[][]&gt; toContainer1 = Collector.of(
+				//The method supply() from the type StreamInterface.DoubleCo.Re2 should be accessed in a static way
+				  StreamInterface.DoubleCo.Re2::supply,
+				  //The method accumulate(double[][], Double) from the type StreamInterface.DoubleCo.Re2 should be accessed in a static way
+				  StreamInterface.DoubleCo.Re2::accumulate,
+				  //The method combine(double[][], double[][]) from the type StreamInterface.DoubleCo.Re2 should be accessed in a static way
+				  StreamInterface.DoubleCo.Re2::combine);
+				Collector&lt;Double, double[][], double[][]&gt; toContainer2 =
+				//All 3 from above:
+				  Collector.of(DoubleCo.Re2::supply, DoubleCo.Re2::accumulate, DoubleCo.Re2::combine);
+				return null;
+			}
+			private static double[][] supply() {
+				return new double[64][];
+			}
+			private static void accumulate(double[][] container, Double value) {}
+			private static double[][] combine(double[][] container, double[][] containerRight) {
+				return new double[container.length + containerRight.length][];
+			}
+		}
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2388051</commentid>
+    <comment_count>1</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-04-11 08:55:53 -0400</bug_when>
+    <thetext>Shorter repro:
+
+package snippet;
+
+import java.util.function.BiConsumer;
+
+public interface StreamInterface&lt;E extends Exception&gt; {
+	static void foo() {
+		BiConsumer&lt;double[][], Double&gt; biConsumer2 = Re2::accumulate;
+	}
+	static class Re2 {
+		static void accumulate(double[][] container, Double value) {}
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2388524</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-04-14 01:40:38 -0400</bug_when>
+    <thetext>In ReferenceExpresasion, we have code that looks like:
+
+if (isStatic &amp;&amp; (this.haveReceiver || this.receiverType.isParameterizedType())) {
+    			scope.problemReporter().methodMustBeAccessedStatically(this, someMethod);
+    			return this.resolvedType = null;
+    		}
+
+while in MessageSend it looks like this:
+
+
+// static message invoked through receiver? legal but unoptimal (optional warning).
+		if (!(this.receiver.isImplicitThis() || this.receiver.isSuper() || receiverIsType)) {
+			scope.problemReporter().nonStaticAccessToStaticMethod(this, this.binding);
+		}
+
+So it would appear the check for this.receiverType.isParameterizedType()
+is superfluous. I don&apos;t recall what brought about this discrepancy in the
+first place.
+
+I&apos;ll prototype a fix.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2388529</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-04-14 02:18:12 -0400</bug_when>
+    <thetext>Fix and tests released here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=3a7dd4beaab81d40e6fc4ff6cc557568e132425e.
+
+Fix is simple: Members of a parameterized type answer true to isParameterizedType.
+So we should be using isParameterizedTypeWithActualArguments() instead.
+
+Thanks Timo.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2388710</commentid>
+    <comment_count>4</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-04-14 09:15:29 -0400</bug_when>
+    <thetext>Works for me now in plugin built from HEAD.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394548</commentid>
+    <comment_count>5</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-04-29 05:31:09 -0400</bug_when>
+    <thetext>Verified for 4.4 M7 using I20140428-2000 build</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

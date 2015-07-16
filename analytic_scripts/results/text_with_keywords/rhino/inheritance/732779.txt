@@ -1,0 +1,257 @@
+BUG REPORT COMMENTS:
+User Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:10.0.2) Gecko/20100101 Firefox/10.0.2
+Build ID: 20120215223356
+
+Steps to reproduce:
+
+Date.prototype.set[UTC]{Milliseconds, Seconds, Minutes, Hours, Date, Month, FullYear} need to evaluate (here: calling ToNumber) all parameters to follow the specification, cf. ES5.1 15.9.5.28 to 15.9.5.41
+
+
+
+Actual results:
+
+js> new Date(0).setMinutes(NaN,{valueOf:function(){throw 'xxx'}})
+NaN
+js> new Date(NaN).setMinutes({valueOf:function(){throw 'xxx'}})
+NaN
+
+
+Expected results:
+
+Both calls should throw the string 'xxx'
+Nice spot.  IIRC, these methods need to not short-circuit on finding NaN as they currently do.  Should be a pretty easy patch, good way to jump into the JS engine...
+I'm a newcomer that wants to start committing. This bug looks like a nice, gentle thing to get my feet wet.
+
+I set up my machine, downloaded the source, etc, and now have a proposed fix. According to the documentation the next steps are getting the bug assigned to me and sending out a code review, how can I go about this?
+There, it's assigned to you :)
+
+The next step is to attach your patch to this bug. Request review from :Waldo. Also, please follow the guidelines below for proper formatting of your patch. Thanks and welcome!
+https://developer.mozilla.org/en/Mercurial_FAQ#How_can_I_generate_a_patch_for_somebody_else_to_check-in_for_me.3F
+
+You need to request review when you attach the patch. Also, I'm going to assume that John Smith isn't your real name :-)
+># HG changeset patch
+># Parent a521a6586e5343d66f52e4bc82105c7ea349e026
+># User David Mason <nerdcorerising@gmail.com>
+>Bug 732779 - do not short circuit argument evaluation for date.set[minutes,hour,etc] methods. r=:Waldo
+>
+>
+>diff --git a/js/src/jsdate.cpp b/js/src/jsdate.cpp
+>--- a/js/src/jsdate.cpp
+>+++ b/js/src/jsdate.cpp
+>@@ -1754,22 +1754,16 @@ date_makeTime(JSContext *cx, Native nati
+> 
+>     bool ok;
+>     JSObject *obj = NonGenericMethodGuard(cx, args, native, &DateClass, &ok);
+>     if (!obj)
+>         return ok;
+> 
+>     double result = obj->getDateUTCTime().toNumber();
+> 
+>-    /* just return NaN if the date is already NaN */
+>-    if (!JSDOUBLE_IS_FINITE(result)) {
+>-        args.rval().setNumber(result);
+>-        return true;
+>-    }
+>-
+>     /*
+>      * Satisfy the ECMA rule that if a function is called with
+>      * fewer arguments than the specified formal arguments, the
+>      * remaining arguments are set to undefined.  Seems like all
+>      * the Date.setWhatever functions in ECMA are only varargs
+>      * beyond the first argument; this should be set to undefined
+>      * if it's not given.  This means that "d = new Date();
+>      * d.setMilliseconds()" returns NaN.  Blech.
+>@@ -1777,25 +1771,40 @@ date_makeTime(JSContext *cx, Native nati
+>     if (args.length() == 0) {
+>         SetDateToNaN(cx, obj, &args.rval());
+>         return true;
+>     }
+> 
+>     unsigned numNums = Min(args.length(), maxargs);
+>     JS_ASSERT(numNums <= 4);
+>     double nums[4];
+>+	bool argIsNotFinite = false;
+>     for (unsigned i = 0; i < numNums; i++) {
+>         if (!ToNumber(cx, args[i], &nums[i]))
+>             return false;
+>         if (!JSDOUBLE_IS_FINITE(nums[i])) {
+>-            SetDateToNaN(cx, obj, &args.rval());
+>-            return true;
+>+			argIsNotFinite = true;
+>         }
+>         nums[i] = js_DoubleToInteger(nums[i]);
+>     }
+>+	
+>+	/* set Date to NaN, after argument evaluation. */
+>+	if(argIsNotFinite) {
+>+		SetDateToNaN(cx, obj, &args.rval());
+>+        return true;
+>+	}
+>+
+>+	/* 
+>+	 * return NaN if the date is already NaN. Do not
+>+	 * short circuit argument evaluation
+>+	 */
+>+    if (!JSDOUBLE_IS_FINITE(result)) {
+>+    	args.rval().setNumber(result);
+>+        return true;
+>+	}
+> 
+>     double lorutime;  /* Local or UTC version of *date */
+>     if (local)
+>         lorutime = LocalTime(result, cx);
+>     else
+>         lorutime = result;
+> 
+>     double *argp = nums;
+>@@ -1897,26 +1906,32 @@ date_makeDate(JSContext *cx, Native nati
+>     if (args.length() == 0) {
+>         SetDateToNaN(cx, obj, &args.rval());
+>         return true;
+>     }
+> 
+>     unsigned numNums = Min(args.length(), maxargs);
+>     JS_ASSERT(1 <= numNums && numNums <= 3);
+>     double nums[3];
+>+	bool argIsNotFinite = false;
+>     for (unsigned i = 0; i < numNums; i++) {
+>         if (!ToNumber(cx, args[i], &nums[i]))
+>             return JS_FALSE;
+>         if (!JSDOUBLE_IS_FINITE(nums[i])) {
+>-            SetDateToNaN(cx, obj, &args.rval());
+>-            return true;
+>+            argIsNotFinite = true;
+>         }
+>         nums[i] = js_DoubleToInteger(nums[i]);
+>     }
+> 
+>+	/* set date to NaN, after argument evaluation. */
+>+	if(argIsNotFinite) {
+>+		SetDateToNaN(cx, obj, &args.rval());
+>+        return true;
+>+	}
+>+
+>     /*
+>      * return NaN if date is NaN and we're not setting the year, If we are, use
+>      * 0 as the time.
+>      */
+>     double lorutime; /* local or UTC version of *date */
+>     if (!(JSDOUBLE_IS_FINITE(result))) {
+>         if (maxargs < 3) {
+>             args.rval().setDouble(result);
+Ok, it appears I have no idea what I'm doing in bugzilla. Sorry about the learning difficulties.
+
+You're correct, John smith isn't my real name. I copy pasted the example .hgrc and tried to fix it. And then I misunderstood edit attachment as comment.
+Not a problem, we all have to start somewhere! If Jeff likes your patch as-is, he or myself will make sure that the name is correct on checkin. If he wants changes, you can update it then.
+The patch I've used in rhino for the exact same problem (rhino's date implementation is based on jsdate.cpp) looks almost the same. I'd still like to propose a few tweaks:
+- in date_makeTime(), perform the `if (!JSDOUBLE_IS_FINITE(result)) {` check before `if(argIsNotFinite) {` to avoid calling `SetDateToNaN()` unless necessary
+- put the `nums[i] = js_DoubleToInteger(nums[i]);` assignment in an else-branch to avoid calling `js_DoubleToInteger` unless necessary
+- and most important, replace all tabs with spaces
+Thanks for the feedback, Andre. I agree with and have incorporated your changes.
+Review of attachment 604855:
+-----------------------------------------------------------------
+
+Technically this looks good.  It could use two more changes, tho.
+
+First, this patch should have tests.  I'd suggest copying js/src/tests/ecma_5/Date/equality-to-boolean.js into a new test named, say, setTime-argument-shortcircuiting.js, and updating that with some tests -- one per method you're touching should do it, I think.  Then make sure to update js/src/tests/ecma_5/Date/jstests.list to include a new entry for that test file.  You can run tests using |python tests/jstests.py path/to/js --args='-m -n'|.  Make sure your patch doesn't make any tests fail -- I'd hope nothing was depending on the short-circuiting here, but you never know.  And of course make sure it works *correctly*, too, by not failing with your code changes.  :-)
+
+Second, the patch still has some formatting issues -- trailing whitespace, ^M characters (Windows-style newline, where we use just the Unix-style newline), and I see what looks like at least one tab.  If you enable Mercurial's colordiff extension, |hg diff --color always| will point most of this stuff out to you quite clearly.  (Plus there are a couple style nits mentioned below, but those are easier to see.)
+
+That's all the remaining work for a patch here -- we're just interested in fixing the technical issue/bug.  But in reading this code, I'm reminded that our date algorithms look almost nothing like the spec algorithms in many places -- these among them.  Is there any chance you might be interested in cleaning up this code (in a followup patch) so that it looks more like the spec algorithms, with clearly numbered steps directly corresponding to the code?  (See fun_bind in jsfun.cpp for an example of what I mean.)  If you're not interested, I understand -- I'd just rather not pass up pointing out a simple way this code could be further improved if you're interested in doing it.  :-)
+
+::: js/src/jsdate.cpp
+@@ +1795,5 @@
+> +        args.rval().setNumber(result);
+> +        return true;
+> +    }
+> +    
+> +	/* set Date to NaN, after argument evaluation. */
+
+This still looks like a tab to me.
+
+@@ +1796,5 @@
+> +        return true;
+> +    }
+> +    
+> +	/* set Date to NaN, after argument evaluation. */
+> +    if(argIsNotFinite) {
+
+if (argIsNotFinite) {
+
+@@ +1923,5 @@
+>          }
+> +    }
+> +
+> +    /* set date to NaN, after argument evaluation. */
+> +    if(argIsNotFinite) {
+
+if ( as well here.
+Thanks for the feedback, everything should be addressed in this revision.
+
+I ran the jstests suite, there are three failing tests, but they are not related to Date and fail without my fix as well:
+
+    ecma_5/RegExp/regress-617935.js
+    js1_8_5/extensions/worker-fib.js
+    js1_8_5/extensions/worker-terminate.js
+
+I'm open to the possibility of cleaning up the code. I'll take a look at it this weekend and see from there. If it's something I decide to do, would that be tracked under a different bug or this one?
+The "setAndReturn()" call in the test case needs to be rewritten to use "{valueOf:function(){global = xxx}}" as well because function calls in arguments are evaluated before the function itself is called.
+(In reply to nerdcorerising from comment #12)
+> Thanks for the feedback, everything should be addressed in this revision.
+
+Thanks for mq-izing the patch!
+
+> I'm open to the possibility of cleaning up the code. I'll take a look at it
+> this weekend and see from there. If it's something I decide to do, would
+> that be tracked under a different bug or this one?
+
+Definitely, yes.
+Updating the patch to use valueOf instead of the function, per Andre's comments.
+Review of attachment 606894:
+-----------------------------------------------------------------
+
+Hmm.  Is this the actual patch you meant to attach?  When I try applying it locally, I get conflicts -- looks like this is the diff to a previous diff of yours, not actually a fresh diff applicable to an unmodified tree.  Mind attaching the real patch here, please?
+
+That said, perhaps this isn't all bad, because in figuring this out, I noticed something that makes me think the patch isn't a complete fix.  Specifically, I see this right now in the code:
+
+> static JSBool
+> date_makeTime(JSContext *cx, Native native, unsigned maxargs, JSBool local, unsigned argc, Value *vp)
+> {
+>     CallArgs args = CallArgsFromVp(argc, vp);
+> 
+>     bool ok;
+>     JSObject *obj = NonGenericMethodGuard(cx, args, native, &DateClass, &ok);
+>     if (!obj)
+>         return ok;
+> 
+>     double result = obj->getDateUTCTime().toNumber();
+> 
+>     /* just return NaN if the date is already NaN */
+>     if (!JSDOUBLE_IS_FINITE(result)) {
+>         args.rval().setNumber(result);
+>         return true;
+>     }
+
+I don't think you're touching enough code to fix this case, which will bite in cases like this:
+
+  var set = false;
+  var d = new Date();
+  d.setTime(NaN);
+  d.setSeconds({ valueOf: function() { set = true; return 0; } }, 0);
+  assertEq(set, true);
+
+(Curiously, of the engines out there only v8 seems to get this one right -- not even Opera who rewrote their engine directly from the spec gets it right.  I must be new here or something to be surprised at this.  :-) )
+
+...or, hm.  I think you did have this right in earlier versions of the patch, now that change has been undone in newer versions.  Please readd it.
+
+Tests look pretty good to me.  I think you could add some tests for Date.prototype.setYear, too -- its algorithm (B.2.4) is formulated differently from the others, but as regards this bug I don't think there are any differences, at a glance.
+Not sure what happened with the last patch, why it was not from a clean tree. Here is the correct patch and a test updated with setYear too.
+Review of attachment 611722:
+-----------------------------------------------------------------
+
+There's a whitespace mixup or two, and we capitalize complete sentences in comments and end them with periods, but other than that I think this is basically good to go.  I'll fix those things when I push the patch, probably today.  Thanks!
+https://hg.mozilla.org/integration/mozilla-inbound/rev/19d0e4ef755b
+
+Thanks for the patch!
+https://hg.mozilla.org/mozilla-central/rev/19d0e4ef755b
+

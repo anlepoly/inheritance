@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>429090</bug_id>
+          
+          <creation_ts>2014-02-25 16:12:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler] Type Lambda expression&apos;s parameter c is expected to be of type Junk10.Observable</short_desc>
+          <delta_ts>2014-04-14 05:20:36 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          <resolution></resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Steve Northover">snorthov</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2368496</commentid>
+    <comment_count>0</comment_count>
+    <who name="Steve Northover">snorthov</who>
+    <bug_when>2014-02-25 16:12:30 -0500</bug_when>
+    <thetext>The following code compiles under JDK8 but not under Eclipse 8:
+
+package junk;
+
+public class Junk10 {
+    class Observable&lt;T&gt; {}
+    interface InvalidationListener {
+        public void invalidated(Observable observable);
+    }
+    interface SetChangeListener&lt;E&gt; {
+        public static abstract class Change&lt;E&gt; {}
+        void onChanged(Change&lt;? extends E&gt; change);
+    }
+    class SetListenerHelper&lt;T&gt; {}
+    public static &lt;E&gt; SetListenerHelper&lt;E&gt; addListener(SetListenerHelper&lt;E&gt; helper, InvalidationListener listener) {
+        return helper;
+    }
+    public static &lt;E&gt; SetListenerHelper&lt;E&gt; addListener(SetListenerHelper&lt;E&gt; helper, SetChangeListener&lt;? super E&gt; listener) {
+        return helper;
+    }
+    void junk() {
+        addListener(null, new SetChangeListener () {
+            public void onChanged(SetChangeListener.Change change) {}
+        });
+        addListener(null, (SetChangeListener.Change&lt;?&gt; c) -&gt; {});
+    }
+}
+
+NOTE:  I believe the problem is unrelated to lambda.  If the &lt;?&gt; is added to the  first addListener(), then neither the lambda or the inner class compiles.  If the &lt;?&gt; is removed from the second addListener(), then both JDK8 and Eclipse won&apos;t compile the code.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2368517</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-25 17:30:50 -0500</bug_when>
+    <thetext>I&apos;ll take a look.
+
+First finding: when removing the overload taking the InvalidationListener, we end up with an additional error:
+
+        addListener(null, (SetChangeListener.Change&lt;?&gt; c) -&gt; {});
+        ^^^^^^^^^^^
+The method addListener(Junk10.SetListenerHelper&lt;E&gt;, Junk10.SetChangeListener&lt;? super E&gt;) in the type Junk10 is not applicable for the arguments (null, (SetChangeListener.Change&lt;?&gt; c) -&gt; {
+})
+
+
+I can&apos;t yet make sense of this, but that looks like the core problem.
+
+
+
+Next, when I move Change to be directly nested in Junk10, I see this:
+
+public class Junk10 {
+        ^
+Internal compiler error: java.lang.NullPointerException at org.eclipse.jdt.internal.compiler.lookup.ConstraintTypeFormula.reduceTypeEquality(ConstraintTypeFormula.java:139)
+----------
+2. ERROR in /tmp/Junk10.java (at line 24)
+        addListener(null, (SetChangeListener.Change&lt;?&gt; c) -&gt; {});
+                           ^^^^^^^^^^^^^^^^^^^^^^^^
+SetChangeListener.Change cannot be resolved to a type
+----------
+java.lang.NullPointerException
+        at org.eclipse.jdt.internal.compiler.lookup.ConstraintTypeFormula.reduceTypeEquality(ConstraintTypeFormula.java:139)
+        at org.eclipse.jdt.internal.compiler.lookup.ConstraintTypeFormula.reduce(ConstraintTypeFormula.java:91)
+        at org.eclipse.jdt.internal.compiler.lookup.BoundSet.reduceOneConstraint(BoundSet.java:688)
+        at org.eclipse.jdt.internal.compiler.lookup.InferenceContext18.reduceAndIncorporate(InferenceContext18.java:903)
+        at org.eclipse.jdt.internal.compiler.lookup.InferenceContext18.reduceWithEqualityConstraints(InferenceContext18.java:662)
+        at org.eclipse.jdt.internal.compiler.lookup.InferenceContext18.inferFunctionalInterfaceParameterization(InferenceContext18.java:608)
+        at org.eclipse.jdt.internal.compiler.lookup.ConstraintExpressionFormula.findGroundTargetType(ConstraintExpressionFormula.java:232)
+        at org.eclipse.jdt.internal.compiler.lookup.ConstraintExpressionFormula.reduce(ConstraintExpressionFormula.java:160)
+        at org.eclipse.jdt.internal.compiler.lookup.BoundSet.reduceOneConstraint(BoundSet.java:688)
+        at org.eclipse.jdt.internal.compiler.lookup.InferenceContext18.reduce(InferenceContext18.java:857)
+        at org.eclipse.jdt.internal.compiler.lookup.InferenceContext18.solve(InferenceContext18.java:842)
+        at org.eclipse.jdt.internal.compiler.lookup.ParameterizedGenericMethodBinding.computeCompatibleMethod(ParameterizedGenericMethodBinding.java:119)
+
+
+After fixing the reference to Change, we&apos;re back to previous. At least this shows that nesting of Change is not part of the problem.
+
+
+At this point removing the type from the lambda arguments resolves the errors: now that inference can freely do its job, it finds the solution - which of course doesn&apos;t help in the overloaded situation. Yep, overloading is the most expensive feature in Java.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2368529</commentid>
+    <comment_count>2</comment_count>
+    <who name="Steve Northover">snorthov</who>
+    <bug_when>2014-02-25 18:02:43 -0500</bug_when>
+    <thetext>Is there a simple work around I can do to keep moving with the lambda?  I don&apos;t want to revert the code in question to use pre-lambda syntax.
+
+BTW, Eclipse has survived the lambdification of OpenJFX with this error in about 20 or so places.  We are in good shape so far.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2369514</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-27 16:24:36 -0500</bug_when>
+    <thetext>To prevent the NPE from comment1 we should never accept a type constraint where one of the involved types is null (failed to resolve). Implemented by avoiding to directly allocate ConstraintTypeFormula; use a factory with appropriate protection instead. 
+As an alternative I first tried to use InferenceFailureException to signal this situation, but that exception surfaces as a compiler error, which we don&apos;t want in this case.
+
+This part released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=cfb9e308b9934bc0d4a17e2d4604db46f20af164</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2369532</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-27 18:18:12 -0500</bug_when>
+    <thetext>Inference fails for the desired method, because we have to prove identity of these types:
+   Change&lt;?&gt;  -- declared for the lambda parameter
+   Change&lt;? extends Object&gt; -- substituted from the SAM with E=Object 
+
+At this point I&apos;m really uncertain what to do ...
+
+Adjusting overload resolution &amp; type inference with special code to accept these as equal doesn&apos;t fly, because this pair of types can surface in too many locations and we&apos;d have to patch each and every one of them.
+
+I have a point fix, by tweaking Scope.substitute(): whenever we see a wildcard whose upper bound is being substituted to j.l.Object reduce it to an unbound wildcard. Result:
+ - solves this bug
+ - causes 3 real regressions (report new/bogus error)
+ - causes 7 potential regressions (changes in warnings could be acceptable)
+ - fails the following variant (which, too, passes with javac):
+
+  addListener(null, (SetChangeListener.Change&lt;? extends Object&gt; c) -&gt; {});
+
+Apparently, tweaking only this in one place causes inconsistencies.
+
+Figuring that we may just have to apply the tweak at a central place, I added code in LookupEnvironment.createWildcard, so that when requesting a &quot;? extends Object&quot; we actually get a &quot;?&quot;. Result
+ - fixes this bug plus the above variant
+ - many more regressions (total of 41 in RunAllJava8Tests)
+
+
+The only good news I have today:
+
+The variant from above is actually accepted without any changes in the compiler:
+  
+   addListener(null, (SetChangeListener.Change&lt;? extends Object&gt; c) -&gt; {});
+
+From my today&apos;s perspective this is the only solution to the problem.
+But I&apos;ll let it sink in, before closing as invalid.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2369534</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-27 18:20:36 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; The variant from above is actually accepted without any changes in the
+&gt; compiler:
+&gt;   
+&gt;    addListener(null, (SetChangeListener.Change&lt;? extends Object&gt; c) -&gt; {});
+
+I&apos;ve released this variant as a passing test (no code changes in the compiler), commit is http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=848c414ceb7f8dfa6bf1cb908b31047bf78910eb</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2369536</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-27 18:41:00 -0500</bug_when>
+    <thetext>Here&apos;s a goody I found in the changelog of JSR 335 spec 0.9.0:
+
+&quot;Cleaned up the treatment of ? extends Object, which should be equivalent to ?&quot;
+
+This specific mention only concerns incorporation (where our implementation correctly handles this case), but it might be seen as a hint, that the two notations are *intended* to mean the same throughout the JLS.
+
+Another reference: GTT.test0702() - my experimental changes affected this:
+
+----------
+1. ERROR in X.java (at line 7)
+	lhs = rhs; // 1
+	      ^^^
+Type mismatch: cannot convert from X&lt;X&lt;? extends Object&gt;&gt; to X&lt;X&lt;?&gt;&gt;
+----------
+
+See also this comment in the test code:
+
+// TODO (philippe) should be ok using capture rules for equivalence
+
+
+Ergo: this doesn&apos;t look like an easy win for BETA_J8.
+
+Steve: does the solution of adding &quot;extends Object&quot; work for you?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2369905</commentid>
+    <comment_count>7</comment_count>
+    <who name="Steve Northover">snorthov</who>
+    <bug_when>2014-02-28 12:59:24 -0500</bug_when>
+    <thetext>Replacing &quot;?&quot; with &quot;? extends Object&quot; works around the problem.  Are these two expressions essentially the same thing?
+
+I noticed that when I was editing the file, I was able to get null pointers in the compiler pretty easily.  I saw you talking about that in this bug report so I am assuming you are seeing the same thing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2369933</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-28 13:46:57 -0500</bug_when>
+    <thetext>(In reply to Steve Northover from comment #7)
+&gt; Replacing &quot;?&quot; with &quot;? extends Object&quot; works around the problem.  Are these
+&gt; two expressions essentially the same thing?
+
+As mentioned, in the inference spec efforts have been made to treat both notations in exactly the same way, so &quot;essentially the same thing&quot; can be answered affirmatively :)
+
+Still, other situations distinguish between bound and unbound wildcards - hence the different results in this bug, but I think you should be fine with the explicit bound.
+ 
+&gt; I noticed that when I was editing the file, I was able to get null pointers
+&gt; in the compiler pretty easily.  I saw you talking about that in this bug
+&gt; report so I am assuming you are seeing the same thing.
+
+The NPE which I observed was fixed as of comment 3. So after updating to the next build (tomorrow, I guess), you should no longer get NPE - hopefully :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2370041</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-28 18:29:41 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #8)
+&gt; The NPE which I observed was fixed as of comment 3. So after updating to the
+&gt; next build (tomorrow, I guess), you should no longer get NPE - hopefully :)
+
+I just checked that tags: the fix from comment 3 should be available in build 20140228-1746, which just appeared on the update site.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2388340</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-12 09:43:40 -0400</bug_when>
+    <thetext>No further action planned ATM, to be revisited during 4.5.
+
+Srikanth, Jay, here&apos;s my exec. summary:
+
+We are not detecting compatibility between &quot;?&quot; and &quot;? extends Object&quot;, although JLS seems to *intend* that normally/basically/sometimes these are indeed considered equal, whereas other places in the spec need the distinction between unbounded and bounded wildcards.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2388622</commentid>
+    <comment_count>11</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-04-14 05:20:36 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #10)
+&gt; No further action planned ATM, to be revisited during 4.5.
+&gt; 
+&gt; Srikanth, Jay, here&apos;s my exec. summary:
+&gt; 
+&gt; We are not detecting compatibility between &quot;?&quot; and &quot;? extends Object&quot;,
+&gt; although JLS seems to *intend* that normally/basically/sometimes these are
+&gt; indeed considered equal, whereas other places in the spec need the
+&gt; distinction between unbounded and bounded wildcards.
+
+Thanks, I am fine with this being moved to 4.5 for now. However, we need
+to track this closely to see if this pops up in other places - https://bugs.eclipse.org/bugs/show_bug.cgi?id=432625 is one place where I am 
+putting in a clean &amp; safe point fix.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

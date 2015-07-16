@@ -1,0 +1,293 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>416182</bug_id>
+          
+          <creation_ts>2013-08-29 15:16:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler][null] Contradictory null annotations not rejected</short_desc>
+          <delta_ts>2014-03-07 07:21:26 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>392099</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>manpalat</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2300887</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-08-29 15:16:57 -0400</bug_when>
+    <thetext>// --
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
+
+public class X&lt;T&gt; {
+	T foo(@NonNull T t) {
+		return t;
+	}
+	public static void main(String[] args) {
+		X&lt;@Nullable String&gt; xs = new X&lt;String&gt;();
+		xs.foo(null);
+	}
+	
+} 
+// --
+1. Allowing X&lt;@Nullable String&gt; creates contradiction for X#foo which we don&apos;t
+complain about.
+
+2. The unchecked conversion message reads strange. Target type @Nullable,
+we should probably be just silent as it is always a safe conversion.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2300991</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-29 17:16:49 -0400</bug_when>
+    <thetext>(In reply to comment #0)
+&gt; // --
+&gt; import org.eclipse.jdt.annotation.NonNull;
+&gt; import org.eclipse.jdt.annotation.Nullable;
+&gt; 
+&gt; public class X&lt;T&gt; {
+&gt; 	T foo(@NonNull T t) {
+&gt; 		return t;
+&gt; 	}
+&gt; 	public static void main(String[] args) {
+&gt; 		X&lt;@Nullable String&gt; xs = new X&lt;String&gt;();
+&gt; 		xs.foo(null);
+&gt; 	}
+&gt; 	
+&gt; } 
+&gt; // --
+&gt; 1. Allowing X&lt;@Nullable String&gt; creates contradiction for X#foo which we
+&gt; don&apos;t
+&gt; complain about.
+
+That&apos;s a tricky one :)
+I made a comment in bug 416190. To follow-up there.
+ 
+&gt; 2. The unchecked conversion message reads strange. Target type @Nullable,
+&gt; we should probably be just silent as it is always a safe conversion.
+
+Well ...
+for the allocation expression I could see that we&apos;re being a bit over eager but
+generally X&lt;String&gt; is not at all compatible with X&lt;@Nullable String&gt; see:
+
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
+
+public class X&lt;T&gt; {
+	T foo(@NonNull T t) {
+		return t;
+	}
+	public static void main(String[] args) {
+		X&lt;@Nullable String&gt; xs = new X&lt;String&gt;();
+		xs.test(new Y()); // (1)
+	}
+	
+	public void test(X&lt;String&gt; x) {
+		X&lt;@Nullable String&gt; xs = x; // unchecked warning because ...
+		xs.bar(null); // (looks fine, doesn&apos;t it?)
+	}
+	public void bar(T t) {}
+}
+class Y extends X&lt;@NonNull String&gt; {
+	public void bar(@NonNull String t) {
+		System.out.println(t.toUpperCase()); // ... bad NPE here !!
+	}	
+}
+
+We are accepting the opposite direction at (1) because dropping information is OK.
+This asymmetry is in direct analogy to raw types.
+
+Feel free to re-open if you think we should special-case the allocation expression
+because we have an exact type as opposed to the polymorphic case, but note that
+  List&lt;Object&gt; l = new ArrayList();
+also gives an unchecked warning.
+
+*** This bug has been marked as a duplicate of bug 416190 ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2300999</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-29 17:31:50 -0400</bug_when>
+    <thetext>I&apos;ve added the test as augmented in comment 1 anyway.
+Commit c3c8917789b86ee8ba49ca3909bec03bf932cdc5</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2301080</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-08-30 00:40:09 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+
+&gt; &gt; 1. Allowing X&lt;@Nullable String&gt; creates contradiction for X#foo which we
+&gt; &gt; don&apos;t
+&gt; &gt; complain about.
+&gt; 
+&gt; That&apos;s a tricky one :)
+&gt; I made a comment in bug 416190. To follow-up there.
+&gt;  
+&gt; &gt; 2. The unchecked conversion message reads strange. Target type @Nullable,
+&gt; &gt; we should probably be just silent as it is always a safe conversion.
+&gt; 
+&gt; Well ...
+&gt; for the allocation expression I could see that we&apos;re being a bit over eager
+&gt; but
+&gt; generally X&lt;String&gt; is not at all compatible with X&lt;@Nullable String&gt; see:
+
+If contradictions of the form pointed out by 1. are consistently rejected, 
+is this category of warnings still useful ? For example in the code below, 
+what would a programmer do with the warnings: we are transiting from one
+no protection zone into another no protection zone ? 
+
+// --
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
+
+public class X&lt;T&gt; {
+	T foo(T t) { // T is NOT @NonNull
+		return t;
+	}
+	public static void main(String[] args) {
+		X&lt;@Nullable String&gt; xs = new X&lt;String&gt;();
+	}
+	
+	public void test(X&lt;String&gt; x) {
+		X&lt;@Nullable String&gt; xs = x; // unchecked warning because ...
+	}
+	public void bar(T t) {}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2301144</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-30 03:36:02 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+&gt;  ... we are transiting from one
+&gt; no protection zone into another no protection zone ? 
+&gt; 
+&gt; // --
+&gt; import org.eclipse.jdt.annotation.NonNull;
+&gt; import org.eclipse.jdt.annotation.Nullable;
+&gt; 
+&gt; public class X&lt;T&gt; {
+&gt; 	T foo(T t) { // T is NOT @NonNull
+&gt; 		return t;
+&gt; 	}
+
+This foo() is actually a good example: inside foo&apos;s implementation we cannot
+make any assumptions, but the nullness of the argument &apos;t&apos; may directly be
+propagated to a client (via the return). I&apos;d be very careful in announcing
+any incompatibilities of null annotations as irrelevant.
+
+To generalize the question: the implementation currently only ever compares
+two sides for compatibility. It never looks further to check if a hole in
+type safety can actually be exploited to yield NPE.
+
+I don&apos;t (yet) see an easy pattern how we could recognize from looking at X&lt;T&gt; whether
+a given annotation situation would be safe/unsafe.
+I could only see that an allocation expression on the RHS is an exception, we could
+actually interpret
+  X&lt;@Nullable String&gt; xs = new X&lt;String&gt;();
+as a half-diamond: the RHS is simply omitting information that can be inferred
+from the LHS, but then we need to actually do that inference to detect:
+
+  class X&lt;T&gt; {
+    X (T elem) { ... }
+  }
+
+  X&lt;@NonNull String&gt; x = new X&lt;String&gt;(null);
+
+  - lhs vs. rhs : OK
+  - allocation vs. allocation argument: OK
+  - putting all together: NOK
+ 
+Do you think inferring a half-diamond should be supported, or should we simply ask
+the user to use a full diamond? And - wow - the following already works:
+
+	X&lt;@Nullable String&gt; xs2 = new X&lt;&gt;(null); // OK
+	X&lt;@NonNull String&gt; xs3 = new X&lt;&gt;(null);
+	                                 ^^^^
+	Null type mismatch: required &apos;@NonNull String&apos; but the provided value is null
+
+:)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2301156</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-08-30 04:07:24 -0400</bug_when>
+    <thetext>(In reply to comment #4)
+
+&gt; This foo() is actually a good example: inside foo&apos;s implementation we cannot
+&gt; make any assumptions, but the nullness of the argument &apos;t&apos; may directly be
+&gt; propagated to a client (via the return). 
+
+That&apos;s an excellent point I missed.
+
+&gt; Do you think inferring a half-diamond should be supported, or should we
+&gt; simply ask
+&gt; the user to use a full diamond? And - wow - the following already works:
+
+I think we can rest this one.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2369277</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-27 07:44:44 -0500</bug_when>
+    <thetext>Reopening, as the fix-under-test for bug 416190 does not fix all issues discussed here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2370156</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-01 17:53:13 -0500</bug_when>
+    <thetext>Fixed by applying the facility from bug 418743 also after a PTB invoked createParameterizedMethod(). 
+
+Released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=2575bc1675526f9cf1bae80cf41843bf7eedd3c4</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372983</commentid>
+    <comment_count>8</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-03-07 07:21:26 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC2 using Kepler SR2 + Eclipse Java Development Tools Patch for Java 8 Support (BETA)1.0.0.v20140306-1935</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,425 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>415066</bug_id>
+          
+          <creation_ts>2013-08-14 10:11:00 -0400</creation_ts>
+          <short_desc>ASTParser could not createAST(...) for java files with classes package private access when we use setSource(char[] source) but do not use setProject(..)</short_desc>
+          <delta_ts>2015-04-27 08:05:48 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>4.5 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Marcin Czyzyk">mczyzyk</reporter>
+          <assigned_to name="Manoj Palat Away Until May 11 2015">manpalat</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>pwalski</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>2</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2294733</commentid>
+    <comment_count>0</comment_count>
+    <who name="Marcin Czyzyk">mczyzyk</who>
+    <bug_when>2013-08-14 10:11:27 -0400</bug_when>
+    <thetext>It is when you used parser outside IDE and does not have got access to JavaProject. You will provide properly all data to parser but it fails on case like:
+
+File A:
+-------
+public class A 
+{ }
+class B 
+{}
+-------
+
+File C:
+-------
+public class C extends B 
+{}
+-------
+
+Goal: We want createAST() for file C.
+
+It is caused that method findType() is broken in NameEnvironmentWithProgress 
+See: class CompilationUnitResolver
+method 	public static void resolve(...)
+
+line: environment = new NameEnvironmentWithProgress(allEntries, null, monitor);
+
+Method findType in this NameEnvironmentWithProgress could better support this case.
+
+In findType going down few steps
+NameEnvironmentAnswer.findClass() this is place where is a bug in this case:
+
+If class is on the class path then it is ok but in our case. Both classes are on one file with source code and second class is not in classpath and you have not got binaries. You do not want build it. You just want create AST then this aproach where you are searching for binary .class file names are completely fails. This will back you class not found and compile error when everything is fine.
+
+Quick fix could be looks something like that:
+
+    @Override
+    public NameEnvironmentAnswer findType(final char[] aTypeName, final char[][] aaPackageName)
+    {
+        NameEnvironmentAnswer findType = super.findType(aTypeName, aaPackageName); // invoked actual version of findType()
+        if ((findType == null) &amp;&amp; (_packagePrivateClasses != null) &amp;&amp; CharOperation.equals(aaPackageName, _sOriginalPackage)) {
+            // if we could not find this type it means that could be package private type declared in another .java file. We should inspect all .java files in this
+            // package to discover it
+            final String string = getContainingJavaFileForType(CharOperation.charToString(aTypeName));
+            if (UString.isNonEmptyString(string)) {
+                findType = super.findType(string.toCharArray(), aaPackageName);
+            }
+
+        }
+        return findType;
+    }
+
+If you need more details to reproduce this bug on for ideas how to fix it please do not hesitate to contact me :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2294735</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-08-14 10:13:27 -0400</bug_when>
+    <thetext>Manoj, please follow up.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2299462</commentid>
+    <comment_count>2</comment_count>
+    <who name="Marcin Czyzyk">mczyzyk</who>
+    <bug_when>2013-08-27 07:35:09 -0400</bug_when>
+    <thetext>Hi,
+any progress of this bug? Could I provide some additive informations or any other help?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2311541</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-09-27 09:49:33 -0400</bug_when>
+    <thetext>(In reply to Marcin Czyzyk from comment #2)
+&gt; Hi,
+&gt; any progress of this bug? Could I provide some additive informations or any
+&gt; other help?
+
+Manoj, could you answer this question please ? 
+
+Marcin, apologies - we are all very busy with Java 8 work.
+
+(In reply to Marcin Czyzyk from comment #0)
+
+&gt; If you need more details to reproduce this bug on for ideas how to fix it
+&gt; please do not hesitate to contact me :)
+
+If you want to propose a patch, you are welcome to. TIA</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2313691</commentid>
+    <comment_count>4</comment_count>
+      <attachid>236057</attachid>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2013-10-03 01:21:41 -0400</bug_when>
+    <thetext>Created attachment 236057
+Test case
+
+Marcin:  a)Could you please take a look/apply the test case patch attached? this depicts the scenario described - but you may want to check out for any missing case here and let us know about the same. You are also welcome to make changes to the testcase (making our life easier :)) to provide a test case that reproduces the error.
+
+b) This test case passes for me at the top of tree master. So you may want to check up with a later branch as well.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2313873</commentid>
+    <comment_count>5</comment_count>
+    <who name="Marcin Czyzyk">mczyzyk</who>
+    <bug_when>2013-10-03 10:19:26 -0400</bug_when>
+    <thetext>This test case you showed above is not exactly what I mean.
+
+First:
+contents = &quot;public class C{}\n&quot;;
+should be:
+contents = &quot;public class C extends B{}\n&quot;;
+
+Second:
+You used parser.setSource(getCompilationUnit(&quot;/Converter17/src/C.java&quot;));
+it is public void setSource(ICompilationUnit source)
+Accourding to documentation: &quot;This method automatically sets the project (and compiler options) based on the given compilation unit, in a manner equivalent to setProject(source.getJavaProject()).&quot;
+In the sources we could see that there is: this.project = source.getJavaProject();
+So you set JavaProject in hidden way (not exlipicity) problem exists only when you have not set this project (we don&apos;t want to use it).
+
+To avoid setting this project you could use: public void setSource(char[] source)
+Then you will have to set compiler options manually then you will be able to repeat a bug. I tried with JDT from Eclipse 4.3 and it looks that problem still exists.
+BTW. In orginal scenario it is parsed by: 
+public void createASTs(String[] sourceFilePaths, String[] encodings, String[] bindingKeys, FileASTRequestor requestor, IProgressMonitor monitor)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2313877</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-03 10:24:58 -0400</bug_when>
+    <thetext>(In reply to Marcin Czyzyk from comment #5)
+&gt; This test case you showed above is not exactly what I mean.
+
+Are you able to work around the problem somehow ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2313880</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-03 10:26:22 -0400</bug_when>
+    <thetext>Manoj, once you are able to reproduce, see how far back the problem goes.
+We need an assessment/estimate of work involved before actually investing
+the time.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2313882</commentid>
+    <comment_count>8</comment_count>
+    <who name="Marcin Czyzyk">mczyzyk</who>
+    <bug_when>2013-10-03 10:33:43 -0400</bug_when>
+    <thetext>One more thing:
+assertNotNull(astRoot);
+is not the best way to check this bug. It does not make astRoot as null but it makes it invalid and add many problems. It will be better to test using something like that:
+assertEquals(0, astRoot.getProblems().length, &quot;AST tree is invalid&quot;);</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2314070</commentid>
+    <comment_count>9</comment_count>
+    <who name="Marcin Czyzyk">mczyzyk</who>
+    <bug_when>2013-10-03 16:58:41 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #6)
+&gt; Are you able to work around the problem somehow ?
+
+Partially.
+If you mean: using parser in way that Manoj show it in test case then answer is NO. We could not use JavaProject at all. Sometimes if you want to support some build environments could not support data for this structure. I think it is one of reason why you make such (not so old) ability to use JDT (few version before there was not such thing). So we have to use it exactly in the way we do that.
+
+About different workaround.
+Yes, they exists but they are not cute and not acceptable outside developer version of software. F.e. the simpliest way to fix problem is the one which I described in comment 0, i.e. copy class outside jar, apply fix, set up your runtime environment/build platfrom class loaders to load fixed class before load class from jdt.jar then problem will be dissappear. It is good on developer stage to not blocking development process but it is not acceptable to release.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2314289</commentid>
+    <comment_count>10</comment_count>
+      <attachid>236102</attachid>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2013-10-04 08:08:30 -0400</bug_when>
+    <thetext>Created attachment 236102
+Test case depicting the scenario
+
+Marcin: Please find a new test case - using the StandAloneASTParserTest. Have not used setSource() as such but it does not create a project. The stack trace where the findType() returns null for B is given at the end of this comment. And assert(problemsize == 0) fails with the Problemsize being one.
+
+Please run through the test case. Does this test case model the problem at your end?
+
+Stack Trace (typeName = &quot;B&quot;)
+NameEnvironmentWithProgress(FileSystem).findType(char[], char[][]) line: 352	
+NameEnvironmentWithProgress.findType(char[], char[][]) line: 42	
+LookupEnvironment.askForType(PackageBinding, char[]) line: 145	
+PackageBinding.getTypeOrPackage(char[]) line: 197	
+ClassScope(Scope).getTypeOrPackage(char[], int, boolean) line: 2825	
+ClassScope(Scope).getType(char[]) line: 2535	
+SingleTypeReference.getTypeBinding(Scope) line: 44	
+SingleTypeReference(TypeReference).internalResolveType(Scope) line: 132	
+SingleTypeReference(TypeReference).resolveType(ClassScope) line: 208	
+SingleTypeReference(TypeReference).resolveSuperType(ClassScope) line: 186	
+ClassScope.findSupertype(TypeReference) line: 1245	
+ClassScope.connectSuperclass() line: 911	
+ClassScope.connectTypeHierarchy() line: 1065	
+CompilationUnitScope.connectTypeHierarchy() line: 304	
+LookupEnvironment.completeTypeBindings() line: 214	
+CompilationUnitResolver.beginToCompile(ICompilationUnit[], String[]) line: 253	
+CompilationUnitResolver.resolve(String[], String[], String[], FileASTRequestor, int, Map, int) line: 986	
+CompilationUnitResolver.resolve(String[], String[], String[], FileASTRequestor, int, Map, List, int, IProgressMonitor) line: 632	
+ASTParser.createASTs(String[], String[], String[], FileASTRequestor, IProgressMonitor) line: 988</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2314321</commentid>
+    <comment_count>11</comment_count>
+    <who name="Marcin Czyzyk">mczyzyk</who>
+    <bug_when>2013-10-04 09:02:22 -0400</bug_when>
+    <thetext>Yes, I think it is this scenario!
+There are some small differences between settings on my and yours environment (it will be difficult to emulate exactly what I have got in your side) but I think this case models the same problem. I will be 100% sure when it will be fixed and I will apply path. :)
+
+I see a stacktrace goes trought the same lines I described in comment 0 so I think haven&apos;t got anything to add here. :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2538476</commentid>
+    <comment_count>12</comment_count>
+    <who name="Marcin Czyzyk">mczyzyk</who>
+    <bug_when>2015-03-27 09:15:16 -0400</bug_when>
+    <thetext>Could I expect that it will be resolved in 4.5 as it is set?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2538479</commentid>
+    <comment_count>13</comment_count>
+    <who name="Marcin Czyzyk">mczyzyk</who>
+    <bug_when>2015-03-27 09:20:12 -0400</bug_when>
+    <thetext>In Java8 this case is really often happens when you have got interface with package private access with the name other than file name and you want to access it from some other file.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2540670</commentid>
+    <comment_count>14</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2015-04-01 06:44:56 -0400</bug_when>
+    <thetext>Fix via commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=c39467a5717299e0743e249af795ac84f7541935
+
+Fix is to lookup the secondary types in the NameEnvironmentWithProgress in case of null answer, ie of primary types. [The test case mentioned in the comment 10 passes with this fix.]
+Marcin: Could you please take one of the next nightly builds and try it at your projects?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2544007</commentid>
+    <comment_count>15</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2015-04-09 04:43:46 -0400</bug_when>
+    <thetext>(In reply to Manoj Palat from comment #14)
+&gt; Fix via commit:
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/
+&gt; ?id=c39467a5717299e0743e249af795ac84f7541935
+&gt; 
+&gt; Fix is to lookup the secondary types in the NameEnvironmentWithProgress in
+&gt; case of null answer, ie of primary types. [The test case mentioned in the
+&gt; comment 10 passes with this fix.]
+&gt; Marcin: Could you please take one of the next nightly builds and try it at
+&gt; your projects?
+
+Fixed - refer the above commit 14</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2552168</commentid>
+    <comment_count>16</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2015-04-27 08:05:48 -0400</bug_when>
+    <thetext>Verified for M7 using I20150426-2000 build</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>236057</attachid>
+            <date>2013-10-03 01:21:00 -0400</date>
+            <delta_ts>2013-10-04 08:08:30 -0400</delta_ts>
+            <desc>Test case</desc>
+            <filename>415066testcase.patch</filename>
+            <type>text/plain</type>
+            <size>1700</size>
+            <attacher name="Manoj Palat Away Until May 11 2015">manpalat</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9kb20vQVNUQ29udmVydGVyMTdUZXN0LmphdmEgYi9vcmcuZWNs
+aXBzZS5qZHQuY29yZS50ZXN0cy5tb2RlbC9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMv
+ZG9tL0FTVENvbnZlcnRlcjE3VGVzdC5qYXZhCmluZGV4IDFjZTBkNTAuLmYyZmZlODIgMTAwNjQ0
+Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNsaXBzZS9q
+ZHQvY29yZS90ZXN0cy9kb20vQVNUQ29udmVydGVyMTdUZXN0LmphdmEKKysrIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Rv
+bS9BU1RDb252ZXJ0ZXIxN1Rlc3QuamF2YQpAQCAtMjUsNiArMjUsNyBAQAogaW1wb3J0IG9yZy5l
+Y2xpcHNlLmpkdC5jb3JlLmNvbXBpbGVyLklQcm9ibGVtOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpk
+dC5jb3JlLmRvbS5BU1Q7CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuZG9tLkFTVE5vZGU7
+CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuZG9tLkFTVFBhcnNlcjsKIGltcG9ydCBvcmcu
+ZWNsaXBzZS5qZHQuY29yZS5kb20uQVNUUmVxdWVzdG9yOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpk
+dC5jb3JlLmRvbS5BU1RWaXNpdG9yOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLmRvbS5D
+YXN0RXhwcmVzc2lvbjsKQEAgLTYxLDcgKzYyLDcgQEAKIAl9CiAKIAlzdGF0aWMgewotLy8JCVRF
+U1RTX05VTUJFUlMgPSBuZXcgaW50W10geyAxOSB9OworCQlURVNUU19OVU1CRVJTID0gbmV3IGlu
+dFtdIHsgNDE1MDY2IH07CiAvLwkJVEVTVFNfUkFOR0UgPSBuZXcgaW50W10geyAxLCAtMSB9Owog
+Ly8JCVRFU1RTX05BTUVTID0gbmV3IFN0cmluZ1tdIHsidGVzdDAwMDEifTsKIAl9CkBAIC03ODcs
+NCArNzg4LDIwIEBACiAJCUlNZXRob2RCaW5kaW5nW10gbWV0aG9kcyA9IGJpbmRpbmcuZ2V0RGVj
+bGFyZWRNZXRob2RzKCk7CiAJCWFzc2VydEVxdWFscygiV3Jvbmcgc2l6ZSIsIDIsIG1ldGhvZHMu
+bGVuZ3RoKTsKIAl9CisJcHVibGljIHZvaWQgdGVzdEJ1ZzQxNTA2NigpIHRocm93cyBFeGNlcHRp
+b24geworCQlTdHJpbmcgY29udGVudHMgPSAicHVibGljIGNsYXNzIEF7fVxuIiArCisJCQkJImNs
+YXNzIEIge31cbiI7CisJCWNyZWF0ZUZvbGRlcigiL0NvbnZlcnRlcjE3L3NyYy8iKTsKKwkJY3Jl
+YXRlRmlsZSgiL0NvbnZlcnRlcjE3L3NyYy9BLmphdmEiLCBjb250ZW50cyk7CisJCWNvbnRlbnRz
+ID0gInB1YmxpYyBjbGFzcyBDe31cbiI7CisJCWNyZWF0ZUZpbGUoIi9Db252ZXJ0ZXIxNy9zcmMv
+Qy5qYXZhIiwgY29udGVudHMpOworCQkKKwkJQVNUUGFyc2VyIHBhcnNlciA9IEFTVFBhcnNlci5u
+ZXdQYXJzZXIoQVNULkpMUzQpOworCQlwYXJzZXIuc2V0U291cmNlKGdldENvbXBpbGF0aW9uVW5p
+dCgiL0NvbnZlcnRlcjE3L3NyYy9DLmphdmEiKSk7CisJCXBhcnNlci5zZXRSZXNvbHZlQmluZGlu
+Z3ModHJ1ZSk7CisJCXBhcnNlci5zZXRTdGF0ZW1lbnRzUmVjb3ZlcnkodHJ1ZSk7CisJCUNvbXBp
+bGF0aW9uVW5pdCBhc3RSb290ID0gKENvbXBpbGF0aW9uVW5pdCkgcGFyc2VyLmNyZWF0ZUFTVChu
+dWxsKTsJCisJCWFzc2VydFRydWUoYXN0Um9vdCAhPSBudWxsKTsKKwl9CisKIH0=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>236102</attachid>
+            <date>2013-10-04 08:08:00 -0400</date>
+            <delta_ts>2013-10-04 08:08:30 -0400</delta_ts>
+            <desc>Test case depicting the scenario</desc>
+            <filename>4150566-testcase-wip.patch</filename>
+            <type>text/plain</type>
+            <size>2850</size>
+            <attacher name="Manoj Palat Away Until May 11 2015">manpalat</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9kb20vU3RhbmRBbG9uZUFTVFBhcnNlclRlc3QuamF2YSBi
+L29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQv
+Y29yZS90ZXN0cy9kb20vU3RhbmRBbG9uZUFTVFBhcnNlclRlc3QuamF2YQppbmRleCA3YTQ0Zjg4
+Li4zZjU2ODg3IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxl
+ci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvZG9tL1N0YW5kQWxvbmVBU1RQYXJzZXJU
+ZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2RvbS9TdGFuZEFsb25lQVNUUGFyc2VyVGVzdC5qYXZh
+CkBAIC00MDksNCArNDA5LDg2IEBACiAJCQlmaWxlWS5kZWxldGUoKTsKIAkJfQogCX0KKwlwdWJs
+aWMgdm9pZCB0ZXN0NDE1MDY2KCkgdGhyb3dzIElPRXhjZXB0aW9uIHsKKwkJRmlsZSByb290RGly
+ID0gbmV3IEZpbGUoU3lzdGVtLmdldFByb3BlcnR5KCJqYXZhLmlvLnRtcGRpciIpKTsKKwkJQVNU
+UGFyc2VyIHBhcnNlciA9IEFTVFBhcnNlci5uZXdQYXJzZXIoQVNULkpMUzQpOworCQlwYXJzZXIu
+c2V0RW52aXJvbm1lbnQobnVsbCwgbnVsbCwgbnVsbCwgdHJ1ZSk7CisJCXBhcnNlci5zZXRSZXNv
+bHZlQmluZGluZ3ModHJ1ZSk7CisJCXBhcnNlci5zZXRTdGF0ZW1lbnRzUmVjb3ZlcnkodHJ1ZSk7
+CisJCXBhcnNlci5zZXRCaW5kaW5nc1JlY292ZXJ5KHRydWUpOworCQlwYXJzZXIuc2V0Q29tcGls
+ZXJPcHRpb25zKGdldENvbXBpbGVyT3B0aW9ucygpKTsKKworCQlmaW5hbCBTdHJpbmcga2V5ID0g
+IkxwL0M7IjsKKwkJZmluYWwgSUJpbmRpbmdbXSBiaW5kaW5ncyA9IG5ldyBJQmluZGluZ1syXTsK
+KworCQlTdHJpbmcgY29udGVudHMgPSAKKwkJCSJwYWNrYWdlIHA7XG4iICsgCisJCQkicHVibGlj
+IGNsYXNzIEF7fVxuIiArIAorCQkJImNsYXNzIEJ7fSI7CisJCQorCQlGaWxlIHBhY2thZ2VEaXIg
+PSBuZXcgRmlsZShyb290RGlyLCAicCIpOworCQlwYWNrYWdlRGlyLm1rZGlyKCk7CisJCUZpbGUg
+ZmlsZSA9IG5ldyBGaWxlKHBhY2thZ2VEaXIsICJBLmphdmEiKTsKKwkJV3JpdGVyIHdyaXRlciA9
+IG51bGw7CisJCXRyeSB7CisJCQl3cml0ZXIgPSBuZXcgQnVmZmVyZWRXcml0ZXIobmV3IEZpbGVX
+cml0ZXIoZmlsZSkpOworCQkJd3JpdGVyLndyaXRlKGNvbnRlbnRzKTsKKwkJfSBmaW5hbGx5IHsK
+KwkJCWlmICh3cml0ZXIgIT0gbnVsbCkgeworCQkJCXRyeSB7CisJCQkJCXdyaXRlci5jbG9zZSgp
+OworCQkJCX0gY2F0Y2goSU9FeGNlcHRpb24gZSkgeworCQkJCQkvLyBpZ25vcmUKKwkJCQl9CisJ
+CQl9CisJCX0KKworCQlTdHJpbmcgY29udGVudHMyID0KKwkJCSJwYWNrYWdlIHA7XG4iICsgCisJ
+CQkicHVibGljIGNsYXNzIEMgZXh0ZW5kcyBCIHt9IjsKKwkJRmlsZSBmaWxlWSA9IG5ldyBGaWxl
+KHBhY2thZ2VEaXIsICJDLmphdmEiKTsKKwkJV3JpdGVyIHdyaXRlcjIgPSBudWxsOworCQl0cnkg
+eworCQkJd3JpdGVyMiA9IG5ldyBCdWZmZXJlZFdyaXRlcihuZXcgRmlsZVdyaXRlcihmaWxlWSkp
+OworCQkJd3JpdGVyMi53cml0ZShjb250ZW50czIpOworCQl9IGZpbmFsbHkgeworCQkJaWYgKHdy
+aXRlcjIgIT0gbnVsbCkgeworCQkJCXRyeSB7CisJCQkJCXdyaXRlcjIuY2xvc2UoKTsKKwkJCQl9
+IGNhdGNoKElPRXhjZXB0aW9uIGUpIHsKKwkJCQkJLy8gaWdub3JlCisJCQkJfQorCQkJfQorCQl9
+CisKKwkJdHJ5IHsKKwkJCWZpbmFsIFN0cmluZyBjYW5vbmljYWxQYXRoID0gZmlsZVkuZ2V0Q2Fu
+b25pY2FsUGF0aCgpOworCQkJZmluYWwgQ29tcGlsYXRpb25Vbml0W10gdW5pdHMgPSBuZXcgQ29t
+cGlsYXRpb25Vbml0WzFdOworCQorCQkJRmlsZUFTVFJlcXVlc3RvciByZXF1ZXN0b3IgPSBuZXcg
+RmlsZUFTVFJlcXVlc3RvcigpIHsKKwkJCQlwdWJsaWMgdm9pZCBhY2NlcHRCaW5kaW5nKFN0cmlu
+ZyBiaW5kaW5nS2V5LCBJQmluZGluZyBiaW5kaW5nKSB7CisJCQkJCWlmIChrZXkuZXF1YWxzKGJp
+bmRpbmdLZXkpKSB7CisJCQkJCQliaW5kaW5nc1swXSA9IGJpbmRpbmc7CisJCQkJCQlJQmluZGlu
+Z1tdIHRlbXAgPSBjcmVhdGVCaW5kaW5ncyhuZXcgU3RyaW5nW10geyJMcC9DOyJ9KTsKKwkJCQkJ
+CWZvciAoaW50IGkgPSAwOyBpIDwgdGVtcC5sZW5ndGg7ICsraSkgeworCQkJCQkJCWJpbmRpbmdz
+W2kgKyAxXSA9IHRlbXBbaV07CisJCQkJCQl9CisJCQkJCX0KKwkJCQl9CisJCQkJcHVibGljIHZv
+aWQgYWNjZXB0QVNUKFN0cmluZyBzb3VyY2VGaWxlUGF0aCwgQ29tcGlsYXRpb25Vbml0IGFzdCkg
+eworCQkJCQlpZiAoY2Fub25pY2FsUGF0aC5lcXVhbHMoc291cmNlRmlsZVBhdGgpKSB7CisJCQkJ
+CQl1bml0c1swXSA9IGFzdDsKKwkJCQkJfQorCQkJCX0KKwkJCX07CisJCisJCQlwYXJzZXIuc2V0
+RW52aXJvbm1lbnQobnVsbCwgbmV3IFN0cmluZ1tdIHsgcm9vdERpci5nZXRDYW5vbmljYWxQYXRo
+KCkgfSwgbnVsbCwgdHJ1ZSk7CisJCQlwYXJzZXIuY3JlYXRlQVNUcyhuZXcgU3RyaW5nW10ge2Nh
+bm9uaWNhbFBhdGh9LCBudWxsLCBuZXcgU3RyaW5nW10ge2tleX0sIHJlcXVlc3RvciwgbnVsbCk7
+CisJCQlhc3NlcnROb3ROdWxsKCJObyBhc3QiLCB1bml0c1swXSk7CisJCQlhc3NlcnRFcXVhbHMo
+Ik5vIHByb2JsZW0iLCAwLCB1bml0c1swXS5nZXRQcm9ibGVtcygpLmxlbmd0aCk7CisJCX0gZmlu
+YWxseSB7CisJCQlmaWxlLmRlbGV0ZSgpOworCQkJZmlsZVkuZGVsZXRlKCk7CisJCX0KKwl9CiB9
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

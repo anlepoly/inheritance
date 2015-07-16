@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>403444</bug_id>
+          
+          <creation_ts>2013-03-15 07:46:00 -0400</creation_ts>
+          <short_desc>[1.8][dom ast] CCE when resolving binding for malformed LambdaExpression in JLS4 AST</short_desc>
+          <delta_ts>2013-03-18 05:55:23 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Markus Keller">markus_keller</reporter>
+          <assigned_to name="Manoj Palat Away Until May 11 2015">manpalat</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="56128"
+          type_id="1"
+          status="+"
+          setter="srikanth_sankaran"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2231885</commentid>
+    <comment_count>0</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-03-15 07:46:34 -0400</bug_when>
+    <thetext>Inspect example from bug 402665 in ASTView with AST Level 4:
+
+package jsr335;
+
+public class SpecExamples335 {
+	public static interface StringToInt {
+		int stoi(String s);
+	}
+	public static interface ReduceInt {
+		int reduce(int a, int b);
+	}
+	
+	void foo(StringToInt s) { }
+	void bar(ReduceInt r) { }
+	
+	void bar() {
+		foo(s -&gt; s.length());
+		foo((s) -&gt; s.length());
+		foo((String s) -&gt; s.length());
+		
+		bar((x, y) -&gt; x+y);
+		bar((int x, int y) -&gt; x+y);
+	}
+}
+
+When I drill down to the argument of &quot;foo(s -&gt; s.length())&quot;, I get this exception:
+
+java.lang.ClassCastException: org.eclipse.jdt.internal.compiler.ast.LambdaExpression cannot be cast to org.eclipse.jdt.internal.compiler.ast.Literal
+	at org.eclipse.jdt.core.dom.DefaultBindingResolver.resolveExpressionType(DefaultBindingResolver.java:735)
+	at org.eclipse.jdt.core.dom.Expression.resolveTypeBinding(Expression.java:113)
+	at org.eclipse.jdt.astview.views.ASTViewContentProvider.getNodeChildren(ASTViewContentProvider.java:112)
+...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2231917</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-15 08:36:17 -0400</bug_when>
+    <thetext>This is due to partial implementation of the charade outlined in https://bugs.eclipse.org/bugs/show_bug.cgi?id=402673#c2</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2231944</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-15 09:06:12 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; This is due to partial implementation of the charade outlined in
+&gt; https://bugs.eclipse.org/bugs/show_bug.cgi?id=402673#c2
+
+Note that org.eclipse.jdt.core.dom.BindingResolver.resolveExpressionType(Expression) is
+documented as possibly returning null.
+
+So in ASTConverter.recordNodes, if JLS level &lt; 8 and DOM node is NullLiteral
+and compiler node is LambdaExpression - don&apos;t record anything could be
+a strategy.
+
+This completion of the charade is a lot simpler than equipping 70+ places
+to be prepared to handle nulls in what is basically a broken scenario.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2231978</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-15 09:47:02 -0400</bug_when>
+    <thetext>We could easily avoid these round trips to JDT/UI if we adopt the usage of
+ASTView plugin in our own testing more widely. Jay &amp; Manoj, please make note,
+Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2232019</commentid>
+    <comment_count>4</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-03-15 10:37:47 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+I agree with that. However, this particular problem only seems to appear in certain situations, but not everywhere a LambdaExpression is involved. E.g. for the example in bug 402673, it doesn&apos;t happen (binding is just null, which is OK). And you have to drill down to the node to actually run into it. But checking a few other examples that are lying around in the runtime workbench never hurts...
+
+I looked for similar cases, but I only found ASTConverter#createFakeEmptyStatement(Statement), where there are no problems with bindings. I support the general approach to convert a LambdaExpression into a malformed NullLiteral.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2232466</commentid>
+    <comment_count>5</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2013-03-16 19:46:32 -0400</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; (In reply to comment #1)
+&gt; &gt; This is due to partial implementation of the charade outlined in
+&gt; &gt; https://bugs.eclipse.org/bugs/show_bug.cgi?id=402673#c2
+&gt; 
+&gt; Note that
+&gt; org.eclipse.jdt.core.dom.BindingResolver.resolveExpressionType(Expression) is
+&gt; documented as possibly returning null.
+&gt; 
+&gt; So in ASTConverter.recordNodes, if JLS level &lt; 8 and DOM node is NullLiteral
+&gt; and compiler node is LambdaExpression - don&apos;t record anything could be
+&gt; a strategy.
+&gt; 
+&gt; This completion of the charade is a lot simpler than equipping 70+ places
+&gt; to be prepared to handle nulls in what is basically a broken scenario.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2232467</commentid>
+    <comment_count>6</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2013-03-16 19:49:26 -0400</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; (In reply to comment #2)
+
+
+&gt; &gt; So in ASTConverter.recordNodes, if JLS level &lt; 8 and DOM node is NullLiteral
+&gt; &gt; and compiler node is LambdaExpression - don&apos;t record anything could be
+&gt; &gt; a strategy.
+Srikanth: JLS Level &lt; 8 check - would n&apos;t this be redundant as LE to NL conversion will happen only for JLS Level &lt; 8. Can have this as an additional safety measure though.
+
+[pl ignore the earlier comment as this was left out]</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2232475</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-17 00:20:34 -0400</bug_when>
+    <thetext>(In reply to comment #6)
+&gt; (In reply to comment #5)
+&gt; &gt; (In reply to comment #2)
+&gt; 
+&gt; 
+&gt; &gt; &gt; So in ASTConverter.recordNodes, if JLS level &lt; 8 and DOM node is NullLiteral
+&gt; &gt; &gt; and compiler node is LambdaExpression - don&apos;t record anything could be
+&gt; &gt; &gt; a strategy.
+&gt; Srikanth: JLS Level &lt; 8 check - would n&apos;t this be redundant as LE to NL
+
+Correct, so that check is not needed.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2232689</commentid>
+    <comment_count>8</comment_count>
+      <attachid>228550</attachid>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2013-03-18 00:50:25 -0400</bug_when>
+    <thetext>Created attachment 228550
+Proposed Patch</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2232754</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-18 05:55:23 -0400</bug_when>
+    <thetext>I added a comment in recordNodes and also changed the order of the checks
+and released the fix &amp; test here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=d882c7320957134d2934c77732f10d26c3e6378f
+
+Thanks Manoj.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>228550</attachid>
+            <date>2013-03-18 00:50:00 -0400</date>
+            <delta_ts>2013-03-18 00:50:25 -0400</delta_ts>
+            <desc>Proposed Patch</desc>
+            <filename>Fix-for-Bug-403444--18dom-ast-CCE-when-resolving-bin.patch</filename>
+            <type>text/plain</type>
+            <size>5305</size>
+            <attacher name="Manoj Palat Away Until May 11 2015">manpalat</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9kb20vQVNUQ29udmVydGVyMTdUZXN0LmphdmEgYi9vcmcuZWNs
+aXBzZS5qZHQuY29yZS50ZXN0cy5tb2RlbC9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMv
+ZG9tL0FTVENvbnZlcnRlcjE3VGVzdC5qYXZhCmluZGV4IGE2NWVlOWIuLjA5ZmIyMjMgMTAwNjQ0
+Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNsaXBzZS9q
+ZHQvY29yZS90ZXN0cy9kb20vQVNUQ29udmVydGVyMTdUZXN0LmphdmEKKysrIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Rv
+bS9BU1RDb252ZXJ0ZXIxN1Rlc3QuamF2YQpAQCAtMzYsNiArMzYsNyBAQAogaW1wb3J0IG9yZy5l
+Y2xpcHNlLmpkdC5jb3JlLmRvbS5DbGFzc0luc3RhbmNlQ3JlYXRpb247CiBpbXBvcnQgb3JnLmVj
+bGlwc2UuamR0LmNvcmUuZG9tLkNvbXBpbGF0aW9uVW5pdDsKIGltcG9ydCBvcmcuZWNsaXBzZS5q
+ZHQuY29yZS5kb20uRXhwcmVzc2lvbjsKK2ltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5kb20u
+RXhwcmVzc2lvblN0YXRlbWVudDsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5kb20uRmll
+bGREZWNsYXJhdGlvbjsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5kb20uSUFubm90YXRp
+b25CaW5kaW5nOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLmRvbS5JQmluZGluZzsKQEAg
+LTg1OCw0ICs4NTksODYgQEAKICAgICAJCU51bGxMaXRlcmFsIG51bGxMaXRlcmFsID0gKE51bGxM
+aXRlcmFsKSBpbml0aWFsaXplcjsKICAgICAJCWFzc2VydFRydWUoKG51bGxMaXRlcmFsLmdldEZs
+YWdzKCkgJiBBU1ROb2RlLk1BTEZPUk1FRCkgIT0gMCk7CiAgICAgfQorCS8qKgorCSAqIGh0dHBz
+Oi8vYnVncy5lY2xpcHNlLm9yZy9idWdzL3Nob3dfYnVnLmNnaT9pZD00MDI2NzQKKwkgKiAKKwkg
+KiBAdGhyb3dzIEphdmFNb2RlbEV4Y2VwdGlvbgorCSAqLworCXB1YmxpYyB2b2lkIHRlc3Q0MDM0
+NDQoKSB0aHJvd3MgSmF2YU1vZGVsRXhjZXB0aW9uIHsKKwkJdGhpcy53b3JraW5nQ29weSA9IGdl
+dFdvcmtpbmdDb3B5KCIvQ29udmVydGVyMTgvc3JjL3Rlc3Q0MDM0NDQvWC5qYXZhIiwKKwkJCQl0
+cnVlLyogcmVzb2x2ZSAqLyk7CisJCVN0cmluZyBjb250ZW50cyA9ICJwYWNrYWdlIHRlc3Q0MDM0
+NDQ7IiArCisJCQkJInB1YmxpYyBjbGFzcyBYIHtcbiIgKworCQkJCSIgIHB1YmxpYyBzdGF0aWMg
+aW50ZXJmYWNlIFN0cmluZ1RvSW50IHtcbiIgKworCQkJCSIgICAJaW50IHN0b2koU3RyaW5nIHMp
+O1xuIiArCisJCQkJIiAgfVxuIiArCisJCQkJIiAgcHVibGljIHN0YXRpYyBpbnRlcmZhY2UgUmVk
+dWNlSW50IHtcbiIgKworCQkJCSIgICAgICBpbnQgcmVkdWNlKGludCBhLCBpbnQgYik7XG4iICsK
+KwkJCQkiICB9XG4iICsKKwkJCQkiICB2b2lkIGZvbyhTdHJpbmdUb0ludCBzKSB7IH1cbiIgKwor
+CQkJCSIgIHZvaWQgYmFyKFJlZHVjZUludCByKSB7IH1cbiIgKworCQkJCSIgIHZvaWQgYmFyKCkg
+e1xuIiArCisJCQkJIiAgICAgIGZvbyhzIC0+IHMubGVuZ3RoKCkpO1xuIiArCisJCQkJIiAgICAg
+IGZvbygocykgLT4gcy5sZW5ndGgoKSk7XG4iICsKKwkJCQkiICAgICAgZm9vKChTdHJpbmcgcykg
+LT4gcy5sZW5ndGgoKSk7IC8vU2luZ2xlVmFyaWFibGVEZWNsYXJhdGlvbiBpcyBPS1xuIiArCisJ
+CQkJIiAgICAgIGJhcigoeCwgeSkgLT4geCt5KTtcbiIgKworCQkJCSIgICAgICBiYXIoKGludCB4
+LCBpbnQgeSkgLT4geCt5KTsgLy9TaW5nbGVWYXJpYWJsZURlY2xhcmF0aW9ucyBhcmUgT0tcbiIg
+KworCQkJCSIgIH1cbiIgKworCQkJCSJ9XG4iOworCQkKKwkJCisgICAgCXRoaXMud29ya2luZ0Nv
+cHkgPSBnZXRXb3JraW5nQ29weSgiL0NvbnZlcnRlci9zcmMvdGVzdDQwMzQ0NC9YLmphdmEiLCB0
+cnVlLyogcmVzb2x2ZSAqLyk7CisgICAgCXRoaXMud29ya2luZ0NvcHkuZ2V0QnVmZmVyKCkuc2V0
+Q29udGVudHMoY29udGVudHMpOworICAgIAlBU1ROb2RlIG5vZGUgPSBydW5Db252ZXJzaW9uKHRo
+aXMud29ya2luZ0NvcHksIHRydWUpOworICAgIAlhc3NlcnRUcnVlKG5vZGUgIT0gbnVsbCk7CisJ
+CWFzc2VydEVxdWFscygiTm90IGEgY29tcGlsYXRpb24gdW5pdCIsIEFTVE5vZGUuQ09NUElMQVRJ
+T05fVU5JVCwgbm9kZS5nZXROb2RlVHlwZSgpKTsKKwkJQ29tcGlsYXRpb25Vbml0IHVuaXQgPSAo
+Q29tcGlsYXRpb25Vbml0KSBub2RlOworCQkKKwkJU3RyaW5nIGVycm9yID0gIkxhbWJkYSBleHBy
+ZXNzaW9ucyBhcmUgYWxsb3dlZCBvbmx5IGF0IHNvdXJjZSBsZXZlbCAxLjggb3IgYWJvdmVcbiIK
+KwkJCQkrICJMYW1iZGEgZXhwcmVzc2lvbnMgYXJlIGFsbG93ZWQgb25seSBhdCBzb3VyY2UgbGV2
+ZWwgMS44IG9yIGFib3ZlXG4iCisJCQkJKyAiTGFtYmRhIGV4cHJlc3Npb25zIGFyZSBhbGxvd2Vk
+IG9ubHkgYXQgc291cmNlIGxldmVsIDEuOCBvciBhYm92ZVxuIgorCQkJCSsgIkxhbWJkYSBleHBy
+ZXNzaW9ucyBhcmUgYWxsb3dlZCBvbmx5IGF0IHNvdXJjZSBsZXZlbCAxLjggb3IgYWJvdmVcbiIK
+KwkJCQkrICJMYW1iZGEgZXhwcmVzc2lvbnMgYXJlIGFsbG93ZWQgb25seSBhdCBzb3VyY2UgbGV2
+ZWwgMS44IG9yIGFib3ZlIjsKKwkJYXNzZXJ0UHJvYmxlbXNTaXplKHVuaXQsIDUsIGVycm9yKTsK
+KworCQlUeXBlRGVjbGFyYXRpb24gdHlwZWRlY2xhcmF0aW9uID0gKFR5cGVEZWNsYXJhdGlvbikg
+Z2V0QVNUTm9kZSh1bml0LCAwKTsKKwkJTWV0aG9kRGVjbGFyYXRpb24gbWV0aG9kZGVjbCA9IChN
+ZXRob2REZWNsYXJhdGlvbil0eXBlZGVjbGFyYXRpb24uYm9keURlY2xhcmF0aW9ucygpLmdldCg0
+KTsKKwkJTGlzdCBzdGF0ZW1lbnRzID0gbWV0aG9kZGVjbC5nZXRCb2R5KCkuc3RhdGVtZW50cygp
+OworCQlpbnQgc0NvdW50ID0gMDsKKwkJCisJCUV4cHJlc3Npb25TdGF0ZW1lbnQgc3RhdGVtZW50
+ID0gKEV4cHJlc3Npb25TdGF0ZW1lbnQpc3RhdGVtZW50cy5nZXQoc0NvdW50KyspOworCQlNZXRo
+b2RJbnZvY2F0aW9uIG1ldGhvZEludm9jYXRpb24gPSAoTWV0aG9kSW52b2NhdGlvbilzdGF0ZW1l
+bnQuZ2V0RXhwcmVzc2lvbigpOworCQlFeHByZXNzaW9uIGV4cHJlc3Npb24gPSAoRXhwcmVzc2lv
+bikgbWV0aG9kSW52b2NhdGlvbi5hcmd1bWVudHMoKS5nZXQoMCk7CisJCWFzc2VydFRydWUoZXhw
+cmVzc2lvbiBpbnN0YW5jZW9mIE51bGxMaXRlcmFsKTsKKwkJSVR5cGVCaW5kaW5nIGJpbmRpbmcg
+PSBleHByZXNzaW9uLnJlc29sdmVUeXBlQmluZGluZygpOworCQlhc3NlcnROdWxsKGJpbmRpbmcp
+OwkKKwkJCisJCXN0YXRlbWVudCA9IChFeHByZXNzaW9uU3RhdGVtZW50KXN0YXRlbWVudHMuZ2V0
+KHNDb3VudCsrKTsKKwkJbWV0aG9kSW52b2NhdGlvbiA9IChNZXRob2RJbnZvY2F0aW9uKXN0YXRl
+bWVudC5nZXRFeHByZXNzaW9uKCk7CisJCWV4cHJlc3Npb24gPSAoRXhwcmVzc2lvbikgbWV0aG9k
+SW52b2NhdGlvbi5hcmd1bWVudHMoKS5nZXQoMCk7CisJCWFzc2VydFRydWUoZXhwcmVzc2lvbiBp
+bnN0YW5jZW9mIE51bGxMaXRlcmFsKTsKKwkJYmluZGluZyA9IGV4cHJlc3Npb24ucmVzb2x2ZVR5
+cGVCaW5kaW5nKCk7CisJCWFzc2VydE51bGwoYmluZGluZyk7CQorCisJCXN0YXRlbWVudCA9IChF
+eHByZXNzaW9uU3RhdGVtZW50KXN0YXRlbWVudHMuZ2V0KHNDb3VudCsrKTsKKwkJbWV0aG9kSW52
+b2NhdGlvbiA9IChNZXRob2RJbnZvY2F0aW9uKXN0YXRlbWVudC5nZXRFeHByZXNzaW9uKCk7CisJ
+CWV4cHJlc3Npb24gPSAoRXhwcmVzc2lvbikgbWV0aG9kSW52b2NhdGlvbi5hcmd1bWVudHMoKS5n
+ZXQoMCk7CisJCWFzc2VydFRydWUoZXhwcmVzc2lvbiBpbnN0YW5jZW9mIE51bGxMaXRlcmFsKTsK
+KwkJYmluZGluZyA9IGV4cHJlc3Npb24ucmVzb2x2ZVR5cGVCaW5kaW5nKCk7CisJCWFzc2VydE51
+bGwoYmluZGluZyk7CQorCisJCXN0YXRlbWVudCA9IChFeHByZXNzaW9uU3RhdGVtZW50KXN0YXRl
+bWVudHMuZ2V0KHNDb3VudCsrKTsKKwkJbWV0aG9kSW52b2NhdGlvbiA9IChNZXRob2RJbnZvY2F0
+aW9uKXN0YXRlbWVudC5nZXRFeHByZXNzaW9uKCk7CisJCWV4cHJlc3Npb24gPSAoRXhwcmVzc2lv
+bikgbWV0aG9kSW52b2NhdGlvbi5hcmd1bWVudHMoKS5nZXQoMCk7CisJCWFzc2VydFRydWUoZXhw
+cmVzc2lvbiBpbnN0YW5jZW9mIE51bGxMaXRlcmFsKTsKKwkJYmluZGluZyA9IGV4cHJlc3Npb24u
+cmVzb2x2ZVR5cGVCaW5kaW5nKCk7CisJCWFzc2VydE51bGwoYmluZGluZyk7CQorCisJCXN0YXRl
+bWVudCA9IChFeHByZXNzaW9uU3RhdGVtZW50KXN0YXRlbWVudHMuZ2V0KHNDb3VudCsrKTsKKwkJ
+bWV0aG9kSW52b2NhdGlvbiA9IChNZXRob2RJbnZvY2F0aW9uKXN0YXRlbWVudC5nZXRFeHByZXNz
+aW9uKCk7CisJCWV4cHJlc3Npb24gPSAoRXhwcmVzc2lvbikgbWV0aG9kSW52b2NhdGlvbi5hcmd1
+bWVudHMoKS5nZXQoMCk7CisJCWFzc2VydFRydWUoZXhwcmVzc2lvbiBpbnN0YW5jZW9mIE51bGxM
+aXRlcmFsKTsKKwkJYmluZGluZyA9IGV4cHJlc3Npb24ucmVzb2x2ZVR5cGVCaW5kaW5nKCk7CisJ
+CWFzc2VydE51bGwoYmluZGluZyk7CQorCX0KIH0KZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlL2RvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vQVNUQ29udmVydGVyLmphdmEgYi9v
+cmcuZWNsaXBzZS5qZHQuY29yZS9kb20vb3JnL2VjbGlwc2UvamR0L2NvcmUvZG9tL0FTVENvbnZl
+cnRlci5qYXZhCmluZGV4IGFiMzNhOTIuLmIxOWNlMzUgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNl
+LmpkdC5jb3JlL2RvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vQVNUQ29udmVydGVyLmphdmEK
+KysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvZG9tL29yZy9lY2xpcHNlL2pkdC9jb3JlL2RvbS9B
+U1RDb252ZXJ0ZXIuamF2YQpAQCAtNDA3NSw2ICs0MDc1LDkgQEAKIAl9CiAKIAlwcm90ZWN0ZWQg
+dm9pZCByZWNvcmROb2RlcyhBU1ROb2RlIG5vZGUsIG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5j
+b21waWxlci5hc3QuQVNUTm9kZSBvbGRBU1ROb2RlKSB7CisJCWlmIChub2RlIGluc3RhbmNlb2Yg
+TnVsbExpdGVyYWwgJiYgb2xkQVNUTm9kZSBpbnN0YW5jZW9mIG9yZy5lY2xpcHNlLmpkdC5pbnRl
+cm5hbC5jb21waWxlci5hc3QuTGFtYmRhRXhwcmVzc2lvbikgeworCQkJcmV0dXJuOworCQl9CiAJ
+CXRoaXMuYXN0LmdldEJpbmRpbmdSZXNvbHZlcigpLnN0b3JlKG5vZGUsIG9sZEFTVE5vZGUpOwog
+CX0KIA==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

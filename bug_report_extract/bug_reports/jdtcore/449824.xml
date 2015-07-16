@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>449824</bug_id>
+          
+          <creation_ts>2014-11-03 13:31:00 -0500</creation_ts>
+          <short_desc>[1.8] Difference in behaviour with method references and lambdas</short_desc>
+          <delta_ts>2014-11-07 01:24:17 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>NEW</bug_status>
+          <resolution></resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>---</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Alex Blewitt">alex.blewitt</reporter>
+          <assigned_to name="Sasikanth Bharadwaj">saammana</assigned_to>
+          <cc>craig.motlin</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2475934</commentid>
+    <comment_count>0</comment_count>
+    <who name="Alex Blewitt">alex.blewitt</who>
+    <bug_when>2014-11-03 13:31:55 -0500</bug_when>
+    <thetext>The following code fails to compile in Java 1.8.0_11 but succeeds in Eclipse 4.5M3 and 4.4.1; however, converting the method reference to a lambda (or uncommenting the line) results in a compile error for both:
+
+public class Bug {
+  public static void main(String[] args) {
+    Concrete&lt;Target&gt; fl = new Concrete&lt;Target&gt;();
+    // fl.call(each -&gt; each.doSomething()); // fails
+    fl.call(Target::doSomething); // succeeds in Eclipse 4.5M3 and 4.4.1
+    // but fails in Java 8 1.8.0_11
+  }
+  public static class Target {
+    public void doSomething() {
+    }
+  }
+  public static class Concrete&lt;T&gt; implements Left&lt;T&gt;, Right&lt;T&gt; {
+    public void call(RightHand&lt;? super T&gt; p) {
+    }
+  }
+  public interface Left&lt;T&gt; {
+    default void call(LeftHand&lt;? super T&gt; p) {
+    }
+  }
+  public interface LeftHand&lt;T&gt; {
+    public void left(T t);
+  }
+  public interface Right&lt;T&gt; {
+    public void call(RightHand&lt;? super T&gt; p);
+  }
+  public interface RightHand&lt;T&gt; {
+    public void right(T t);
+  }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475966</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-03 13:57:36 -0500</bug_when>
+    <thetext>Stephan, this piece of code in Scope.mSMB looks suspect to me:
+
+} else {
+	visibleSize = count;
+	// we proceed with pre 1.8 code below, which checks for overriding
+}
+
+We have just determined above this that neither m1 nor m2 is strictly 
+more specific than the other. Falling through to Java 7 checks should
+not happen ??</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2476014</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-03 15:36:23 -0500</bug_when>
+    <thetext>When going by the letter I believe the checks for overriding should happen even before calling mSMB. If we end up with two candidates, but one of them can not be invoked because it is overridden by the other, then there&apos;s no ambiguity, right?
+
+How does this spell out in the example from comment 0?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2476104</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-03 21:00:41 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #1)
+&gt; Stephan, this piece of code in Scope.mSMB looks suspect to me:
+&gt; 
+&gt; } else {
+&gt; 	visibleSize = count;
+&gt; 	// we proceed with pre 1.8 code below, which checks for overriding
+&gt; }
+&gt; 
+&gt; We have just determined above this that neither m1 nor m2 is strictly 
+&gt; more specific than the other. Falling through to Java 7 checks should
+&gt; not happen ??
+
+Short circuiting the Java 7 part results in 180+ regressions. We seem
+to prefer one version of call over the other on account of its being a
+class method as opposed to default interface method - 
+
+(In reply to Alex Blewitt from comment #0)
+&gt; The following code fails to compile in Java 1.8.0_11 but succeeds in Eclipse
+&gt; 4.5M3 and 4.4.1; however, converting the method reference to a lambda (or
+&gt; uncommenting the line) results in a compile error for both:
+
+They are not totally equivalent. The method reference is an exact method
+reference while the lambda you are replacing with is an implcitly typed
+lambda. If I declare the lambda parameter&apos;s type explicitly, difference
+between the compilers surfaces again.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2476106</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-03 21:08:53 -0500</bug_when>
+    <thetext>Sasi, please take a look - junit capturing current behavior released here:
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=ed2e48287e2fb39cc94195227106942810ad98d0</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2476369</commentid>
+    <comment_count>5</comment_count>
+    <who name="Alex Blewitt">alex.blewitt</who>
+    <bug_when>2014-11-04 07:52:57 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #3)
+&gt; (In reply to Alex Blewitt from comment #0)
+&gt; &gt; The following code fails to compile in Java 1.8.0_11 but succeeds in Eclipse
+&gt; &gt; 4.5M3 and 4.4.1; however, converting the method reference to a lambda (or
+&gt; &gt; uncommenting the line) results in a compile error for both:
+&gt; 
+&gt; They are not totally equivalent. The method reference is an exact method
+&gt; reference while the lambda you are replacing with is an implcitly typed
+&gt; lambda. If I declare the lambda parameter&apos;s type explicitly, difference
+&gt; between the compilers surfaces again.
+
+The exact method reference could be called against the default method though, since the default method and the concrete method have different signatures. In fact, if you comment out the call() in Concrete&lt;T&gt; and Right&lt;T&gt;, the method reference can be bound to the (default)  Left&lt;T&gt;.call instead:
+
+  public static class Concrete&lt;T&gt; implements Left&lt;T&gt;, Right&lt;T&gt; {
+    //public void call(RightHand&lt;? super T&gt; p) {
+    //}
+  }
+  public interface Right&lt;T&gt; {
+    //public void call(RightHand&lt;? super T&gt; p);
+  }</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2478426</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-06 21:33:42 -0500</bug_when>
+    <thetext>(In reply to Alex Blewitt from comment #5)
+&gt; (In reply to Srikanth Sankaran from comment #3)
+&gt; &gt; (In reply to Alex Blewitt from comment #0)
+&gt; &gt; &gt; The following code fails to compile in Java 1.8.0_11 but succeeds in Eclipse
+&gt; &gt; &gt; 4.5M3 and 4.4.1; however, converting the method reference to a lambda (or
+&gt; &gt; &gt; uncommenting the line) results in a compile error for both:
+&gt; &gt; 
+&gt; &gt; They are not totally equivalent. The method reference is an exact method
+&gt; &gt; reference while the lambda you are replacing with is an implcitly typed
+&gt; &gt; lambda. If I declare the lambda parameter&apos;s type explicitly, difference
+&gt; &gt; between the compilers surfaces again.
+&gt; 
+&gt; The exact method reference could be called against the default method
+&gt; though, since the default method and the concrete method have different
+&gt; signatures. In fact, if you comment out the call() in Concrete&lt;T&gt; and
+&gt; Right&lt;T&gt;, the method reference can be bound to the (default)  Left&lt;T&gt;.call
+&gt; instead:
+
+Right, I am not saying we find the default method incompatible, only
+that there is a piece of code which &quot;prefers&quot; a class method over
+a default method.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,453 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>438923</bug_id>
+          
+          <creation_ts>2014-07-04 07:21:00 -0400</creation_ts>
+          <short_desc>[compiler] nested type is inappropriately considered &quot;indirectly referenced&quot;</short_desc>
+          <delta_ts>2015-01-20 03:27:35 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords>greatbug</keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4.2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Rune Glerup">RuneGlerup</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>cwindatt</cc>
+    
+    <cc>f.neblung</cc>
+    
+    <cc>hudsonr</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>kurt2002</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>Vikas.Chandra</cc>
+          
+          <votes>2</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2424498</commentid>
+    <comment_count>0</comment_count>
+    <who name="Rune Glerup">RuneGlerup</who>
+    <bug_when>2014-07-04 07:21:08 -0400</bug_when>
+    <thetext>In Eclipse 4.4, a possible compiler bug affects our codebase.
+
+The trigger conditions seems to be (every class is declared in an exported packaged named the same as the bundle):
+
+ 1. In bundle org.example.a:
+    a. Declare an interface A
+    b. Declare a nested interface A.Inner
+
+ 2. In bundle org.example.b:
+    a. Import package org.example.a
+    b. Declare a class B
+    c. Use the type A.Inner as a type parameter in a private method return type or argument, e.g. Iterable&lt;A.Inner&gt;
+
+ 3. In bundle org.example.c:
+    a. Import package org.example.b
+    b. Call a function in class B
+
+Expected behavior:
+Since the type A.Inner is not exposed in the public interface of the class B, it should not be necessary to import org.example.a to use B.
+
+Actual behavior:
+Compiler error: The type org.example.a.A$Inner cannot be resolved. It is indirectly referenced from required .class files
+
+I have created a small project that illustrates this problem: https://github.com/glerup/eclipse-pde-indirectly-referenced-bug</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2425001</commentid>
+    <comment_count>1</comment_count>
+    <who name="kurt Mising name">kurt2002</who>
+    <bug_when>2014-07-07 07:35:45 -0400</bug_when>
+    <thetext>
+This applies also for &quot;normal&quot; Java-Projects.
+Following &quot;setup&quot; works fine in Eclipse 4.3.2:
+
+Project 1:
+package p1;
+public interface P1I0 {
+  interface II {/*empty*/}
+}
+
+Project 2 - has Project 1 on classpath:
+package p2;
+import p1.P1I0;
+public class P2C0 {
+  public void z(final P1I0.II... ii) {/*empty*/}
+}
+
+Project 3 - has Project 2 on classpath:
+package p3;
+import p2.P2C0;
+public class P3C0
+  extends P2C0 {/*empty*/}
+
+My findings:
+
+Visibility of method z does not matter.
+When changing z&apos;s parameter to a simple paramater, no compile errors.
+So it looks like the Type-Parameter &quot;resolution&quot; is the problematic peace of code in the Eclipse-Compiler.
+
+As we have a lot of projects, which would have to change classpath-settings,
+I would like to see the &quot;Importance&quot; of that bug to be at a higher level.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2425551</commentid>
+    <comment_count>2</comment_count>
+    <who name="Curtis Windatt">cwindatt</who>
+    <bug_when>2014-07-08 10:11:29 -0400</bug_when>
+    <thetext>I haven&apos;t gone through the example in detail, but this sounds like another duplicate of bug 73957.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2425568</commentid>
+    <comment_count>3</comment_count>
+    <who name="Rune Glerup">RuneGlerup</who>
+    <bug_when>2014-07-08 10:39:37 -0400</bug_when>
+    <thetext>(In reply to Curtis Windatt from comment #2)
+&gt; I haven&apos;t gone through the example in detail, but this sounds like another
+&gt; duplicate of bug 73957.
+
+While the error message is the same, this particular problem is new in Eclipse 4.4. The reproduction scenario compiles in Eclipse 4.3, but yields a compilation error in Eclipse 4.4.
+
+The &quot;indirectly referenced&quot; compilation error usually appears when a type from a bundle dependency in its interface references a type from a transitive dependency. In these cases it is necessary to also import/require the transitive dependency.
+
+But in this case, the compilation error occurs even when the type is only used in a private method and is not exposed in the interface in any way, which I think is very problematic.
+
+Triggering this does require some rather specific conditions (which happened to be fulfilled in 9 places in our codebase):
+
+ 1. The transitive dependency needs to be a nested type
+ 2. The nested type must be used as a type argument (e.g. Iterable&lt;I.Nested&gt;) or in a varargs position (e.g. I.Nested...)
+
+Try playing around with the very simple reproduction scenario on GitHub and let me know what you think.
+
+Based on Kurt&apos;s comment #1 this may be a JDT problem since it also seem to affect non-OSGi Java projects.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2425785</commentid>
+    <comment_count>4</comment_count>
+    <who name="Curtis Windatt">cwindatt</who>
+    <bug_when>2014-07-08 17:21:30 -0400</bug_when>
+    <thetext>I will mark for investigation in 4.5, but I don&apos;t have time to look at this in detail currently.  I&apos;m also moving it to PDE UI (where we handle the project dependencies) as well as marking it as a greatbug with clear steps to reproduce and an example project.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2425786</commentid>
+    <comment_count>5</comment_count>
+    <who name="Curtis Windatt">cwindatt</who>
+    <bug_when>2014-07-08 17:24:51 -0400</bug_when>
+    <thetext>(In reply to Rune Glerup from comment #3)
+&gt; Based on Kurt&apos;s comment #1 this may be a JDT problem since it also seem to
+&gt; affect non-OSGi Java projects.
+
+I&apos;ll move to JDT for comment.  PDE adds the dependencies to the JDT classpath, so this bug may originate there.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2425853</commentid>
+    <comment_count>6</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-07-08 23:49:08 -0400</bug_when>
+    <thetext>This sounds familiar, but I can&apos;t dig out the relevant bug. 
+
+Srikanth, any idea?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2446243</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-02 04:07:32 -0400</bug_when>
+    <thetext>Hello Rune, are you able to attach an example project to bugzilla here that 
+I can simply import to observe the problem. I appreciate that you have taken
+the effort to stage the test case in github, but a simple importable project
+attached to bugzilla would work best for me. Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2446245</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-02 04:10:46 -0400</bug_when>
+    <thetext>Sorry for the noise, my team mate showed me how to get what I wanted right
+from github. Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2446260</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-02 04:40:33 -0400</bug_when>
+    <thetext>Looks like a regression brought about by the fix for bug 423849</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2446312</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-02 05:42:30 -0400</bug_when>
+    <thetext>Fix and test released here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=c00079358eb2e0feded1f86b5088b09215957a9d
+
+The fix for was calling for overeager resolution of nested types. We now have
+built in some tolerance for missing types when evaluated eagerly.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2452469</commentid>
+    <comment_count>11</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-09-16 09:29:34 -0400</bug_when>
+    <thetext>Verified for Mars 4.5M2 using I20140915-2000 build.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2458807</commentid>
+    <comment_count>12</comment_count>
+    <who name="Randy Hudson">hudsonr</who>
+    <bug_when>2014-10-01 14:20:11 -0400</bug_when>
+    <thetext>I am seeing a problem that looks like this bug.  The difference is, in 2.c., A.Inner is used as a parameter in a public method.  Also for step 3, all I need to do is import the type (not the whole package) org.example.b.B.  The error appears without using B anywhere in C.
+
+I have several projects with compile errors in 4.4 due to this bug.  Can this be back ported?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2458808</commentid>
+    <comment_count>13</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-10-01 14:25:45 -0400</bug_when>
+    <thetext>I agree this looks severe enough for backporting to 4.4.2, and the fix doesn&apos;t look too complicated.
+
+Rune / Kurt, did you have a chance to test the fix in 4.5 M2 to verify that it fixes all your real-life cases?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2458962</commentid>
+    <comment_count>14</comment_count>
+    <who name="kurt Mising name">kurt2002</who>
+    <bug_when>2014-10-02 04:00:38 -0400</bug_when>
+    <thetext>Since we had to change to 4.4 we fixed the classpaths for the projects.
+The only fast check I could do, would be the testcase I provided.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2458991</commentid>
+    <comment_count>15</comment_count>
+    <who name="kurt Mising name">kurt2002</who>
+    <bug_when>2014-10-02 05:10:29 -0400</bug_when>
+    <thetext>
+Could check with
+  Version: Mars (4.5)
+  Build id: I20140918-0330
+.
+
+Luckily I had a &quot;backup&quot; of the workspace, so I could check real-life-case also.
+
+Both compile without errors again (compiler-compliance level 1.6, after clean-build).
+
+Would be nice to see that backported to 4.4.
+
+Thanks
+Kurt</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2459257</commentid>
+    <comment_count>16</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-10-02 11:30:10 -0400</bug_when>
+    <thetext>Reopening for back port.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2459329</commentid>
+    <comment_count>17</comment_count>
+    <who name="Rune Glerup">RuneGlerup</who>
+    <bug_when>2014-10-02 13:55:23 -0400</bug_when>
+    <thetext>(In reply to Markus Keller from comment #13)
+&gt; Rune / Kurt, did you have a chance to test the fix in 4.5 M2 to verify that
+&gt; it fixes all your real-life cases?
+
+Our real-life cases compile without errors in the 4.5 M2 build.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2461279</commentid>
+    <comment_count>18</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-07 20:56:02 -0400</bug_when>
+    <thetext>Shankha, can you please backport this ? TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2461301</commentid>
+    <comment_count>19</comment_count>
+      <attachid>247701</attachid>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-10-08 00:24:35 -0400</bug_when>
+    <thetext>Created attachment 247701
+Patch: 4.4.2</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2461302</commentid>
+    <comment_count>20</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-10-08 00:25:33 -0400</bug_when>
+    <thetext>(In reply to shankha banerjee from comment #19)
+&gt; Created attachment 247701 [details]
+&gt; Patch: 4.4.2
+
+Hi Srikanth,
+Can you please review.
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2461459</commentid>
+    <comment_count>21</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-10-08 05:20:01 -0400</bug_when>
+    <thetext>Backported on R4_4_maintenance 
+
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=b1ad3a9c0fed9f836b3039d8ebc5cb946105230a.
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2461461</commentid>
+    <comment_count>22</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-10-08 05:22:56 -0400</bug_when>
+    <thetext>Patch Ported to R4_4_maintenance.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2461464</commentid>
+    <comment_count>23</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-10-08 05:23:55 -0400</bug_when>
+    <thetext>Patch ported to R4_4_maintenance.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472347</commentid>
+    <comment_count>24</comment_count>
+    <who name="Frank Neblung">f.neblung</who>
+    <bug_when>2014-10-27 07:41:21 -0400</bug_when>
+    <thetext>*** Bug 448922 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2507671</commentid>
+    <comment_count>25</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2015-01-20 03:27:35 -0500</bug_when>
+    <thetext>Verified for 4.4.2 RC1 using build M20150114-1500.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>247701</attachid>
+            <date>2014-10-08 00:24:00 -0400</date>
+            <delta_ts>2014-10-08 00:24:35 -0400</delta_ts>
+            <desc>Patch: 4.4.2</desc>
+            <filename>patch_R4_4_maintenance.patch</filename>
+            <type>text/plain</type>
+            <size>4670</size>
+            <attacher name="shankha banerjee">shankhba</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmJ1aWxkZXIvc3JjL29yZy9l
+Y2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2J1aWxkZXIvTXVsdGlQcm9qZWN0VGVzdHMuamF2YSBiL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmJ1aWxkZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3Jl
+L3Rlc3RzL2J1aWxkZXIvTXVsdGlQcm9qZWN0VGVzdHMuamF2YQppbmRleCA1ZGYyNTQ1Li4yZTcx
+NTJmIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5idWlsZGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9idWlsZGVyL011bHRpUHJvamVjdFRlc3RzLmphdmEK
+KysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuYnVpbGRlci9zcmMvb3JnL2VjbGlwc2Uv
+amR0L2NvcmUvdGVzdHMvYnVpbGRlci9NdWx0aVByb2plY3RUZXN0cy5qYXZhCkBAIC01Nyw2ICs1
+Nyw3IEBAIHB1YmxpYyBjbGFzcyBNdWx0aVByb2plY3RUZXN0cyBleHRlbmRzIEJ1aWxkZXJUZXN0
+cyB7CiAJCXN1aXRlLmFkZFRlc3QobmV3IE11bHRpUHJvamVjdFRlc3RzKCJ0ZXN0MTAxX2NsYXNz
+X2ZvbGRlcl9ub25fZXhwb3J0ZWQiKSk7CiAJCXN1aXRlLmFkZFRlc3QobmV3IE11bHRpUHJvamVj
+dFRlc3RzKCJ0ZXN0MTAyX21pc3NpbmdfcmVxdWlyZWRfYmluYXJpZXMiKSk7CiAJCXN1aXRlLmFk
+ZFRlc3QobmV3IE11bHRpUHJvamVjdFRlc3RzKCJ0ZXN0MTAzX21pc3NpbmdfcmVxdWlyZWRfYmlu
+YXJpZXMiKSk7CisJCXN1aXRlLmFkZFRlc3QobmV3IE11bHRpUHJvamVjdFRlc3RzKCJ0ZXN0NDM4
+OTIzIikpOwogCQlyZXR1cm4gc3VpdGU7CiAJfQogCkBAIC0xNjA2LDQgKzE2MDcsNjYgQEAgcHVi
+bGljIHZvaWQgdGVzdDEwM19taXNzaW5nX3JlcXVpcmVkX2JpbmFyaWVzKCkgdGhyb3dzIEphdmFN
+b2RlbEV4Y2VwdGlvbiB7CiAJCWVudi5zZXRCdWlsZE9yZGVyKG51bGwpOwogCX0KIH0KKy8vaHR0
+cHM6Ly9idWdzLmVjbGlwc2Uub3JnL2J1Z3Mvc2hvd19idWcuY2dpP2lkPTQzODkyMywgW2NvbXBp
+bGVyXVR5cGUgaXMgaW5hcHByb3ByaWF0ZWx5IGNvbnNpZGVyZWQgImluZGlyZWN0bHkgcmVmZXJl
+bmNlZCIKK3B1YmxpYyB2b2lkIHRlc3Q0Mzg5MjMoKSB0aHJvd3MgSmF2YU1vZGVsRXhjZXB0aW9u
+IHsKKwkvLy0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0KKwkvLyAgICAgICAgIFByb2plY3Qx
+CisJLy8tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tCisJSVBhdGggcDEgPSBlbnYuYWRkUHJv
+amVjdCgiUDEiKTsgLy8kTk9OLU5MUy0xJAorCWVudi5hZGRFeHRlcm5hbEphcnMocDEsIFV0aWwu
+Z2V0SmF2YUNsYXNzTGlicygpKTsKKwkvLyByZW1vdmUgb2xkIHBhY2thZ2UgZnJhZ21lbnQgcm9v
+dCBzbyB0aGF0IG5hbWVzIGRvbid0IGNvbGxpZGUKKwllbnYucmVtb3ZlUGFja2FnZUZyYWdtZW50
+Um9vdChwMSwgIiIpOyAvLyROT04tTkxTLTEkCisJSVBhdGggcm9vdDEgPSBlbnYuYWRkUGFja2Fn
+ZUZyYWdtZW50Um9vdChwMSwgInNyYyIpOyAvLyROT04tTkxTLTEkCisJZW52LnNldE91dHB1dEZv
+bGRlcihwMSwgImJpbiIpOyAvLyROT04tTkxTLTEkCisKKwllbnYuYWRkQ2xhc3Mocm9vdDEsICJw
+MSIsICJQMUkwIiwgLy8kTk9OLU5MUy0xJCAvLyROT04tTkxTLTIkCisJCQkicGFja2FnZSBwMTtc
+biIgKyAKKwkJCSJwdWJsaWMgaW50ZXJmYWNlIFAxSTAge1xuIiArCisJCQkiICBpbnRlcmZhY2Ug
+SUkgey8qZW1wdHkqL31cbiIgKworCQkJIn1cbiIKKwkJKTsKKworCS8vLS0tLS0tLS0tLS0tLS0t
+LS0tLS0tLS0tLS0tLQorCS8vICAgICAgICAgUHJvamVjdDIKKwkvLy0tLS0tLS0tLS0tLS0tLS0t
+LS0tLS0tLS0tLS0KKwlJUGF0aCBwMiA9IGVudi5hZGRQcm9qZWN0KCJQMiIpOyAvLyROT04tTkxT
+LTEkCisJZW52LmFkZEV4dGVybmFsSmFycyhwMiwgVXRpbC5nZXRKYXZhQ2xhc3NMaWJzKCkpOwor
+CS8vIHJlbW92ZSBvbGQgcGFja2FnZSBmcmFnbWVudCByb290IHNvIHRoYXQgbmFtZXMgZG9uJ3Qg
+Y29sbGlkZQorCWVudi5yZW1vdmVQYWNrYWdlRnJhZ21lbnRSb290KHAyLCAiIik7IC8vJE5PTi1O
+TFMtMSQKKwlJUGF0aCByb290MiA9IGVudi5hZGRQYWNrYWdlRnJhZ21lbnRSb290KHAyLCAic3Jj
+Iik7IC8vJE5PTi1OTFMtMSQKKwllbnYuc2V0T3V0cHV0Rm9sZGVyKHAyLCAiYmluIik7IC8vJE5P
+Ti1OTFMtMSQKKworCWVudi5hZGRDbGFzcyhyb290MiwgInAyIiwgIlAyQzAiLCAvLyROT04tTkxT
+LTEkIC8vJE5PTi1OTFMtMiQKKwkJCSJwYWNrYWdlIHAyO1xuIiArIAorCQkJImltcG9ydCBwMS5Q
+MUkwO1xuIiArCisJCQkicHVibGljIGNsYXNzIFAyQzAge1xuIiArCisJCQkiICBwdWJsaWMgdm9p
+ZCB6KGZpbmFsIFAxSTAuSUkgW10gaWkpIHsvKmVtcHR5Ki99XG4iICsKKwkJCSJ9XG4iCisJCSk7
+CisKKwkKKwkvLy0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0KKwkvLyAgICAgICAgIFByb2pl
+Y3QzCisJLy8tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tCisJSVBhdGggcDMgPSBlbnYuYWRk
+UHJvamVjdCgiUDMiKTsgLy8kTk9OLU5MUy0xJAorCWVudi5hZGRFeHRlcm5hbEphcnMocDMsIFV0
+aWwuZ2V0SmF2YUNsYXNzTGlicygpKTsKKwkvLyByZW1vdmUgb2xkIHBhY2thZ2UgZnJhZ21lbnQg
+cm9vdCBzbyB0aGF0IG5hbWVzIGRvbid0IGNvbGxpZGUKKwllbnYucmVtb3ZlUGFja2FnZUZyYWdt
+ZW50Um9vdChwMywgIiIpOyAvLyROT04tTkxTLTEkCisJSVBhdGggcm9vdDMgPSBlbnYuYWRkUGFj
+a2FnZUZyYWdtZW50Um9vdChwMywgInNyYyIpOyAvLyROT04tTkxTLTEkCisJZW52LnNldE91dHB1
+dEZvbGRlcihwMywgImJpbiIpOyAvLyROT04tTkxTLTEkCisKKwllbnYuYWRkQ2xhc3Mocm9vdDMs
+ICJwMyIsICJQM0MwIiwgLy8kTk9OLU5MUy0xJCAvLyROT04tTkxTLTIkCisJCQkicGFja2FnZSBw
+MztcbiIgKworCQkJImltcG9ydCBwMi5QMkMwO1xuIiArCisJCQkicHVibGljIGNsYXNzIFAzQzBc
+biIgKworCQkJIiAgZXh0ZW5kcyBQMkMwIHsvKmVtcHR5Ki99XG4iCisJCSk7CisKKwkvLyBmb3Ig
+UHJvamVjdDEKKwllbnYuYWRkUmVxdWlyZWRQcm9qZWN0KHAyLCBwMSk7CisJZW52LmFkZFJlcXVp
+cmVkUHJvamVjdChwMywgcDIpOworCisJZnVsbEJ1aWxkKCk7CisJZXhwZWN0aW5nTm9Qcm9ibGVt
+cygpOworfQogfQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3Jn
+L2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9UeXBlU3lzdGVtLmphdmEgYi9v
+cmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29t
+cGlsZXIvbG9va3VwL1R5cGVTeXN0ZW0uamF2YQppbmRleCBmMjMxNjg4Li5kNGI2NTEwIDEwMDY0
+NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50
+ZXJuYWwvY29tcGlsZXIvbG9va3VwL1R5cGVTeXN0ZW0uamF2YQorKysgYi9vcmcuZWNsaXBzZS5q
+ZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3Vw
+L1R5cGVTeXN0ZW0uamF2YQpAQCAtNjksOCArNjksMTUgQEAgcHVibGljIGNsYXNzIFR5cGVTeXN0
+ZW0gewogCiAJLy8gR2l2ZW4gYSB0eXBlLCBhbnN3ZXIgaXRzIHVuYW5ub3RhdGVkIGFrYSBuYWtl
+ZCBwcm90b3R5cGUuIFRoaXMgaXMgYWxzbyBhIGNvbnZlbmllbnQgd2F5IHRvICJyZWdpc3RlciIg
+YSB0eXBlIHdpdGggVHlwZVN5c3RlbSBhbmQgaGF2ZSBpdCBpZCBzdGFtcGVkLgogCXB1YmxpYyBm
+aW5hbCBUeXBlQmluZGluZyBnZXRVbmFubm90YXRlZFR5cGUoVHlwZUJpbmRpbmcgdHlwZSkgewot
+CQlpZiAodHlwZS5pc1VucmVzb2x2ZWRUeXBlKCkgJiYgQ2hhck9wZXJhdGlvbi5pbmRleE9mKCck
+JywgdHlwZS5zb3VyY2VOYW1lKCkpID4gMCkKLQkJCXR5cGUgPSBCaW5hcnlUeXBlQmluZGluZy5y
+ZXNvbHZlVHlwZSh0eXBlLCB0aGlzLmVudmlyb25tZW50LCB0cnVlKTsgLy8gdG8gZW5zdXJlIHVu
+aXF1ZSBpZCBhc3NpZ25tZW50ICh3aGVuIGVuY2xvc2luZyB0eXBlIGlzIHBhcmFtZXRlcml6ZWQs
+IGlubmVyIHR5cGUgaXMgYWxzbykgCisJCWlmICh0eXBlLmlzVW5yZXNvbHZlZFR5cGUoKSAmJiBD
+aGFyT3BlcmF0aW9uLmluZGV4T2YoJyQnLCB0eXBlLnNvdXJjZU5hbWUoKSkgPiAwKSB7CisJCQli
+b29sZWFuIG1heVRvbGVyYXRlTWlzc2luZ1R5cGUgPSB0aGlzLmVudmlyb25tZW50Lm1heVRvbGVy
+YXRlTWlzc2luZ1R5cGU7CisJCQl0aGlzLmVudmlyb25tZW50Lm1heVRvbGVyYXRlTWlzc2luZ1R5
+cGUgPSB0cnVlOworCQkJdHJ5IHsKKwkJCQl0eXBlID0gQmluYXJ5VHlwZUJpbmRpbmcucmVzb2x2
+ZVR5cGUodHlwZSwgdGhpcy5lbnZpcm9ubWVudCwgdHJ1ZSk7IC8vIHRvIGVuc3VyZSB1bmlxdWUg
+aWQgYXNzaWdubWVudCAod2hlbiBlbmNsb3NpbmcgdHlwZSBpcyBwYXJhbWV0ZXJpemVkLCBpbm5l
+ciB0eXBlIGlzIGFsc28pIAorCQkJfSBmaW5hbGx5IHsKKwkJCQl0aGlzLmVudmlyb25tZW50Lm1h
+eVRvbGVyYXRlTWlzc2luZ1R5cGUgPSBtYXlUb2xlcmF0ZU1pc3NpbmdUeXBlOworCQkJfQorCQl9
+CiAJCWlmICh0eXBlLmlkID09IFR5cGVJZHMuTm9JZCkgewogCQkJaWYgKHR5cGUuaGFzVHlwZUFu
+bm90YXRpb25zKCkpCiAJCQkJdGhyb3cgbmV3IElsbGVnYWxTdGF0ZUV4Y2VwdGlvbigpOwo=
+</data>
+<flag name="review"
+          id="63599"
+          type_id="6"
+          status="?"
+          setter="shankhba"
+    />
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

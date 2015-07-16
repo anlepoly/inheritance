@@ -1,0 +1,76 @@
+BUG REPORT COMMENTS:
+Build ID: M20080911-1700
+
+Steps To Reproduce:
+1. Create an annotation with a possible String[] value: 
+
+@Retention(value = RetentionPolicy.RUNTIME) public @interface Bean { String[] value(); }
+
+2. Annotate a class with a single element without the array initializer syntax
+
+@Bean("value") public class SomeClass() { }
+
+3. In the annotation processor try to access the values using
+
+classElement.getAnnotation(Bean.class).value();
+
+The value returned is null, but it should be { "value" };
+
+If I change the annotation to @Bean({"value"}) it works, but AFAIK both declaration are legal and should be equivalent. Javac treats them uniformly.
+Based on http://bugs.sun.com/bugdatabase/view_bug.do?bug_id=4961299 it does appear this should be supported.
+Note also that the following program treats the un-arrayed annotation value reflectively as if it were an array:
+
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+
+public class Test {
+	@Retention(RetentionPolicy.RUNTIME)
+	private @interface Anno {
+		String[] value();
+	}
+	
+	@Anno("foo")
+	private static class A {}
+	
+	public static void main(String[] args) {
+		A a = new A();
+		Class<? extends Test.A> clazz = a.getClass();
+		Anno anno = clazz.getAnnotation(Test.Anno.class);
+		System.out.println(anno.value().getClass());
+		System.out.println("value[0] = " + anno.value()[0]);
+	}
+}
+
+I am not able to reproduce this, either manually or with JUnit, using the javax.annotation.processing (JSR269) API.  I get back a List of AnnotationValues, just as I would expect, regardless of whether the annotation value is single or arrayed.
+
+Are you using a Java 5 (com.sun.mirror.apt) processor?  Can you attach a sample processor that shows the problem to this bug report?
+Created an attachment (id=123714)
+Annotation processor project.
+
+
+Created an attachment (id=123715)
+Source project
+
+
+I've attached two sample project.
+
+For me
+
+@Bean("property")
+
+generates Annotation :@com.example.Bean , value: null
+
+and 
+
+@Bean({"property"})
+
+generates Annotation :@com.example.Bean , value: [Ljava.lang.String;@163a735
+
+
+Apologies for the very long delay in responding.  I can now reproduce this, and I do get back 'null' with the sample processor in the case of a single unarrayed annotation value.  
+
+The problem is that the compiler is giving us back an annotation value that has an array type but contains a non-arrayed string constant.  In AnnotationMirrorImpl.convertJDTArrayToReflectionArray() we barf on this.  Note the comment "// TODO: wrap solo element into one-length array" :-(  Guess we need to DO that.
+Fixed for 3.6 M7
+Great, thank you.
+Verified for 3.6M7 using I20100425-2000
+

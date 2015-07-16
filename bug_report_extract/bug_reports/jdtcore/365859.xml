@@ -1,0 +1,2294 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>365859</bug_id>
+          
+          <creation_ts>2011-12-07 05:02:00 -0500</creation_ts>
+          <short_desc>[compiler][null] distinguish warnings based on flow analysis vs. null annotations</short_desc>
+          <delta_ts>2012-03-14 09:02:25 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>Other</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>3.8 M6</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>deepakazad</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>satyam.kandula</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="48815"
+          type_id="1"
+          status="+"
+          setter="amj87.iitr"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2036991</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-12-07 05:02:26 -0500</bug_when>
+    <thetext>from bug 365387 comment #38
+&gt; &quot;Redundant null check: The variable f cannot be null at this location&quot;
+&gt; 
+&gt; Do we want to introduce a variant of this message for a @NonNull annotated
+&gt; local ? The phrase: &quot;at this location&quot; is redundant here as the variable 
+&gt; cannot be null at any location. (IMO it is OK either way)
+
+whenever a warning is directly based on a null-annotation we should clearly 
+communicate this fact.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2067973</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-19 07:47:00 -0500</bug_when>
+    <thetext>Also in this snippet
+  
+  void foo(@Nullable Object o) {
+    bar(o);
+  }
+  void bar(@NonNull Object o) { }
+  
+we should improve.  The reported message isn&apos;t actually bad:
+  Type mismatch: required &apos;@NonNull Object&apos; but the provided value can be null
+but currently this is wrongly controlled by the setting for &quot;Potential violation of null specification&quot;, while the type error is not &quot;potential&quot;.
+
+This should be cleaned-up by introducing one more IProblem, so that we&apos;ll have:
+  IProblem.RequiredNonNullButProvidedPotentialNull // if the potential null is computed by flow analysis
+  IProblem.RequiredNonNullButProvidedNullable // if the value comes from a variable specified as @Nullable
+the former IProblem will remain being controlled by &quot;Potential violation of null specification&quot;, whereas the latter will be controlled by &quot;Violation of null specification&quot;
+
+Additionally we can rephrase the new message to s.t. like:
+   Type mismatch: required &apos;@NonNull Object&apos; but the provided value is declared as &apos;@Nullable Object&apos;
+
+Targeting for M6 since this requires an API addition.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2069993</commentid>
+    <comment_count>2</comment_count>
+      <attachid>211490</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-23 09:34:06 -0500</bug_when>
+    <thetext>Created attachment 211490
+Fix
+
+This patch introduces three new problem messages:
+
+930 = Redundant null check: The variable {0} is specified as @{1}
+931 = Null comparison always yields false: The variable {0} is specified as @{1}
+932 = Type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value is specified as @{2}
+
+In action:
+
+void foo(@NonNull Object o) { if (o != null) ... 
+-&gt; Redundant null check: The variable o is specified as @NonNull
+
+void foo(@NonNull Object o) { if (o == null) ... 
+-&gt; Null comparison always yields false: The variable o is specified as @NonNull
+
+void bar(@NonNull Object o) {}
+void foo(@Nullable Object on) { bar(on); }
+-&gt; Type mismatch: required &apos;@NonNull Object&apos; but the provided value is specified as @Nullable
+
+
+Two comments on these messages:
+- The specification may be a @NonNullByDefault at any enclosing scope.
+  I&apos;m afraid people will complain when they don&apos;t see a @NonNull declaration
+  but we&apos;d report &quot;is declared as @NonNull&quot;. For vague reasons I feel that
+  &quot;is specified as ...&quot; is slightly better to get them thinking about where
+  this specification might be.
+  If that&apos;s too weak we should probably file another bug for distinguishing
+  explicit and implicit @NonNull specifications. Currently, we don&apos;t have this
+  information in the analysis.
+
+- The third message is slightly asymmetric: required &apos;@NonNull Object&apos; but
+  is @Nullable. Again just based on vague feelings I thought being pedantic
+  and repeatedly mentioning the full type (&apos;@Nullable Object&apos;) would distract
+  rather than help. OTOH, the first mention of &apos;@NonNull Object&apos; should help
+  to justify this as a type mismatch.
+
+
+Luckily all this could be implemented inside ProblemReporter, i.e., without touching the analysis proper.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2070534</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-02-24 00:15:12 -0500</bug_when>
+    <thetext>Ayush, thanks for a quick once over.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071160</commentid>
+    <comment_count>4</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-02-25 12:42:27 -0500</bug_when>
+    <thetext>Patch looks good but a few small comments:
+(1)IMHO, Even the message for RequiredNonNullButProvidedPotentialNull should be reworded to say
+Potential type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value can be null
+(2)RequiredNonNullButProvidedSpecdNull should be named RequiredNonNullButProvidedSpecdNullable for more clarity
+(3)The two methods isNonNull and isNullable should belong to LocalVariableBinding. We&apos;re anyway not handling fields for now.
+(4)nullityMismatch(..) can be simplified  to not redundantly calculate the arguments and argumentsShort. :)
+
+Can you also check if the quick fixes for these new wordings are still good?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071171</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-25 14:37:08 -0500</bug_when>
+    <thetext>(In reply to comment #4)
+&gt; Patch looks good but a few small comments:
+&gt; (1)IMHO, Even the message for RequiredNonNullButProvidedPotentialNull should be
+&gt; reworded to say
+&gt; Potential type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value can be
+&gt; null
+
+I disagree :)
+
+I mentioned this particular error message in my recent blog post:
+http://blog.objectteams.org/2012/02/help-the-jdt-compiler-helping-you-3-the-essence-of-null-annotations/
+under the heading &quot;Null warnings vs. type errors&quot;
+
+If this doesn&apos;t convince you I&apos;d be interested in learning which step of
+my argumentation you disagree with.
+
+&gt; (2)RequiredNonNullButProvidedSpecdNull should be named
+&gt; RequiredNonNullButProvidedSpecdNullable for more clarity
+
+sure.
+
+&gt; (3)The two methods isNonNull and isNullable should belong to
+&gt; LocalVariableBinding. We&apos;re anyway not handling fields for now.
+
+I&apos;ll push it down and look forward to pulling it up again.
+
+&gt; (4)nullityMismatch(..) can be simplified  to not redundantly calculate the
+&gt; arguments and argumentsShort. :)
+
+I didn&apos;t consider error reporting as a hot spot for performance, but you&apos;re
+right, this is wasteful.
+ 
+&gt; Can you also check if the quick fixes for these new wordings are still good?
+
+Which ones?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071209</commentid>
+    <comment_count>6</comment_count>
+    <who name="Deepak Azad">deepakazad</who>
+    <bug_when>2012-02-26 05:20:28 -0500</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; 932 = Type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value is specified
+&gt; as @{2}
+
+&gt; void bar(@NonNull Object o) {}
+&gt; void foo(@Nullable Object on) { bar(on); }
+&gt; -&gt; Type mismatch: required &apos;@NonNull Object&apos; but the provided value is
+&gt; specified as @Nullable
+
++1. This is good.
+
+(In reply to comment #4)
+&gt; Patch looks good but a few small comments:
+&gt; (1)IMHO, Even the message for RequiredNonNullButProvidedPotentialNull should be
+&gt; reworded to say
+&gt; Potential type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value can be
+&gt; null
+
++1. Here, we are talking about problem 911, right? And Stephan in your blog you are talking about problem 932, no?
+
+&quot;... *can* be null&quot; indicates &apos;potential&apos;, but &apos;Type mismatch&apos; has a ring of &apos;certainty&apos; to it. Looks confusing to me..</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071211</commentid>
+    <comment_count>7</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-02-26 05:29:20 -0500</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; (In reply to comment #4)
+&gt; &gt; Patch looks good but a few small comments:
+&gt; &gt; (1)IMHO, Even the message for RequiredNonNullButProvidedPotentialNull should be
+&gt; &gt; reworded to say
+&gt; &gt; Potential type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value can be
+&gt; &gt; null
+&gt; 
+&gt; I disagree :)
+&gt; 
+&gt; I mentioned this particular error message in my recent blog post:
+&gt; http://blog.objectteams.org/2012/02/help-the-jdt-compiler-helping-you-3-the-essence-of-null-annotations/
+&gt; under the heading &quot;Null warnings vs. type errors&quot;
+&gt; 
+&gt; If this doesn&apos;t convince you I&apos;d be interested in learning which step of
+&gt; my argumentation you disagree with.
+Well, that example cannot be exactly used to discuss my point here. Let me explain a bit:
+Before this patch, we had only one warning controlled by PotentialNullSpecViolation, which is IProblem.RequiredNonNullButProvidedPotentialNull.
+This warning was &quot; Type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value can be null&quot; for both cases (a) and (b) below:
+
+(a) void foo(@Nullable Object o) {
+        @NonNull Object var;
+        var = o;   // Type mismatch between @NonNull and @Nullable
+    }
+(b) void foo(boolean b) {
+        Object o;
+        if (b) o = null;
+        else o = new Object();
+        @NonNull Object var;
+        var = o;   // Type mismatch between @NonNull and &apos;can be null&apos; value
+    }
+
+However, with the patch the warning for (a) is now changed and controlled by NullSpecViolation instead. So, the warning in the example on your blog is also changed and I agree with that. However, for (b) it makes more sense to say &quot;Potential type mismatch&quot; just like we do for unknown nullness. Adding &quot;potential&quot; will also be consistent with the controlling option for this warning, which is PotentialNullSpecViolation.
+
+&gt; &gt; Can you also check if the quick fixes for these new wordings are still good?
+&gt; 
+&gt; Which ones?
+Sorry i was under the impression that bug 337977 is fixed, but it isn&apos;t actually, so nop. :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071220</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-26 07:12:56 -0500</bug_when>
+    <thetext>Thanks for your comments, I think we&apos;re about to crack this communication bug.
+
+I have the feeling the disagreement is rooted in one oversimplification that I&apos;m guilty of: I&apos;m using the word &quot;potential&quot; in situations where I probably should have invented a word that is not yet in use in the JDT. Overloading is bad, in Java and even more so in English :)
+
+Let&apos;s talk about type checking and see what different messages we want the compiler to say:
+
+(a.type)
+  Cat cat = b ? new Cat() : new Dog();
+
+The compiler answers: &quot;Type mismatch: ...&quot;, good.
+
+(a.null)
+  @NonNull Cat cat : b ? new Cat() : null;
+
+The compiler must basically answer the same as in (a.type).
+If we have more to say, it should be recognizable as additional explanation (&quot;OK, OK, I see that on one path you are right, but still that isn&apos;t enough&quot;).
+
+(b.type)
+Consider an integration of Java with a dynamic language that doesn&apos;t have static typing. Consider that the Java part could see methods from the dynamic language as using the type &quot;dyn&quot; to denote: we don&apos;t have a type specification for this value.
+
+  interface to the dynamic language:
+  def dyn getCat()
+
+  in Java:
+  Cat cat = getCat();
+
+Compiler should answer: &quot;I can&apos;t type check this assignment&quot;.
+It could be right it could be wrong, but a useful spec for getCat() is missing.
+  
+(b.null)
+   
+  legacy library:
+  Cat getCat();
+
+  annotated Java:
+  @NonNull cat = getCat();
+
+Same answer as (b.type).
+
+
+How can these four messages be phrased as to optimally explain what the compiler finds?
+
+(a.type) is given.
+
+(a.null) should emphasize the similarity to (a.type). I believe the addition &quot;can be null&quot; is already quite good. We could still be more explicit by saying &quot;is not provably @NonNull&quot;, but I&apos;m afraid that&apos;s to complicated for an error message (don&apos;t use no double negations!).
+
+(b.type) is hypothetical in Java (although such gradual type systems exist and that&apos;s really cool stuff!!).
+This means we are free to invent anything for (b.null).
+
+(b.null)
+Saying anything with &quot;potential&quot; seems to tell people that this situation has something to do with flow analysis. That&apos;s a bug, we should fix this. We need a wording here that says: &quot;maybe the guy who wrote &apos;Cat getCat()&apos; can prove that the return is a &apos;@NonNull Cat&apos;, but since he doesn&apos;t use annotations he did not express this in the signature, so it could also be wrong&quot;.
+
+While I&apos;m writing this I think I should have borrowed from a another situation, where we already support such an interface between legacy and new code:
+
+   List getList();
+
+   List&lt;String&gt; strings = getList();
+
+=&gt; Type safety: The expression of type List needs unchecked conversion to conform to List&lt;String&gt;
+
+That&apos;s it!
+
+At (b.null) the compiler should probably say:
+=&gt; Type safety: The expression of type Cat needs unchecked conversion to conform to &apos;@NonNull Cat&apos;.
+
+
+Hooray, no &quot;potential&quot;! :)
+
+If we can agree on these messages, we can proceed to re-check the mapping to irritants and to defaults. But first I&apos;d like to hear if this set of messages make sense to you:
+
+910 = Type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value is null
+911 = Type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value can be null
+912 = Type safety: The expression of type &apos;&apos;{0}&apos;&apos; needs unchecked conversion to conform to &apos;&apos;@{1} {2}&apos;&apos;
+932 = Type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value is specified as @{2}
+
+Examples for the above:
+(910)
+   @NonNull Cat cat = null;
+(911)
+   @NonNull Cat cat = b ? new Cat() : null;
+(912)
+   Cat getCat();
+   ..
+   @NonNull Cat cat = getCat();
+(932)
+   @Nullable getCat();
+   ..
+   @NonNull Cat cat = getCat();</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071223</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-26 07:33:07 -0500</bug_when>
+    <thetext>Specific answers:
+
+(In reply to comment #6)
+&gt; +1. Here, we are talking about problem 911, right? And Stephan in your blog you
+&gt; are talking about problem 932, no?
+
+You&apos;re right. In my blog I was still on the verge of introducing this distinction. Sorry for the confusion.
+ 
+&gt; &quot;... *can* be null&quot; indicates &apos;potential&apos;, but &apos;Type mismatch&apos; has a ring of
+&gt; &apos;certainty&apos; to it. Looks confusing to me..
+
+Should we omit the &quot;can be null&quot; part?
+
+If, OTOH, you suggest adding &apos;potential&apos; this must be paralleled by saying:
+   Cat cat = b ? new Cat() : new Dog();
+=&gt; Potential type mismatch: required &apos;Cat&apos; but the provided value can be &apos;Dog&apos;
+
+I don&apos;t think you want to suggest that, do you? :)
+
+
+More seriously, there is indeed one more thing to learn from the actual message for the cat-or-dog example: tell what the compiler inferred.
+Transferring this to nullness could yield the following message:
+
+
+Type mismatch: required &apos;&apos;@NonNull Cat&apos;&apos; but the provided value is inferred to  &apos;&apos;@Nullable Cat&apos;&apos;
+
+Yea, I like that, because it explains a two step process:
+(1) compiler infers nullness of RHS (since it cannot prove @NonNull it assumes @Nullable)
+(2) compiler compares RHS and LHS and detects a type mismatch.
+
+Choosing one message over the other implies to choose how much we want users to think of an analysis going on inside the compiler. But it might be worth explaining this much.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071224</commentid>
+    <comment_count>10</comment_count>
+    <who name="Deepak Azad">deepakazad</who>
+    <bug_when>2012-02-26 07:35:29 -0500</bug_when>
+    <thetext>(In reply to comment #8)
+&gt; Let&apos;s talk about type checking and see what different messages we want the
+&gt; compiler to say:
+&gt; 
+&gt; (a.type)
+&gt;   Cat cat = b ? new Cat() : new Dog();
+&gt; 
+&gt; The compiler answers: &quot;Type mismatch: ...&quot;, good.
+&gt; 
+&gt; (a.null)
+&gt;   @NonNull Cat cat : b ? new Cat() : null;
+&gt; 
+&gt; The compiler must basically answer the same as in (a.type).
+&gt; If we have more to say, it should be recognizable as additional explanation
+&gt; (&quot;OK, OK, I see that on one path you are right, but still that isn&apos;t enough&quot;).
+
+I agree for this specific example, if the message is changed to say &quot;Type mismatch: required &apos;@NonNull Cat&apos; but the provided value is null&quot;. 
+
+In the first case, I get &quot;Type mismatch: cannot convert from Object to Cat&quot;. Note the absence of &apos;can&apos; in the first case :-)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071225</commentid>
+    <comment_count>11</comment_count>
+    <who name="Deepak Azad">deepakazad</who>
+    <bug_when>2012-02-26 07:37:58 -0500</bug_when>
+    <thetext>(In reply to comment #9)
+&gt; Type mismatch: required &apos;&apos;@NonNull Cat&apos;&apos; but the provided value is inferred to 
+&gt; &apos;&apos;@Nullable Cat&apos;&apos;
+
+I am OK with this as well, but then it also means that this specific case is not governed by &apos;Potential null specification violation&apos; preference.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071226</commentid>
+    <comment_count>12</comment_count>
+    <who name="Deepak Azad">deepakazad</who>
+    <bug_when>2012-02-26 07:53:46 -0500</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; (b) void foo(boolean b) {
+&gt;         Object o;
+&gt;         if (b) o = null;
+&gt;         else o = new Object();
+&gt;         @NonNull Object var;
+&gt;         var = o;   // Type mismatch between @NonNull and &apos;can be null&apos; value
+&gt;     }
+
+Let&apos;s also go back to the above case
+
+class Snippet{
+	void foo3(boolean b) {
+		Object o;
+		if (b)
+			o = null;
+		else
+			o = new Object();
+		@NonNull
+		Object var = o; // Problem 1
+	}
+
+	void foo4(boolean b) {
+		Animal o;
+		if (b)
+			o = new Cat();
+		else
+			o = new Dog();
+		Cat var = o; // Problem 2
+	}
+}
+class Animal {}
+class Cat extends Animal {}
+class Dog extends Animal {}
+
+Currently the messages are
+1. Type mismatch: required &apos;@NonNull Object&apos; but the provided value can be null
+2. Type mismatch: cannot convert from Animal to Cat
+
+I guess we can remove &apos;can be&apos; from (1) even in this case. and also move the problem out of &apos;Potential violation of null specification&apos;.
+
+- This would mean that 911 is no longer covered by &apos;Potential violation of null specification&apos;, correct? (Or did I miss something?)
+- Also &apos;Potential violation of null specification&apos; now covers only 912, right? 
+If yes, can we change the default for &apos;Potential violation of null specification&apos; to &apos;Ignore&apos;?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071233</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-26 09:00:07 -0500</bug_when>
+    <thetext>(In reply to comment #10)
+&gt; (In reply to comment #8)
+&gt; &gt; Let&apos;s talk about type checking and see what different messages we want the
+&gt; &gt; compiler to say:
+&gt; &gt; 
+&gt; &gt; (a.type)
+&gt; &gt;   Cat cat = b ? new Cat() : new Dog();
+&gt; &gt; 
+&gt; &gt; The compiler answers: &quot;Type mismatch: ...&quot;, good.
+&gt; &gt; 
+&gt; &gt; (a.null)
+&gt; &gt;   @NonNull Cat cat : b ? new Cat() : null;
+&gt; &gt; 
+&gt; &gt; The compiler must basically answer the same as in (a.type).
+&gt; &gt; If we have more to say, it should be recognizable as additional explanation
+&gt; &gt; (&quot;OK, OK, I see that on one path you are right, but still that isn&apos;t enough&quot;).
+&gt; 
+&gt; I agree for this specific example, if the message is changed to say &quot;Type
+&gt; mismatch: required &apos;@NonNull Cat&apos; but the provided value is null&quot;. 
+&gt; 
+&gt; In the first case, I get &quot;Type mismatch: cannot convert from Object to Cat&quot;.
+&gt; Note the absence of &apos;can&apos; in the first case :-)
+
+After reading also your comment 11 and comment 12 I&apos;m confused whether you still propose to remove &apos;can&apos; from the message. Let&apos;s try to settle this first by slightly expanding the first example, so it shows a bit more of the existing glorious details.
+
+Look at this:
+   String s = b ? new String() : new Integer(1);
+=&gt; &quot;Type mismatch: cannot convert from Object&amp;Serializable&amp;Comparable&lt;?&gt; to String&quot;
+
+Oops, what&apos;s that? :)
+Compiler indeed infers the type for the RHS by computing the LUB of the two branches. None of the types String, Integer, or Object is optimal. Inference can and should do better.
+
+Transferring this to the null variant:
+The most suitable type for &quot;b ? new Cat() : null&quot; is &apos;@Nullable Cat&apos;, no reason to drop &apos;can&apos;. The type of &apos;null&apos; is not a good approximation, it isn&apos;t even a correct approximation.
+
+(I&apos;m not answering about irritants and options before we settle the individual messages :) )</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071242</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-26 09:30:52 -0500</bug_when>
+    <thetext>(In reply to comment #12)
+&gt; (In reply to comment #7)
+&gt; &gt; (b) void foo(boolean b) {
+&gt; &gt;         Object o;
+&gt; &gt;         if (b) o = null;
+&gt; &gt;         else o = new Object();
+&gt; &gt;         @NonNull Object var;
+&gt; &gt;         var = o;   // Type mismatch between @NonNull and &apos;can be null&apos; value
+&gt; &gt;     }
+&gt; 
+&gt; Let&apos;s also go back to the above case
+&gt; 
+&gt; class Snippet{
+&gt;     void foo3(boolean b) {
+&gt;         Object o;
+&gt;         if (b)
+&gt;             o = null;
+&gt;         else
+&gt;             o = new Object();
+&gt;         @NonNull
+&gt;         Object var = o; // Problem 1
+&gt;     }
+&gt; 
+&gt;     void foo4(boolean b) {
+&gt;         Animal o;
+&gt;         if (b)
+&gt;             o = new Cat();
+&gt;         else
+&gt;             o = new Dog();
+&gt;         Cat var = o; // Problem 2
+&gt;     }
+&gt; }
+&gt; class Animal {}
+&gt; class Cat extends Animal {}
+&gt; class Dog extends Animal {}
+
+OK, what has changed compared to my example? By replacing &quot;?:&quot; with &quot;if&quot; you&apos;re forced to denote the intermediate type, i.e., you participate in the process of type inference.
+
+For the type variant (foo4) you&apos;re lucky, you find (you created) a denotable common type. As shown in the previous comment this is not always possible. But anyway.
+
+For the null variant (foo3) you chose a common type which the compiler should never pick: the legacy type Object means: we have no null-ness information (similar to always assuming Object as the common type in the type variant).
+Indeed the compiler will infer better: combining the two branches it finds both options, so it&apos;s neither &quot;type of null&quot; nor &quot;@NonNull Object&quot; but &quot;&apos;potentially null&apos; Object&quot;. The most specific denotable type to which this is assignable is &quot;@Nullable Object&quot;.
+
+&gt; Currently the messages are
+&gt; 1. Type mismatch: required &apos;@NonNull Object&apos; but the provided value can be null
+
+To be changed perhaps to
+&quot;Type mismatch: required &apos;@NonNull Object&apos; but the provided value is inferred to &apos;@Nullable Object&apos;
+
+This is the exact same change as proposed for the ternary operator.
+To be perfectly explicit: I&apos;m proposing the &quot;is inferred&quot; wording for all cases where information from flow analysis is used in null checking.
+
+&gt; 2. Type mismatch: cannot convert from Animal to Cat
+
+Since type checking is governed by the JLS we cannot carry forward any results along flow analysis, so we have to use whatever type &apos;o&apos; is declared as. Type inference only happens in specific syntactic contexts. However, we should rather assimilate with the stronger analysis, where inference is admitted. Otherwise, we would have to completely abandon flow analysis for nullness (which is a form of inference).
+
+(I&apos;m still not answering about irritants and options before we settle the individual messages :) )</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071252</commentid>
+    <comment_count>15</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-02-26 10:35:14 -0500</bug_when>
+    <thetext>In thinking about this more, I had a wild idea that we should just reword the warning messages to align with the controlling options i.e. instead of prefixing &quot;Type mismatch&quot;, just say &quot;Null mismatch&quot;. ;)
+
+Applying your arguments to the warning 912, I don&apos;t understand why it says &quot;Potential type mismatch&quot;. Even that should just say &quot;Type mismatch&quot; then, no?
+
+Also even if we agree that &quot; Type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value can be null&quot; is not bad in itself, i&apos;m still worried about confusion arising out of this option being controlled with PotentialNullSpecViolation. So, while we can say that this is analogous to compiler warnings and conclude that the warning is kosher, we cannot exactly say the same about what the user will expect to see when he turns on the &quot;Potential null spec violation&quot; option to WARNING and &quot;Null spec violation&quot; to ERROR. For one kind of type mismatch problems he sees an error, and for others he sees a warning, and that may be confusing.
+
+So, even if we change the wording to &quot;Type mismatch: required &apos;&apos;@NonNull Cat&apos;&apos; but the provided value is inferred to &apos;&apos;@Nullable Cat&apos;&apos;&quot;, it will still be controlled by &quot;Pot. null spec. violation&quot;. So it still doesn&apos;t solve the confusion. 
+
+I&apos;m actually seeing it in two ways: from a compiler standpoint, what you say is correct, but from a user standpoint, it seems a bit vague. I and Deepak are two users who&apos;re confused by the wording, there may be others in the future. ;)
+
+Deepak, to clarify your comment:
+(In reply to comment #12)
+&gt; I guess we can remove &apos;can be&apos; from (1) even in this case. and also move the
+&gt; problem out of &apos;Potential violation of null specification&apos;.
+&gt; 
+&gt; - This would mean that 911 is no longer covered by &apos;Potential violation of null
+&gt; specification&apos;, correct? (Or did I miss something?)
+Well, even if we change the wording the controlling option will still be the same, and as I said above, thats confusing.
+&gt; - Also &apos;Potential violation of null specification&apos; now covers only 912, right?
+No, 912 is covered by another option &quot;insufficient info for null analysis&quot;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071254</commentid>
+    <comment_count>16</comment_count>
+    <who name="Deepak Azad">deepakazad</who>
+    <bug_when>2012-02-26 10:39:13 -0500</bug_when>
+    <thetext>Stephan, I thought I agreed with your proposal about wording for 911 in comment 11 :-)
+
+However, when you describe a change in wording you should also mention what corresponding changes, if any, do you have in mind for &apos;problem to preference&apos; mapping, because the whole picture needs to make sense. (We can come to the defaults in the end)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071256</commentid>
+    <comment_count>17</comment_count>
+    <who name="Deepak Azad">deepakazad</who>
+    <bug_when>2012-02-26 10:52:51 -0500</bug_when>
+    <thetext>(In reply to comment #15)
+&gt; Deepak, to clarify your comment:
+&gt; (In reply to comment #12)
+&gt; &gt; I guess we can remove &apos;can be&apos; from (1) even in this case. and also move the
+&gt; &gt; problem out of &apos;Potential violation of null specification&apos;.
+&gt; &gt; 
+&gt; &gt; - This would mean that 911 is no longer covered by &apos;Potential violation of null
+&gt; &gt; specification&apos;, correct? (Or did I miss something?)
+&gt; Well, even if we change the wording the controlling option will still be the
+&gt; same, and as I said above, thats confusing.
+
+I can&apos;t agree to that. Either the wording says &apos;potential&apos; (or something equivalent) or the problem is not covered by &apos;Potential violation....&apos;. But Stephan has already argued successfully that the problem has nothing potential about it, so 911 can no longer be covered by &apos;Potential violation....&apos;. Any proposal to the contrary gets my -1.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071263</commentid>
+    <comment_count>18</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-26 11:25:10 -0500</bug_when>
+    <thetext>(In reply to comment #15)
+&gt; Applying your arguments to the warning 912, I don&apos;t understand why it says
+&gt; &quot;Potential type mismatch&quot;. Even that should just say &quot;Type mismatch&quot; then, no?
+
+I think we need a re-sync here.
+
+As of the latest proposal (comment 8) 912 reads:
+
+912 = Type safety: The expression of type &apos;&apos;{0}&apos;&apos; needs unchecked conversion to
+conform to &apos;&apos;@{1} {2}&apos;&apos;
+
+
+The word &quot;potential&quot; is burnt. It causes more harm than it helps in this context. Please join me in an experiment to avoid it in everything relating to null annotations.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071270</commentid>
+    <comment_count>19</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-02-26 11:56:45 -0500</bug_when>
+    <thetext>(In reply to comment #18)
+&gt; As of the latest proposal (comment 8) 912 reads:
+&gt; 
+&gt; 912 = Type safety: The expression of type &apos;&apos;{0}&apos;&apos; needs unchecked conversion to
+&gt; conform to &apos;&apos;@{1} {2}&apos;&apos;
+Oops, my bad! I didn&apos;t notice that this replaces the earlier message.
+&gt; 
+&gt; The word &quot;potential&quot; is burnt. It causes more harm than it helps in this
+&gt; context. Please join me in an experiment to avoid it in everything relating to
+&gt; null annotations.
+
+Ok, so if we agree on that, then we need to think about associating these with either &quot;Null spec violation&quot; or another option replacing &quot;Potential null spec violation&quot;. Having &quot;potential&quot; in the option will not help anymore.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071275</commentid>
+    <comment_count>20</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-26 12:35:26 -0500</bug_when>
+    <thetext>(In reply to comment #16)
+&gt; However, when you describe a change in wording you should also mention what
+&gt; corresponding changes, if any, do you have in mind for &apos;problem to preference&apos;
+&gt; mapping, because the whole picture needs to make sense. (We can come to the
+&gt; defaults in the end)
+
+OK, let&apos;s give it a try, let&apos;s pretend we had an agreement on these messages:
+
+910
+Type mismatch: required &apos;@NonNull Cat&apos; but the provided value is null
+932
+Type mismatch: required &apos;@NonNull Cat&apos; but the provided value is specified as @Nullable
+911
+Type mismatch: required &apos;@NonNull Cat&apos; but the provided value is inferred to &apos;@Nullable Cat&apos;
+912
+Type safety: The expression of type &apos;Cat&apos; needs unchecked conversion to conform to &apos;@NonNull Cat&apos;
+
+The first three are spec violations. 
+912 signals a data flow from legacy to annotated.
+
+So 912 clearly needs a category of its own.
+Current label &quot;Insufficient information for null analysis&quot; isn&apos;t bad, maybe we can still improve. For alignment with the problem message we could say:
+  &quot;Unchecked conversion from legacy type to @NonNull type&quot;
+Also the constant COMPILER_PB_NULL_SPECIFICATION_INSUFFICIENT_INFO is OK.
+Might want to reconsider the @SW token, could perhaps use &quot;unchecked&quot;. I&apos;m ambivalent here between &quot;null&quot; and &quot;unchecked&quot;.
+
+When taking a fresh look at 910 we could actually spare a configuration option for this. If annotation-based null analysis is enabled, then this problem is an error, unconditionally (are we trusting our flow analysis that when it says &quot;is null&quot; this is always correct? I think this is safe.)
+
+Coming to 932 I again don&apos;t see why this problem should ever be globally downgraded. We *might* still want to rank it as an optional error so that @SW works. I wouldn&apos;t recommend using @SW here, ppl should use an assertNonNull helper for conversion, but I can&apos;t predict their excuses why @SW should be OK. (@SW is *not* OK for 910 - unless we want to shield against buggy analysis).
+
+This leaves us with the &quot;mixed&quot; case 911 (mixed because specification *and* inference is involved): This is a bit tricky, because at the point of the problem we may not be able to tell, *why* inference was involved: are we trying to improve from a @Nullable value or from a legacy value.
+
+  void test(Object legacy, @Nullable Object nullable, boolean b) {
+      @NonNull Object o1 = b ? legacy : new Object();    // 912
+      @NonNull Object o2 = b ? legacy : null;            // 911
+      @NonNull Object o3 = b ? nullable : new Object();  // 911
+      @NonNull Object o4 = b ? nullabel : null;          // 911
+  }
+
+Luckily, o1 is already reported as 912, so &quot;Insufficient information ...&quot; is the correct classification.
+
+What degree of control do we need for o2 - o4? From the given examples one might be tempted to treat all these the same as 932. But as soon as more complex flow analysis is involved we should account for the possibility of false positives (e.g., due to lack of correlation analysis, pot.null is not as reliable as def.null).
+
+Ergo: This should be separately configurable. Let&apos;s try some new wording here, too, e.g.:
+  &quot;Violation of null specification on some path&quot;
+or
+  &quot;Conflict between null specification and null inference&quot;
+The second one should be unambiguous.
+
+Let&apos;s put it together into one UI proposal:
+
+[x] Enable annotation-based null analysis
+    Insufficient information for null analysis             [E/W/I]
+    Conflict between null specification and null inference [E/W/I]
+
+Alternative wording for &quot;Insufficient information ...&quot;:
+    Unchecked conversion from legacy type to @NonNull type
+
+
+The mapping would be
+
+[x] Enable annotation-based null analysis      -&gt; set 910 &amp; 932 to error
+    Insufficient information for null analysis             -&gt; 912   
+    Conflict between null specification and null inference -&gt; 911
+
+
+Look, Ma, no &quot;potential&quot; :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2071340</commentid>
+    <comment_count>21</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-02-27 01:30:15 -0500</bug_when>
+    <thetext>(In reply to comment #20)
+&gt; So 912 clearly needs a category of its own.
+&gt; Current label &quot;Insufficient information for null analysis&quot; isn&apos;t bad, maybe we
+&gt; can still improve. For alignment with the problem message we could say:
+&gt;   &quot;Unchecked conversion from legacy type to @NonNull type&quot;
+&gt; Also the constant COMPILER_PB_NULL_SPECIFICATION_INSUFFICIENT_INFO is OK.
+&gt; Might want to reconsider the @SW token, could perhaps use &quot;unchecked&quot;. I&apos;m
+&gt; ambivalent here between &quot;null&quot; and &quot;unchecked&quot;.
+Agreed. &quot;null&quot; looks fine, to differentiate it from unchecked generic type warnings.
+
+&gt; When taking a fresh look at 910 we could actually spare a configuration option
+&gt; for this. If annotation-based null analysis is enabled, then this problem is an
+&gt; error, unconditionally (are we trusting our flow analysis that when it says &quot;is
+&gt; null&quot; this is always correct? I think this is safe.)
+Even if we do trust our analysis, users may want to see warnings from the analysis and not errors. Flexibility is not bad in this case. So we can let it be. :) 
+
+&gt; This leaves us with the &quot;mixed&quot; case 911 (mixed because specification *and*
+&gt; inference is involved): This is a bit tricky, because at the point of the
+&gt; problem we may not be able to tell, *why* inference was involved: are we trying
+&gt; to improve from a @Nullable value or from a legacy value.
+Yeah, thats definitely a point of contention.
+
+&gt; Ergo: This should be separately configurable. Let&apos;s try some new wording here,
+&gt; too, e.g.:
+&gt;   &quot;Violation of null specification on some path&quot;
+&gt; or
+&gt;   &quot;Conflict between null specification and null inference&quot;
+&gt; The second one should be unambiguous.
+Umm, from a user pov these are weird. Also, Violation of null specification on some path = Potential null spec. violation :P
+Ok, I know you&apos;re gonna beat me up for this but in all the wordings we discussed, the best one seems to be the original
+&quot;type mismatch: required &apos;&apos;@{0} {1}&apos;&apos; but the provided value can be
+null&quot; :)
+
+However, let this also be controlled by the &quot;null spec violation&quot; option
+
+&gt; Let&apos;s put it together into one UI proposal:
+&gt; The mapping would be
+&gt; 
+&gt; [x] Enable annotation-based null analysis      -&gt; set 910 &amp; 932 to error
+&gt;     Insufficient information for null analysis             -&gt; 912   
+&gt;     Conflict between null specification and null inference -&gt; 911
+My suggestion:
+ [x] Enable annotation-based null analysis      
+     Null spec violation  -&gt; set 910,911 &amp; 932 to error
+     Insufficient information for null analysis (or unchecked conversion)-&gt; 912</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2072047</commentid>
+    <comment_count>22</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-28 07:51:50 -0500</bug_when>
+    <thetext>After a brief personal communication let my try to summarize the remaining open issue(s), please let me know if I missed s.t. relevant:
+
+When assigning a value to a @NonNull variable we seem to agree an the toplevel classification:
+
+- if a legacy type is involved, rank this as an unchecked conversion
+
+- if either null or @Nullable is involved rank this as a type mismatch
+
+Two questions remain regarding the second:
+
+(1) do we need to weaken the type mismatch message due to some uncertainty in the analysis? (where and when?)
+
+(2) how much detail / explanation do we put into the messages?
+
+Also, the exact wording, grouping into options, and defaults are still subject to discussion, but these should be derivable from answers to these questions. 
+At this level, did I miss a question?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2072055</commentid>
+    <comment_count>23</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-28 08:03:21 -0500</bug_when>
+    <thetext>(In reply to comment #22)
+&gt; (1) do we need to weaken the type mismatch message due to some uncertainty in
+&gt; the analysis? (where and when?)
+&gt; 
+&gt; (2) how much detail / explanation do we put into the messages?
+
+Trying to narrow down the scope of (1):
+
+If value is &quot;null&quot;, uncertainty can only result from bugs in the analysis. If it says def.null we should be able to rely on that. If it&apos;s broken, we must fix it - short term workaround until the fix: disable null annotations.
+
+If specified @Nullable directly flows into @NonNull I don&apos;t see any uncertainty.
+
+If flow analysis result says pot.null I mentioned that uncertainty might result from a legacy type and/or from behavioral difference on different branches. However, in comment 20 I concluded that the relevant case &quot;o1&quot; is already detected as a legacy situation (&quot;insufficient info&quot;), so we can precisely mention this in the problem message.
+For all cases o2-o4 we are *sure* that null *can* legally occur, confirming that this is indeed a type mismatch, and contrary to a previous statement I&apos;d like to avoid to speak of any &quot;false positives&quot; in this group. These are real type errors, just we are not sure that null *will* occur and produce a problem at runtime (exactly as also &quot;normal&quot; type errors could be correct programs in an untyped language).
+While flow analysis is stronger than directly using legacy types, it is also weaker than explicit specification of each single variable. Basically, we&apos;re making flow analysis the weakest link in the chain, and considering, e.g., the lack of correlation analysis we know that in some situations users expect the analysis to be smarter than it is. Thus it should be relevant to tell the user when flow analysis was involved in detecting a type error.
+
+For that reason I think that weaker wording is required for o2 &amp; o3 and only for these. o4 is borderline, it may remain in this group, but could perhaps be improved towards certainty and strong message (since we&apos;re only uncertain whether null or @Nullable) -&gt; Future work.
+
+
+Regarding (2) we already have good results for legacy, null, and @Nullable situations.
+
+For the remaining flow-based problems we have proposals to be rather unspecific, e.g., by saying &quot;can be null&quot;, without giving any reason why null can occur nor why this is only a &quot;can be&quot;. I proposed as an alternative to make the inference explicit (assuming we can equate null flow analysis with null type inference). At this point the difference appears to be mostly a matter of taste, so we might want to try which one better supports the last stop: finding labels for the UI.
+
+---
+As the next step, I&apos;d like to narrow down, which configurable options we need.
+
+Considering the situations of assigning either null or @Nullable to @NonNull, let me call out, whether anybody has substantial reasons for downgrading these from error to warning or even ignore? Otherwise we don&apos;t need a user preference here.
+
+I think we agree that &quot;insufficient info&quot; (whatever wording) deserves an option of its own.
+
+Does anybody see reasons (means?) to further split the flow-based problems?
+
+---
+Finally, for the UI, I&apos;m having difficulties to find a label that clearly relates to a &quot;can be null&quot; message. Any suggestions? (please don&apos;t suggest &quot;Potential type mismatch&quot;, we&apos;re only searching for details at the RHS of &quot;Type mismatch:..&quot;).
+
+I do think the word &quot;infer&quot;/&quot;inference&quot; could suitably create this link.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2072059</commentid>
+    <comment_count>24</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-28 08:10:56 -0500</bug_when>
+    <thetext>(In reply to comment #23)
+&gt; Considering the situations of assigning either null or @Nullable to @NonNull,
+&gt; let me call out, whether anybody has substantial reasons for downgrading these
+&gt; from error to warning or even ignore? Otherwise we don&apos;t need a user preference
+&gt; here.
+
+Obviously, there always is a way out: if you don&apos;t want to see these errors the natural action should be to disable annotation based null analysis :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2072242</commentid>
+    <comment_count>25</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-28 12:13:19 -0500</bug_when>
+    <thetext>This bug now has a UI sibling: Bug 372768</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2072317</commentid>
+    <comment_count>26</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-02-28 13:18:19 -0500</bug_when>
+    <thetext>(In reply to comment #24)
+&gt; (In reply to comment #23)
+&gt; &gt; Considering the situations of assigning either null or @Nullable to @NonNull,
+&gt; &gt; let me call out, whether anybody has substantial reasons for downgrading these
+&gt; &gt; from error to warning or even ignore? Otherwise we don&apos;t need a user preference
+&gt; &gt; here.
+&gt; 
+&gt; Obviously, there always is a way out: if you don&apos;t want to see these errors the
+&gt; natural action should be to disable annotation based null analysis :)
+I agree with your analysis mostly. Here&apos;s one thing we can consider as a case for someone to downgrade to warning:
+I realized this recently when Deepak changed some dependency versions in JDT/UI, and on pulling the jdt.ui repo, the project started giving access restriction errors in my workspace. The only way to get rid of them is by updating to a newer build. Until then, I cannot even launch a runtime workbench without closing the UI project.
+Similarly, suppose a user sees a false positive because of a bug - he now sees a prickly error which may be beyond his control (May be a reference to something in an annotated library). The only way to get rid of the error may be to change the annotation in his code to, say, @NonNull from @Nullable. However, that would cause a flood of additional errors and he doesn&apos;t want that. He makes a note of this false positive and files a bug. Meanwhile, he downgrades to &quot;warning&quot; so that he can enjoy the convenience of the analysis while he&apos;s made a note of the false positive.
+Now in the model you suggest, the user does not have such a flexibility. Because of a bad error, he cannot even launch a runtime workbench. Its not a compiler error as such, so its a bit irritating. Thats why, I prefer the flexibility that  a configurable option brings for non-fatal static analysis kind of errors.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2072361</commentid>
+    <comment_count>27</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-28 14:17:53 -0500</bug_when>
+    <thetext>(In reply to comment #26)
+&gt; (In reply to comment #24)
+&gt; &gt; Obviously, there always is a way out: if you don&apos;t want to see these errors
+&gt; the
+&gt; &gt; natural action should be to disable annotation based null analysis :)
+&gt; I agree with your analysis mostly. Here&apos;s one thing we can consider as a case
+&gt; for someone to downgrade to warning:
+&gt; I realized this recently when Deepak changed some dependency versions in JDT/UI,
+&gt; and on pulling the jdt.ui repo, the project started giving access restriction
+&gt; errors in my workspace.
+
+sounds familiar :)
+
+&gt; The only way to get rid of them is by updating to a
+&gt; newer build. Until then, I cannot even launch a runtime workbench without
+&gt; closing the UI project.
+&gt; Similarly, suppose a user sees a false positive because of a bug - he now sees a
+&gt; prickly error which may be beyond his control (May be a reference to something
+&gt; in an annotated library). The only way to get rid of the error may be to change
+&gt; the annotation in his code to, say, @NonNull from @Nullable. However, that would
+&gt; cause a flood of additional errors and he doesn&apos;t want that.
+
+Sure, changing the specification to account for a compiler bug is a dead end.
+However, I&apos;m sure there will be workarounds with explicit null checks and intermediate local variables that will do a better job than changing the annotation.
+But, let&apos;s still assume, that for some obscure reasons an additional null check cannot be used.
+
+&gt; He makes a note of
+&gt; this false positive and files a bug. Meanwhile, he downgrades to &quot;warning&quot; so
+&gt; that he can enjoy the convenience of the analysis while he&apos;s made a note of the
+&gt; false positive.
+&gt; Now in the model you suggest, the user does not have such a flexibility. Because
+&gt; of a bad error, he cannot even launch a runtime workbench.
+
+That&apos;d be horrible, sure!
+
+But, in this (hopefully very rare) case, is it really unacceptable to disable null annotation checking for the 120 minutes until we provide a corrected JDT/Core? :}
+
+&gt; Its not a compiler error as such, so its a bit irritating. Thats why, I prefer the flexibility that
+&gt; a configurable option brings for non-fatal static analysis kind of errors.
+
+It&apos;s a question of balancing: how many minutes will a user be in this mode on average?
+We don&apos;t know but we hope to get a *very* low number. 
+It&apos;s only in case of an implementation bug in the null analysis, call it a compiler bug or something else, if it occurs it&apos;s our bug.
+Balance that against: how many times will users look at this option (while searching for something else) and be puzzled, when it should be used? Or worse: be tempted to use it when they shouldn&apos;t!
+
+Is this kind of implementation bug more likely than other implementation bugs?
+Maybe by a slight offset, but there&apos;s already a way out, must it be a smooth 6 lane highway, or could a few bumps be acceptable?
+
+Normal compiler configuration options should be intended for accommodating different styles of programming, and not be there just as a back door for a compiler bug.
+And the back door is already there.
+
+Am I missing anything?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2075194</commentid>
+    <comment_count>28</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-05 08:01:27 -0500</bug_when>
+    <thetext>(In reply to comment #27)
+&gt; But, in this (hopefully very rare) case, is it really unacceptable to disable
+&gt; null annotation checking for the 120 minutes until we provide a corrected
+&gt; JDT/Core? :}
+Yes, as of now. Can&apos;t predict the future though :)
+
+&gt; Normal compiler configuration options should be intended for accommodating
+&gt; different styles of programming, and not be there just as a back door for a
+&gt; compiler bug.
+&gt; And the back door is already there.
+Yeah, I did not intend to have the configuration options as a safety net for the user to escape a compiler bug. I guess the argument for whether we should have configurable options for this case should be the same as whether we should have it for the other options on the errors/warnings page. Comment 26 is just an example to illustrate one case where user may want use &apos;warning&apos;. There may be other cases, or it may just be a matter of taste. How about a master option &quot;Use annotations for null analysis [E/W/I]&quot; and have more enable/disable options for the other three sub-configurations we&apos;re proposing?
+
+I think its high time we take a call on this and take it to completion. M6 is around the corner. :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2075533</commentid>
+    <comment_count>29</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-03-05 16:35:19 -0500</bug_when>
+    <thetext>(In reply to comment #28)
+&gt; I guess the argument for whether we should
+&gt; have configurable options for this case should be the same as whether we 
+&gt; should have it for the other options on the errors/warnings page. 
+
+This tells me, you don&apos;t agree that some errors are different from all those
+we have on the preference page. But I still don&apos;t know where I lost you
+when I argued that &quot;910&quot; &amp; &quot;932&quot; errors are type errors and that ignoring
+some type errors makes the whole concept of type checking pretty pointless.
+Following this argumentation 910/932 errors aren&apos;t normal optional errors.
+Can&apos;t you give me a hint, on where you see a hole in this argumentation?
+
+&gt; There may be other cases,
+
+Maybe not. I&apos;m waiting to be convinced by a strong example.
+
+
+&gt; How about a master option
+&gt; &quot;Use annotations for null analysis [E/W/I]&quot; and have more enable/disable
+&gt; options for the other three sub-configurations we&apos;re proposing?
+
+That means, all irritants will get the same [E/W/I] level?
+That sounds like sacrificing *useful flexibility*.
+Why should 912 be forced to the same level as 910?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2075641</commentid>
+    <comment_count>30</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-03-06 00:51:09 -0500</bug_when>
+    <thetext>Satyam, could you study this issue and come up with a recommendation on
+what should happen for M6 ? (3.8 ?). We also have to have a clear picture
+of what the UI changes required are - we have a standing request to minimize
+load on them as much as possible since they are under severe constraints.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2075655</commentid>
+    <comment_count>31</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-06 01:23:25 -0500</bug_when>
+    <thetext>(In reply to comment #29)
+&gt; (In reply to comment #28)
+&gt; &gt; I guess the argument for whether we should
+&gt; &gt; have configurable options for this case should be the same as whether we 
+&gt; &gt; should have it for the other options on the errors/warnings page. 
+&gt; 
+&gt; This tells me, you don&apos;t agree that some errors are different from all those
+&gt; we have on the preference page. But I still don&apos;t know where I lost you
+&gt; when I argued that &quot;910&quot; &amp; &quot;932&quot; errors are type errors and that ignoring
+&gt; some type errors makes the whole concept of type checking pretty pointless.
+&gt; Following this argumentation 910/932 errors aren&apos;t normal optional errors.
+&gt; Can&apos;t you give me a hint, on where you see a hole in this argumentation?
+The only difference I see is that these errors are not compiler errors per se. I know that with null annotations, these are indeed very legit errors and the user will never want to set them to &quot;ignore&quot;. But perhaps, error/warning. :)
+Ok, since I can;t come up with any example of when the user may want to downgrade to warning, I raise the white flag. :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2075657</commentid>
+    <comment_count>32</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-06 01:29:36 -0500</bug_when>
+    <thetext>(In reply to comment #31)
+&gt; The only difference
+I didn&apos;t mean the difference between these and other options on the page. I mean even if null-annotation errors are different from the other options, they&apos;re also different from standard compiler errors. This is just a clarification. I&apos;m ok with removing the configuration option.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2075845</commentid>
+    <comment_count>33</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-03-06 07:59:05 -0500</bug_when>
+    <thetext>(In reply to comment #30)
+&gt; Satyam, could you study this issue and come up with a recommendation on
+&gt; what should happen for M6 ? (3.8 ?). 
+
+Satyam, let me try to summarize from my pov as input for your recommendation:
+
+I think we all agreed on the implementation changes in comment 2.
+
+For any additional changes regarding messages / categories / UI etc. I&apos;m proposing as detailed in bug 372768 (against JDT/UI).
+
+After Ayush &apos;raised the white flag&apos; I don&apos;t see any active objections, but we&apos;d probably need a +1 also from JDT/UI.
+
+Should a compromise be needed, I primarily see these options:
+- further polish the wording (UI labels as well as compiler messages)
+- retain configurability for definite null spec violations.
+  From technical and also usability pov I&apos;m arguing against this, but
+  perhaps a management perspective gives good reasons which I didn&apos;t see.
+
+&gt; We also have to have a clear picture
+&gt; of what the UI changes required are - we have a standing request to minimize
+&gt; load on them as much as possible since they are under severe constraints.
+
+The request in bug 372768 amounts to removing one option and changing the labels for two others (plus a small fup in bug 371968). The main effort would go into discussing the approach, implementation is trivial, I suppose.
+
+HTH</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2076408</commentid>
+    <comment_count>34</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-03-07 05:04:19 -0500</bug_when>
+    <thetext>Thanks Stephan for the summary. Considering the state, these comments should probably should go in bug 372768. However, am writing here as this has more context. 
+
+As I understand the current state is that we still need to finalize or agree on 
+ - Exact UI option and messages
+ - Removal of the option &apos;Violation of null specification&apos;
+
+1. Proposal to change &apos;Potential violation of null specification&apos;:
+
+Your proposal:
+(UI)Conflict between null specification and null inference [E/W/I]
+(CM)Type mismatch: required &apos;@NonNull Cat&apos; but the provided value is inferred
+to&apos;@Nullable Cat&apos;
+
+My comments:
+The compiler message looks fine with me, but UI message is confusing. If I look only at the UI message, I will be confused between &apos;Violation of null specification&apos; and &apos;Conflict between null specification and null inference&apos;. What is the difference between both of them? Somebody has to read some other doc to understand the differentiation. Ideally it would be good to be able to find it from the message itself. I have to confess that I didn&apos;t either understand the complete difference when &apos;Potential&apos; was used, but I think it is better that the proposed.
+I understand the reason that you need to modify the UI message in the first place -  it is probably to have some kind of a easy user mapping between the UI message and the compiler message. I also agree that the proposed compiler message is better than the previous compiler message. 
+I also agree that &apos;Potential Type mismatch&apos; doesn&apos;t look right. I am not satisfied with Ayush&apos;s other proposal to have &apos;Null mismatch&apos;. I could think of &apos;Null specification violation&apos;. It is a big name, but I like it otherwise. I will be happy if we could shorten this. &apos;Null violation&apos; doesn&apos;t sound correct either.
+
+2. Proposal to change &apos;Insufficient information for null analysis&apos;
+(UI)Unchecked conversion from legacy type to @NonNull type  [E/W/I]
+(CM) Type safety: The expression of type &apos;Cat&apos; needs unchecked conversion to
+conform to &apos;@NonNull Cat&apos;
+
+Both these look fine except for the word &apos;legacy&apos;. &apos;legacy&apos; could mean many things and I think we need a better word. I don&apos;t have a better word either. 
+
+3. Removal of the option &apos;Violation of null specification&apos;
+From a static checking tool or an annotation processor pov, this is a clear error and configuration probably need not be specified. Things are becoming tricky when we add this to the compiler. You could argue that &apos;turning off the annotation&apos; is the right way to go in those cases when one doesn&apos;t want to have these errors, but that alone cannot justify the removal.
+Stephan, you were telling that there will be wrong diagnostics if not turned error by default. Can you please elaborate?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2076640</commentid>
+    <comment_count>35</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-03-07 10:32:30 -0500</bug_when>
+    <thetext>Deepak had pointed me to bug 365763 which talks about why &apos;Type mismatch&apos; is correct. Now if &apos;Potential Type mismatch&apos; is incorrect and yes it is really a potential &apos;error&apos;, then probably the term &apos;Type mismatch&apos; is itself in correct. I think this argument is wrong but these forced me to think more about this term and here are some of my findings/thoughts.
+
+Annotated type can be seen as a type qualifier. Should the change in the type qualifier be termed as a type mismatch? I don&apos;t know but here is an argument. According to jsr308 spec, an annotated type can be considered as subtype or super type of the original type. So, differently annotated types probably are not in the hierarchy and hence could classify as &apos;Type Mismatch&apos;. However, if one is not annotated, the annotated type is a sub or super type of this and this is not really a &apos;Type Mismatch&apos;! I agree that an annotation processor could think otherwise, but assuming not, an obvious violation is a &apos;Type mismatch&apos; and an unobvious violation is not a &apos;Type mismatch&apos;. It is not even a &apos;Potential Type mismatch&apos;. So, my statement in the first paragraph is wrong.  
+
+I tried to look at the &apos;null&apos; error messages of Checker&apos;s framework - http://code.google.com/p/checker-framework/source/browse/checkers/src/checkers/nullness/messages.properties. &apos;Type mismatch&apos; is not used. 
+
+As I see from the bug 365763, there are not reservations about using this, but at the same time this wasn&apos;t considered to be the best way. 
+
+I don&apos;t have any other arguments to put in, but considering the above points, I think we should not use the term &apos;Type mismatch&apos;.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2076929</commentid>
+    <comment_count>36</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-03-07 15:57:07 -0500</bug_when>
+    <thetext>(In reply to comment #34)
+&gt; Stephan, you were telling that there will be wrong diagnostics if not turned
+&gt; error by default. Can you please elaborate?
+
+Sure. Assume user set&apos;s preferences like this (using labels as of M5):
+
+  Null Pointer Access : Error
+  Redundant Null Check: Warning
+  [x] Enable annotation-based null analysis
+    Violation of null specification:           Warning
+    Potential violation of null specification: Warning
+[x] Treat above errors like fatal errors ...
+
+Now this method
+
+	public static void main(String... args) {
+		Object val = null;
+		Object o2 = null;
+		if (val == null) {
+			o2 = &quot;It works&quot;;
+		}
+		System.out.println(o2.toString());
+	}
+
+compiles with a (suppressable) warning, and can be run to print &quot;It works&quot;.
+
+Add one annotation:
+
+	public static void main(String... args) {
+		@NonNull Object val = null;
+		Object o2 = null;
+		if (val == null) {
+			o2 = &quot;It works&quot;;
+		}
+		System.out.println(o2.toString());
+	}
+
+Now you get one error: the last statement is incorrectly flagged as:
+  &quot;Null pointer access: The variable o2 can only be null at this location&quot;
+This is because analysis now &quot;believes&quot; that the then-branch is dead code.
+
+The program cannot be run anymore, which is OK, but the error tells the user to change the wrong location.
+
+By ignoring the warning against the first statement (we may even think of @SuppressWarnings(&quot;null&quot;) for the entire method) we don&apos;t see the root cause. Moreover, the compiler will use the wrong assumption that val is nonnull and this mistake can arbitrarily propagate into all subsequent analysis.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2076950</commentid>
+    <comment_count>37</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-03-07 16:36:44 -0500</bug_when>
+    <thetext>(In reply to comment #35)
+&gt; I tried to look at the &apos;null&apos; error messages of Checker&apos;s framework -
+&gt; http://code.google.com/p/checker-framework/source/browse/checkers/src/checkers/nullness/messages.properties.
+&gt; &apos;Type mismatch&apos; is not used. 
+
+This is easily explained: Type error messages seem to be taken from the core of the checkers framework, rather than the file you cited:
+
+import checkers.nullness.quals.*;
+public class T {
+	void test() {
+		@Nullable Object o1 = null;
+		@NonNull Object o2 = o1;
+	}
+}
+
+gives:
+
+T.java:5: error: incompatible types.
+                @NonNull Object o2 = o1;
+                                     ^
+  found   : @Nullable Object
+  required: @NonNull Object
+1 error
+
+Bottom line: they&apos;re re-using the exact same message as for other type errors.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2078436</commentid>
+    <comment_count>38</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-03-11 18:41:46 -0400</bug_when>
+    <thetext>Released for 3.8 M6 via commit f59cd62ee82097eb13f8e87f8fbab8b81f747c29
+
+I&apos;ve addressed issues (2)-(4) from comment 4.
+
+Compiler messages are in line with bug 372768 comment 9.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2078743</commentid>
+    <comment_count>39</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-12 10:08:45 -0400</bug_when>
+    <thetext>Reopening to work on bug 372768 comment 15. I&apos;ll take care of that</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2078966</commentid>
+    <comment_count>40</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-03-12 15:14:14 -0400</bug_when>
+    <thetext>(In reply to comment #39)
+&gt; Reopening to work on bug 372768 comment 15. I&apos;ll take care of that
+
+While we&apos;re at it: also the doc text needs an update to account for RequiredNonNullButProvidedSpecdNullable.
+I propose the following paragraph:
+
+	 * &lt;p&gt;Depending on this option, the compiler will issue either an error or a warning
+	 *    whenever one of the following situations is detected:
+	 *    &lt;ol&gt;
+	 *    &lt;li&gt;A method declared with a nonnull annotation returns a &lt;em&gt;nullable&lt;/em&gt; expression.&lt;/li&gt;
+	 *    &lt;li&gt;A &lt;em&gt;nullable&lt;/em&gt; expression is passed
+	 *        as an argument in a method call where the corresponding parameter of the called
+	 *        method is declared with a nonnull annotation.&lt;/li&gt;
+	 *    &lt;li&gt;A &lt;em&gt;nullable&lt;/em&gt; expression is assigned
+	 *        to a local variable that is declared with a nonnull annotation.&lt;/li&gt;
+	 *    &lt;li&gt;A method that overrides an inherited method declared with a nonnull annotation
+	 *        tries to relax that contract by specifying a nullable annotation
+	 *        (prohibition of contravariant return).&lt;/li&gt;
+	 *    &lt;li&gt;A method that overrides an inherited method which has a nullable declaration
+	 *        for at least one of its parameters, tries to tighten that null contract by
+	 *        specifying a nonnull annotation for its corresponding parameter
+	 *        (prohibition of covariant parameters).&lt;/li&gt;
+	 *    &lt;/ol&gt;
+	 *    In the above an expression is considered as &lt;em&gt;nullable&lt;/em&gt; if either it is statically
+	 *    known to evaluate to the value &lt;code&gt;null&lt;/code&gt;, or if it is declared with a nullable annotation.
+	 * &lt;/p&gt;
+   ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2078979</commentid>
+    <comment_count>41</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-12 15:24:47 -0400</bug_when>
+    <thetext>(In reply to comment #40)
+&gt; (In reply to comment #39)
+&gt; &gt; Reopening to work on bug 372768 comment 15. I&apos;ll take care of that
+&gt; 
+&gt; While we&apos;re at it: also the doc text needs an update to account for
+&gt; RequiredNonNullButProvidedSpecdNullable.
+You mean for JavaCore.COMPILER_PB_NULL_ANNOTATION_REFERENCE_CONFLICT ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2078990</commentid>
+    <comment_count>42</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-03-12 15:46:35 -0400</bug_when>
+    <thetext>(In reply to comment #41)
+&gt; (In reply to comment #40)
+&gt; &gt; (In reply to comment #39)
+&gt; &gt; &gt; Reopening to work on bug 372768 comment 15. I&apos;ll take care of that
+&gt; &gt;
+&gt; &gt; While we&apos;re at it: also the doc text needs an update to account for
+&gt; &gt; RequiredNonNullButProvidedSpecdNullable.
+&gt; You mean for JavaCore.COMPILER_PB_NULL_ANNOTATION_REFERENCE_CONFLICT ?
+
+I drafted the change for COMPILER_PB_NULL_SPECIFICATION_VIOLATION but it seems we&apos;re on the same page :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2079673</commentid>
+    <comment_count>43</comment_count>
+      <attachid>212569</attachid>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-13 12:10:46 -0400</bug_when>
+    <thetext>Created attachment 212569
+fix for API names</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2079757</commentid>
+    <comment_count>44</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-13 13:38:35 -0400</bug_when>
+    <thetext>(In reply to comment #43)
+&gt; Created attachment 212569 [details]
+&gt; fix for API names
+
+Released in jdt/core master via commit d00b9ad70dbedf29a635b964d926113aa73c3dfc</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2079763</commentid>
+    <comment_count>45</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-13 13:43:06 -0400</bug_when>
+    <thetext>Released doc patch in http://git.eclipse.org/c/platform/eclipse.platform.common.git/commit/?id=9017c1ea93c78834af1c04775d44d4110cdee219</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2080343</commentid>
+    <comment_count>46</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-03-14 09:02:25 -0400</bug_when>
+    <thetext>Verified for 3.8M6 using build I20120313-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>211490</attachid>
+            <date>2012-02-23 09:34:00 -0500</date>
+            <delta_ts>2012-02-23 09:34:06 -0500</delta_ts>
+            <desc>Fix</desc>
+            <filename>Bug_365859.patch</filename>
+            <type>text/plain</type>
+            <size>22099</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0NvbXBpbGVySW52b2Nh
+dGlvblRlc3RzLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMv
+b3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9Db21waWxlcklu
+dm9jYXRpb25UZXN0cy5qYXZhCmluZGV4IGIwODAzYTIuLjdlOTNiNzUgMTAwNjQ0Ci0tLSBhL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29y
+ZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0NvbXBpbGVySW52b2NhdGlvblRlc3RzLmphdmEK
+KysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNl
+L2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vQ29tcGlsZXJJbnZvY2F0aW9uVGVz
+dHMuamF2YQpAQCAtNzk0LDYgKzc5NCw3IEBACiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMu
+cHV0KCJSZWR1bmRhbnROdWxsQ2hlY2tPbk5vbk51bGxMb2NhbFZhcmlhYmxlIiwgbmV3IFByb2Js
+ZW1BdHRyaWJ1dGVzKENhdGVnb3JpemVkUHJvYmxlbS5DQVRfUE9URU5USUFMX1BST0dSQU1NSU5H
+X1BST0JMRU0pKTsKIAkJZXhwZWN0ZWRQcm9ibGVtQXR0cmlidXRlcy5wdXQoIlJlZHVuZGFudE51
+bGxDaGVja09uTm9uTnVsbE1lc3NhZ2VTZW5kIiwgbmV3IFByb2JsZW1BdHRyaWJ1dGVzKENhdGVn
+b3JpemVkUHJvYmxlbS5DQVRfUE9URU5USUFMX1BST0dSQU1NSU5HX1BST0JMRU0pKTsKIAkJZXhw
+ZWN0ZWRQcm9ibGVtQXR0cmlidXRlcy5wdXQoIlJlZHVuZGFudE51bGxDaGVja09uTnVsbExvY2Fs
+VmFyaWFibGUiLCBuZXcgUHJvYmxlbUF0dHJpYnV0ZXMoQ2F0ZWdvcml6ZWRQcm9ibGVtLkNBVF9Q
+T1RFTlRJQUxfUFJPR1JBTU1JTkdfUFJPQkxFTSkpOworCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1
+dGVzLnB1dCgiUmVkdW5kYW50TnVsbENoZWNrT25TcGVjZE5vbk51bGxMb2NhbFZhcmlhYmxlIiwg
+bmV3IFByb2JsZW1BdHRyaWJ1dGVzKENhdGVnb3JpemVkUHJvYmxlbS5DQVRfUE9URU5USUFMX1BS
+T0dSQU1NSU5HX1BST0JMRU0pKTsKIAkJZXhwZWN0ZWRQcm9ibGVtQXR0cmlidXRlcy5wdXQoIlJl
+ZHVuZGFudE51bGxEZWZhdWx0QW5ub3RhdGlvbiIsIG5ldyBQcm9ibGVtQXR0cmlidXRlcyhDYXRl
+Z29yaXplZFByb2JsZW0uQ0FUX1VOTkVDRVNTQVJZX0NPREUpKTsKIAkJZXhwZWN0ZWRQcm9ibGVt
+QXR0cmlidXRlcy5wdXQoIlJlZHVuZGFudE51bGxEZWZhdWx0QW5ub3RhdGlvblBhY2thZ2UiLCBu
+ZXcgUHJvYmxlbUF0dHJpYnV0ZXMoQ2F0ZWdvcml6ZWRQcm9ibGVtLkNBVF9VTk5FQ0VTU0FSWV9D
+T0RFKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJSZWR1bmRhbnROdWxsRGVm
+YXVsdEFubm90YXRpb25UeXBlIiwgbmV3IFByb2JsZW1BdHRyaWJ1dGVzKENhdGVnb3JpemVkUHJv
+YmxlbS5DQVRfVU5ORUNFU1NBUllfQ09ERSkpOwpAQCAtODAyLDYgKzgwMyw3IEBACiAJCWV4cGVj
+dGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJSZWZlcmVuY2VUb0ZvcndhcmRGaWVsZCIsIG5ldyBQ
+cm9ibGVtQXR0cmlidXRlcyhDYXRlZ29yaXplZFByb2JsZW0uQ0FUX01FTUJFUikpOwogCQlleHBl
+Y3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1dCgiUmVxdWlyZWROb25OdWxsQnV0UHJvdmlkZWROdWxs
+IiwgbmV3IFByb2JsZW1BdHRyaWJ1dGVzKENhdGVnb3JpemVkUHJvYmxlbS5DQVRfUE9URU5USUFM
+X1BST0dSQU1NSU5HX1BST0JMRU0pKTsKIAkJZXhwZWN0ZWRQcm9ibGVtQXR0cmlidXRlcy5wdXQo
+IlJlcXVpcmVkTm9uTnVsbEJ1dFByb3ZpZGVkUG90ZW50aWFsTnVsbCIsIG5ldyBQcm9ibGVtQXR0
+cmlidXRlcyhDYXRlZ29yaXplZFByb2JsZW0uQ0FUX1BPVEVOVElBTF9QUk9HUkFNTUlOR19QUk9C
+TEVNKSk7CisJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJSZXF1aXJlZE5vbk51bGxC
+dXRQcm92aWRlZFNwZWNkTnVsbCIsIG5ldyBQcm9ibGVtQXR0cmlidXRlcyhDYXRlZ29yaXplZFBy
+b2JsZW0uQ0FUX1BPVEVOVElBTF9QUk9HUkFNTUlOR19QUk9CTEVNKSk7CiAJCWV4cGVjdGVkUHJv
+YmxlbUF0dHJpYnV0ZXMucHV0KCJSZXF1aXJlZE5vbk51bGxCdXRQcm92aWRlZFVua25vd24iLCBu
+ZXcgUHJvYmxlbUF0dHJpYnV0ZXMoQ2F0ZWdvcml6ZWRQcm9ibGVtLkNBVF9QT1RFTlRJQUxfUFJP
+R1JBTU1JTkdfUFJPQkxFTSkpOwogCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1dCgiUmVm
+ZXJlbmNlVG9Gb3J3YXJkVHlwZVZhcmlhYmxlIiwgbmV3IFByb2JsZW1BdHRyaWJ1dGVzKENhdGVn
+b3JpemVkUHJvYmxlbS5DQVRfVFlQRSkpOwogCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1
+dCgiUmVzb3VyY2VIYXNUb0ltcGxlbWVudEF1dG9DbG9zZWFibGUiLCBuZXcgUHJvYmxlbUF0dHJp
+YnV0ZXMoQ2F0ZWdvcml6ZWRQcm9ibGVtLkNBVF9UWVBFKSk7CkBAIC04MTUsNiArODE3LDcgQEAK
+IAkJZXhwZWN0ZWRQcm9ibGVtQXR0cmlidXRlcy5wdXQoIlNhZmVWYXJhcmdzT25Ob25GaW5hbElu
+c3RhbmNlTWV0aG9kIiwgbmV3IFByb2JsZW1BdHRyaWJ1dGVzKENhdGVnb3JpemVkUHJvYmxlbS5D
+QVRfTUVNQkVSKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJTaG91bGRJbXBs
+ZW1lbnRIYXNoY29kZSIsIG5ldyBQcm9ibGVtQXR0cmlidXRlcyhDYXRlZ29yaXplZFByb2JsZW0u
+Q0FUX1BPVEVOVElBTF9QUk9HUkFNTUlOR19QUk9CTEVNKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0
+dHJpYnV0ZXMucHV0KCJTaG91bGRSZXR1cm5WYWx1ZSIsIG5ldyBQcm9ibGVtQXR0cmlidXRlcyhD
+YXRlZ29yaXplZFByb2JsZW0uQ0FUX01FTUJFUikpOworCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1
+dGVzLnB1dCgiU3BlY2ROb25OdWxsTG9jYWxWYXJpYWJsZUNvbXBhcmlzb25ZaWVsZHNGYWxzZSIs
+IG5ldyBQcm9ibGVtQXR0cmlidXRlcyhDYXRlZ29yaXplZFByb2JsZW0uQ0FUX1BPVEVOVElBTF9Q
+Uk9HUkFNTUlOR19QUk9CTEVNKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJT
+dGF0aWNJbmhlcml0ZWRNZXRob2RDb25mbGljdHMiLCBuZXcgUHJvYmxlbUF0dHJpYnV0ZXMoQ2F0
+ZWdvcml6ZWRQcm9ibGVtLkNBVF9NRU1CRVIpKTsKIAkJZXhwZWN0ZWRQcm9ibGVtQXR0cmlidXRl
+cy5wdXQoIlN0YXRpY01lbWJlck9mUGFyYW1ldGVyaXplZFR5cGUiLCBuZXcgUHJvYmxlbUF0dHJp
+YnV0ZXMoQ2F0ZWdvcml6ZWRQcm9ibGVtLkNBVF9UWVBFKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0
+dHJpYnV0ZXMucHV0KCJTdGF0aWNNZXRob2RSZXF1ZXN0ZWQiLCBuZXcgUHJvYmxlbUF0dHJpYnV0
+ZXMoQ2F0ZWdvcml6ZWRQcm9ibGVtLkNBVF9NRU1CRVIpKTsKQEAgLTE0ODgsNiArMTQ5MSw3IEBA
+CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJSZWR1bmRhbnROdWxsQ2hlY2tPbk5v
+bk51bGxMb2NhbFZhcmlhYmxlIiwgbmV3IFByb2JsZW1BdHRyaWJ1dGVzKEphdmFDb3JlLkNPTVBJ
+TEVSX1BCX1JFRFVOREFOVF9OVUxMX0NIRUNLKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0
+ZXMucHV0KCJSZWR1bmRhbnROdWxsQ2hlY2tPbk5vbk51bGxNZXNzYWdlU2VuZCIsIG5ldyBQcm9i
+bGVtQXR0cmlidXRlcyhKYXZhQ29yZS5DT01QSUxFUl9QQl9SRURVTkRBTlRfTlVMTF9DSEVDSykp
+OwogCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1dCgiUmVkdW5kYW50TnVsbENoZWNrT25O
+dWxsTG9jYWxWYXJpYWJsZSIsIG5ldyBQcm9ibGVtQXR0cmlidXRlcyhKYXZhQ29yZS5DT01QSUxF
+Ul9QQl9SRURVTkRBTlRfTlVMTF9DSEVDSykpOworCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVz
+LnB1dCgiUmVkdW5kYW50TnVsbENoZWNrT25TcGVjZE5vbk51bGxMb2NhbFZhcmlhYmxlIiwgbmV3
+IFByb2JsZW1BdHRyaWJ1dGVzKEphdmFDb3JlLkNPTVBJTEVSX1BCX1JFRFVOREFOVF9OVUxMX0NI
+RUNLKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJSZWR1bmRhbnROdWxsRGVm
+YXVsdEFubm90YXRpb24iLCBuZXcgUHJvYmxlbUF0dHJpYnV0ZXMoSmF2YUNvcmUuQ09NUElMRVJf
+UEJfUkVEVU5EQU5UX05VTExfQU5OT1RBVElPTikpOwogCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1
+dGVzLnB1dCgiUmVkdW5kYW50TnVsbERlZmF1bHRBbm5vdGF0aW9uUGFja2FnZSIsIG5ldyBQcm9i
+bGVtQXR0cmlidXRlcyhKYXZhQ29yZS5DT01QSUxFUl9QQl9SRURVTkRBTlRfTlVMTF9BTk5PVEFU
+SU9OKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJSZWR1bmRhbnROdWxsRGVm
+YXVsdEFubm90YXRpb25UeXBlIiwgbmV3IFByb2JsZW1BdHRyaWJ1dGVzKEphdmFDb3JlLkNPTVBJ
+TEVSX1BCX1JFRFVOREFOVF9OVUxMX0FOTk9UQVRJT04pKTsKQEAgLTE0OTgsNiArMTUwMiw3IEBA
+CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJSZXF1aXJlZE5vbk51bGxCdXRQcm92
+aWRlZE51bGwiLCBuZXcgUHJvYmxlbUF0dHJpYnV0ZXMoSmF2YUNvcmUuQ09NUElMRVJfUEJfTlVM
+TF9TUEVDSUZJQ0FUSU9OX1ZJT0xBVElPTikpOwogCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVz
+LnB1dCgiUmVxdWlyZWROb25OdWxsQnV0UHJvdmlkZWRQb3RlbnRpYWxOdWxsIiwgbmV3IFByb2Js
+ZW1BdHRyaWJ1dGVzKEphdmFDb3JlLkNPTVBJTEVSX1BCX1BPVEVOVElBTF9OVUxMX1NQRUNJRklD
+QVRJT05fVklPTEFUSU9OKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJSZXF1
+aXJlZE5vbk51bGxCdXRQcm92aWRlZFVua25vd24iLCBuZXcgUHJvYmxlbUF0dHJpYnV0ZXMoSmF2
+YUNvcmUuQ09NUElMRVJfUEJfTlVMTF9TUEVDSUZJQ0FUSU9OX0lOU1VGRklDSUVOVF9JTkZPKSk7
+CisJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJSZXF1aXJlZE5vbk51bGxCdXRQcm92
+aWRlZFNwZWNkTnVsbCIsIG5ldyBQcm9ibGVtQXR0cmlidXRlcyhKYXZhQ29yZS5DT01QSUxFUl9Q
+Ql9OVUxMX1NQRUNJRklDQVRJT05fVklPTEFUSU9OKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJp
+YnV0ZXMucHV0KCJSZXNvdXJjZUhhc1RvSW1wbGVtZW50QXV0b0Nsb3NlYWJsZSIsIFNLSVApOwog
+CQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1dCgiUmV0dXJuVHlwZUFtYmlndW91cyIsIFNL
+SVApOwogCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1dCgiUmV0dXJuVHlwZUNhbm5vdEJl
+Vm9pZEFycmF5IiwgU0tJUCk7CkBAIC0xNTA5LDYgKzE1MTQsNyBAQAogCQlleHBlY3RlZFByb2Js
+ZW1BdHRyaWJ1dGVzLnB1dCgiU2FmZVZhcmFyZ3NPbk5vbkZpbmFsSW5zdGFuY2VNZXRob2QiLCBT
+S0lQKTsKIAkJZXhwZWN0ZWRQcm9ibGVtQXR0cmlidXRlcy5wdXQoIlNob3VsZEltcGxlbWVudEhh
+c2hjb2RlIiwgbmV3IFByb2JsZW1BdHRyaWJ1dGVzKEphdmFDb3JlLkNPTVBJTEVSX1BCX01JU1NJ
+TkdfSEFTSENPREVfTUVUSE9EKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJT
+aG91bGRSZXR1cm5WYWx1ZSIsIFNLSVApOworCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1
+dCgiU3BlY2ROb25OdWxsTG9jYWxWYXJpYWJsZUNvbXBhcmlzb25ZaWVsZHNGYWxzZSIsIG5ldyBQ
+cm9ibGVtQXR0cmlidXRlcyhKYXZhQ29yZS5DT01QSUxFUl9QQl9SRURVTkRBTlRfTlVMTF9DSEVD
+SykpOwogCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1dCgiU3RhdGljSW5oZXJpdGVkTWV0
+aG9kQ29uZmxpY3RzIiwgU0tJUCk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJT
+dGF0aWNNZW1iZXJPZlBhcmFtZXRlcml6ZWRUeXBlIiwgU0tJUCk7CiAJCWV4cGVjdGVkUHJvYmxl
+bUF0dHJpYnV0ZXMucHV0KCJTdGF0aWNNZXRob2RSZXF1ZXN0ZWQiLCBTS0lQKTsKZGlmZiAtLWdp
+dCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9q
+ZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxBbm5vdGF0aW9uVGVzdC5qYXZh
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbEFubm90YXRpb25UZXN0LmphdmEK
+aW5kZXggZWJkNWRmMC4uYmZhZWUwMiAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUu
+dGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3Jl
+Z3Jlc3Npb24vTnVsbEFubm90YXRpb25UZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNv
+cmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVy
+L3JlZ3Jlc3Npb24vTnVsbEFubm90YXRpb25UZXN0LmphdmEKQEAgLTIwNiw3ICsyMDYsNyBAQAog
+CQkiMS4gRVJST1IgaW4gWC5qYXZhIChhdCBsaW5lIDQpXG4iICsKIAkJIglpZiAobyAhPSBudWxs
+KVxuIiArCiAJCSIJICAgIF5cbiIgKwotCQkiUmVkdW5kYW50IG51bGwgY2hlY2s6IFRoZSB2YXJp
+YWJsZSBvIGNhbm5vdCBiZSBudWxsIGF0IHRoaXMgbG9jYXRpb25cbiIgKworCQkiUmVkdW5kYW50
+IG51bGwgY2hlY2s6IFRoZSB2YXJpYWJsZSBvIGlzIHNwZWNpZmllZCBhcyBATm9uTnVsbFxuIiAr
+CiAJCSItLS0tLS0tLS0tXG4iLAogCQl0aGlzLkxJQlMsCiAJCXRydWUgLyogc2hvdWxkRmx1c2gq
+Lyk7CkBAIC0zNjIsNyArMzYyLDcgQEAKIAkJIjEuIEVSUk9SIGluIFhTdWIuamF2YSAoYXQgbGlu
+ZSA0KVxuIiArCiAJCSIJc3VwZXIoYik7XG4iICsKIAkJIgkgICAgICBeXG4iICsKLQkJIlR5cGUg
+bWlzbWF0Y2g6IHJlcXVpcmVkIFwnQE5vbk51bGwgU3RyaW5nXCcgYnV0IHRoZSBwcm92aWRlZCB2
+YWx1ZSBjYW4gYmUgbnVsbFxuIiArCisJCSJUeXBlIG1pc21hdGNoOiByZXF1aXJlZCBcJ0BOb25O
+dWxsIFN0cmluZ1wnIGJ1dCB0aGUgcHJvdmlkZWQgdmFsdWUgaXMgc3BlY2lmaWVkIGFzIEBOdWxs
+YWJsZVxuIiArCiAJCSItLS0tLS0tLS0tXG4iKTsKIH0KIC8vIGEgbnVsbGFibGUgdmFsdWUgaXMg
+cGFzc2VkIHRvIGEgbm9uLW51bGwgcGFyYW1ldGVyIGluIGFuIGFsbG9jYXRpb24gZXhwcmVzc2lv
+bgpAQCAtMzg0LDcgKzM4NCw3IEBACiAJCSIxLiBFUlJPUiBpbiBYLmphdmEgKGF0IGxpbmUgNSlc
+biIgKwogCQkiCXJldHVybiBuZXcgWChiKTtcbiIgKwogCQkiCSAgICAgICAgICAgICBeXG4iICsK
+LQkJIlR5cGUgbWlzbWF0Y2g6IHJlcXVpcmVkIFwnQE5vbk51bGwgU3RyaW5nXCcgYnV0IHRoZSBw
+cm92aWRlZCB2YWx1ZSBjYW4gYmUgbnVsbFxuIiArCisJCSJUeXBlIG1pc21hdGNoOiByZXF1aXJl
+ZCBcJ0BOb25OdWxsIFN0cmluZ1wnIGJ1dCB0aGUgcHJvdmlkZWQgdmFsdWUgaXMgc3BlY2lmaWVk
+IGFzIEBOdWxsYWJsZVxuIiArCiAJCSItLS0tLS0tLS0tXG4iICAvKiBjb21waWxlciBvdXRwdXQg
+Ki8pOwogfQogLy8gYSBudWxsYWJsZSB2YWx1ZSBpcyBwYXNzZWQgdG8gYSBub24tbnVsbCBwYXJh
+bWV0ZXIgaW4gYSBxdWFsaWZpZWQgYWxsb2NhdGlvbiBleHByZXNzaW9uCkBAIC00MDgsNyArNDA4
+LDcgQEAKIAkJIjEuIEVSUk9SIGluIFguamF2YSAoYXQgbGluZSA3KVxuIiArCiAJCSIJcmV0dXJu
+IHRoaXMubmV3IExvY2FsKGIpO1xuIiArCiAJCSIJICAgICAgICAgICAgICAgICAgICAgIF5cbiIg
+KwotCQkiVHlwZSBtaXNtYXRjaDogcmVxdWlyZWQgXCdATm9uTnVsbCBTdHJpbmdcJyBidXQgdGhl
+IHByb3ZpZGVkIHZhbHVlIGNhbiBiZSBudWxsXG4iICsKKwkJIlR5cGUgbWlzbWF0Y2g6IHJlcXVp
+cmVkIFwnQE5vbk51bGwgU3RyaW5nXCcgYnV0IHRoZSBwcm92aWRlZCB2YWx1ZSBpcyBzcGVjaWZp
+ZWQgYXMgQE51bGxhYmxlXG4iICsKIAkJIi0tLS0tLS0tLS1cbiIgIC8qIGNvbXBpbGVyIG91dHB1
+dCAqLyk7CiB9CiAvLyBudWxsIGlzIHBhc3NlZCB0byBhIG5vbi1udWxsIHBhcmFtZXRlciBpbiBh
+IHF1YWxpZmllZCBhbGxvY2F0aW9uIGV4cHJlc3Npb24sIGFjcm9zcyBDVXMKQEAgLTU4NCw3ICs1
+ODQsNyBAQAogCQkJIjEuIEVSUk9SIGluIFguamF2YSAoYXQgbGluZSA0KVxuIiArIAogCQkJIglp
+ZiAobyAhPSBudWxsKVxuIiArIAogCQkJIgkgICAgXlxuIiArIAotCQkJIlJlZHVuZGFudCBudWxs
+IGNoZWNrOiBUaGUgdmFyaWFibGUgbyBjYW5ub3QgYmUgbnVsbCBhdCB0aGlzIGxvY2F0aW9uXG4i
+ICsgCisJCQkiUmVkdW5kYW50IG51bGwgY2hlY2s6IFRoZSB2YXJpYWJsZSBvIGlzIHNwZWNpZmll
+ZCBhcyBATm9uTnVsbFxuIiArIAogCQkJIi0tLS0tLS0tLS1cbiIgKyAKIAkJCSIyLiBFUlJPUiBp
+biBYLmphdmEgKGF0IGxpbmUgMTQpXG4iICsgCiAJCQkiCWZvbyhvYmpzKTtcbiIgKyAKQEAgLTY0
+MCw3ICs2NDAsNyBAQAogCQkJIjEuIEVSUk9SIGluIFguamF2YSAoYXQgbGluZSA0KVxuIiArCiAJ
+CQkiCWlmIChvICE9IG51bGwpXG4iICsKIAkJCSIJICAgIF5cbiIgKwotCQkJIlJlZHVuZGFudCBu
+dWxsIGNoZWNrOiBUaGUgdmFyaWFibGUgbyBjYW5ub3QgYmUgbnVsbCBhdCB0aGlzIGxvY2F0aW9u
+XG4iICsKKwkJCSJSZWR1bmRhbnQgbnVsbCBjaGVjazogVGhlIHZhcmlhYmxlIG8gaXMgc3BlY2lm
+aWVkIGFzIEBOb25OdWxsXG4iICsKIAkJCSItLS0tLS0tLS0tXG4iICsKIAkJCSIyLiBFUlJPUiBp
+biBYLmphdmEgKGF0IGxpbmUgMTYpXG4iICsKIAkJCSIJbmV3IFgoKE9iamVjdFtdKW51bGwpO1xu
+IiArCkBAIC0xNDM4LDcgKzE0MzgsNyBAQAogCQkiMS4gRVJST1IgaW4gWC5qYXZhIChhdCBsaW5l
+IDQpXG4iICsKIAkJIglyZXR1cm4gbztcbiIgKwogCQkiCSAgICAgICBeXG4iICsKLQkJIlR5cGUg
+bWlzbWF0Y2g6IHJlcXVpcmVkIFwnQE5vbk51bGwgT2JqZWN0XCcgYnV0IHRoZSBwcm92aWRlZCB2
+YWx1ZSBjYW4gYmUgbnVsbFxuIiArCisJCSJUeXBlIG1pc21hdGNoOiByZXF1aXJlZCBcJ0BOb25O
+dWxsIE9iamVjdFwnIGJ1dCB0aGUgcHJvdmlkZWQgdmFsdWUgaXMgc3BlY2lmaWVkIGFzIEBOdWxs
+YWJsZVxuIiArCiAJCSItLS0tLS0tLS0tXG4iKTsKIH0KIC8vIGEgbm9uLW51bGwgbWV0aG9kIHJl
+dHVybnMgaXRzIG5vbi1udWxsIGFyZ3VtZW50CkBAIC0xNjY5LDcgKzE2NjksNyBAQAogCQkiMS4g
+RVJST1IgaW4gWC5qYXZhIChhdCBsaW5lIDUpXG4iICsKIAkJIglpZiAoZHViaW91cyA9PSBudWxs
+KVxuIiArCiAJCSIJICAgIF5eXl5eXl5cbiIgKwotCQkiTnVsbCBjb21wYXJpc29uIGFsd2F5cyB5
+aWVsZHMgZmFsc2U6IFRoZSB2YXJpYWJsZSBkdWJpb3VzIGNhbm5vdCBiZSBudWxsIGF0IHRoaXMg
+bG9jYXRpb25cbiIgKworCQkiTnVsbCBjb21wYXJpc29uIGFsd2F5cyB5aWVsZHMgZmFsc2U6IFRo
+ZSB2YXJpYWJsZSBkdWJpb3VzIGlzIHNwZWNpZmllZCBhcyBATm9uTnVsbFxuIiArCiAJCSItLS0t
+LS0tLS0tXG4iICsKIAkJIjIuIFdBUk5JTkcgaW4gWC5qYXZhIChhdCBsaW5lIDYpXG4iICsKIAkJ
+IglyZXR1cm4gZHViaW91cztcbiIgKwpAQCAtMTc2MSw3ICsxNzYxLDcgQEAKIAkJIlR5cGUgbWlz
+bWF0Y2g6IHJlcXVpcmVkIFwnQE5vbk51bGwgT2JqZWN0XCcgYnV0IHRoZSBwcm92aWRlZCB2YWx1
+ZSBjYW4gYmUgbnVsbFxuIiArIAogCQkiLS0tLS0tLS0tLVxuIik7CiB9Ci0vL3N1cHByZXNzIGFu
+IGVycm9yIHJlZ2FyZGluZyBudWxsLXNwZWMgdmlvbGF0aW9uCisvLyBzdXBwcmVzcyBhbiBlcnJv
+ciByZWdhcmRpbmcgbnVsbC1zcGVjIHZpb2xhdGlvbgogcHVibGljIHZvaWQgdGVzdF9zdXBwcmVz
+c18wMDEoKSB7CiAJTWFwIGN1c3RvbU9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsKIAlj
+dXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9TVVBQUkVTU19PUFRJT05BTF9F
+UlJPUlMsIEphdmFDb3JlLkVOQUJMRUQpOwpAQCAtMjE5MSw3ICsyMTkxLDcgQEAKIAkJIjIuIEVS
+Uk9SIGluIHAyXFxZLmphdmEgKGF0IGxpbmUgNilcbiIgKwogCQkiCWJhcihvKTtcbiIgKwogCQki
+CSAgICBeXG4iICsKLQkJIlR5cGUgbWlzbWF0Y2g6IHJlcXVpcmVkIFwnQE5vbk51bGwgT2JqZWN0
+XCcgYnV0IHRoZSBwcm92aWRlZCB2YWx1ZSBjYW4gYmUgbnVsbFxuIiArCisJCSJUeXBlIG1pc21h
+dGNoOiByZXF1aXJlZCBcJ0BOb25OdWxsIE9iamVjdFwnIGJ1dCB0aGUgcHJvdmlkZWQgdmFsdWUg
+aXMgc3BlY2lmaWVkIGFzIEBOdWxsYWJsZVxuIiArCiAJCSItLS0tLS0tLS0tXG4iKTsKIH0KIC8v
+IHBhY2thZ2UgbGV2ZWwgZGVmYXVsdCBpcyBjb25zdW1lZCBmcm9tIHBhY2thZ2UtaW5mby5jbGFz
+cywgc2ltaWxhcmx5IGZvciB0eXBlIGxldmVsIGRlZmF1bHQKQEAgLTIyNDMsMTIgKzIyNDMsMTIg
+QEAKIAkJIjIuIEVSUk9SIGluIHAyXFxZLmphdmEgKGF0IGxpbmUgNilcbiIgKwogCQkiCWJhcihv
+KTtcbiIgKwogCQkiCSAgICBeXG4iICsKLQkJIlR5cGUgbWlzbWF0Y2g6IHJlcXVpcmVkIFwnQE5v
+bk51bGwgT2JqZWN0XCcgYnV0IHRoZSBwcm92aWRlZCB2YWx1ZSBjYW4gYmUgbnVsbFxuIiArCisJ
+CSJUeXBlIG1pc21hdGNoOiByZXF1aXJlZCBcJ0BOb25OdWxsIE9iamVjdFwnIGJ1dCB0aGUgcHJv
+dmlkZWQgdmFsdWUgaXMgc3BlY2lmaWVkIGFzIEBOdWxsYWJsZVxuIiArCiAJCSItLS0tLS0tLS0t
+XG4iICsKIAkJIjMuIEVSUk9SIGluIHAyXFxZLmphdmEgKGF0IGxpbmUgNylcbiIgKwogCQkiCWFj
+Y2VwdChvKTtcbiIgKwogCQkiCSAgICAgICBeXG4iICsKLQkJIlR5cGUgbWlzbWF0Y2g6IHJlcXVp
+cmVkIFwnQE5vbk51bGwgT2JqZWN0XCcgYnV0IHRoZSBwcm92aWRlZCB2YWx1ZSBjYW4gYmUgbnVs
+bFxuIiArCisJCSJUeXBlIG1pc21hdGNoOiByZXF1aXJlZCBcJ0BOb25OdWxsIE9iamVjdFwnIGJ1
+dCB0aGUgcHJvdmlkZWQgdmFsdWUgaXMgc3BlY2lmaWVkIGFzIEBOdWxsYWJsZVxuIiArCiAJCSIt
+LS0tLS0tLS0tXG4iKTsKIH0KIC8vIHNhbWUgYXMgdGVzdF9kZWZhdWx0X251bGxuZXNzXzAwM2Es
+IGJ1dCBkZWZhdWx0LWluZHVjZWQgYW5ub3RhdGlvbnMgYXJlIGNvbWJpbmVkIHdpdGggZXhwbGlj
+aXQgb25lcyAobm90IG51bGwgcmVsYXRlZCkKQEAgLTIzMDYsMTIgKzIzMDYsMTIgQEAKIAkJIjIu
+IEVSUk9SIGluIHAyXFxZLmphdmEgKGF0IGxpbmUgNilcbiIgKwogCQkiCWJhcihvKTtcbiIgKwog
+CQkiCSAgICBeXG4iICsKLQkJIlR5cGUgbWlzbWF0Y2g6IHJlcXVpcmVkIFwnQE5vbk51bGwgT2Jq
+ZWN0XCcgYnV0IHRoZSBwcm92aWRlZCB2YWx1ZSBjYW4gYmUgbnVsbFxuIiArCisJCSJUeXBlIG1p
+c21hdGNoOiByZXF1aXJlZCBcJ0BOb25OdWxsIE9iamVjdFwnIGJ1dCB0aGUgcHJvdmlkZWQgdmFs
+dWUgaXMgc3BlY2lmaWVkIGFzIEBOdWxsYWJsZVxuIiArCiAJCSItLS0tLS0tLS0tXG4iICsKIAkJ
+IjMuIEVSUk9SIGluIHAyXFxZLmphdmEgKGF0IGxpbmUgNylcbiIgKwogCQkiCWFjY2VwdChvKTtc
+biIgKwogCQkiCSAgICAgICBeXG4iICsKLQkJIlR5cGUgbWlzbWF0Y2g6IHJlcXVpcmVkIFwnQE5v
+bk51bGwgT2JqZWN0XCcgYnV0IHRoZSBwcm92aWRlZCB2YWx1ZSBjYW4gYmUgbnVsbFxuIiArCisJ
+CSJUeXBlIG1pc21hdGNoOiByZXF1aXJlZCBcJ0BOb25OdWxsIE9iamVjdFwnIGJ1dCB0aGUgcHJv
+dmlkZWQgdmFsdWUgaXMgc3BlY2lmaWVkIGFzIEBOdWxsYWJsZVxuIiArCiAJCSItLS0tLS0tLS0t
+XG4iKTsKIH0KIC8vIGRvbid0IGFwcGx5IHR5cGUtbGV2ZWwgZGVmYXVsdCB0byBub24tcmVmZXJl
+bmNlIHR5cGUKQEAgLTMwMjcsNyArMzAyNyw3IEBACiAJCSIyLiBFUlJPUiBpbiBYLmphdmEgKGF0
+IGxpbmUgMTApXG4iICsKIAkJIglwcmludChzKTtcbiIgKwogCQkiCSAgICAgIF5cbiIgKwotCQki
+VHlwZSBtaXNtYXRjaDogcmVxdWlyZWQgXCdATm9uTnVsbCBTdHJpbmdcJyBidXQgdGhlIHByb3Zp
+ZGVkIHZhbHVlIGNhbiBiZSBudWxsXG4iICsKKwkJIlR5cGUgbWlzbWF0Y2g6IHJlcXVpcmVkIFwn
+QE5vbk51bGwgU3RyaW5nXCcgYnV0IHRoZSBwcm92aWRlZCB2YWx1ZSBpcyBzcGVjaWZpZWQgYXMg
+QE51bGxhYmxlXG4iICsKIAkJIi0tLS0tLS0tLS1cbiIgKwogCQkiMy4gRVJST1IgaW4gWC5qYXZh
+IChhdCBsaW5lIDE1KVxuIiArCiAJCSIJcHJpbnQocyk7XG4iICsKQEAgLTMwNzksNyArMzA3OSw3
+IEBACiAJCSIxLiBFUlJPUiBpbiBYLmphdmEgKGF0IGxpbmUgMTApXG4iICsKIAkJIglwcmludChz
+KTtcbiIgKwogCQkiCSAgICAgIF5cbiIgKwotCQkiVHlwZSBtaXNtYXRjaDogcmVxdWlyZWQgXCdA
+Tm9uTnVsbCBTdHJpbmdcJyBidXQgdGhlIHByb3ZpZGVkIHZhbHVlIGNhbiBiZSBudWxsXG4iICsK
+KwkJIlR5cGUgbWlzbWF0Y2g6IHJlcXVpcmVkIFwnQE5vbk51bGwgU3RyaW5nXCcgYnV0IHRoZSBw
+cm92aWRlZCB2YWx1ZSBpcyBzcGVjaWZpZWQgYXMgQE51bGxhYmxlXG4iICsKIAkJIi0tLS0tLS0t
+LS1cbiIgKwogCQkiMi4gRVJST1IgaW4gWC5qYXZhIChhdCBsaW5lIDE2KVxuIiArCiAJCSIJcHJp
+bnQocyk7XG4iICsKQEAgLTMxMjgsNyArMzEyOCw3IEBACiAJCSIxLiBFUlJPUiBpbiBYLmphdmEg
+KGF0IGxpbmUgMTIpXG4iICsKIAkJIglwcmludChzKTtcbiIgKwogCQkiCSAgICAgIF5cbiIgKwot
+CQkiVHlwZSBtaXNtYXRjaDogcmVxdWlyZWQgXCdATm9uTnVsbCBTdHJpbmdcJyBidXQgdGhlIHBy
+b3ZpZGVkIHZhbHVlIGNhbiBiZSBudWxsXG4iICsKKwkJIlR5cGUgbWlzbWF0Y2g6IHJlcXVpcmVk
+IFwnQE5vbk51bGwgU3RyaW5nXCcgYnV0IHRoZSBwcm92aWRlZCB2YWx1ZSBpcyBzcGVjaWZpZWQg
+YXMgQE51bGxhYmxlXG4iICsKIAkJIi0tLS0tLS0tLS1cbiIgKwogCQkiMi4gRVJST1IgaW4gWC5q
+YXZhIChhdCBsaW5lIDE5KVxuIiArCiAJCSIJcHJpbnQocyk7XG4iICsKQEAgLTMyNjYsNyArMzI2
+Niw3IEBACiAJCSIxLiBFUlJPUiBpbiBCdWczNzA5MzAuamF2YSAoYXQgbGluZSA2KVxuIiArIAog
+CQkiCWV4cGVjdE5vbk51bGwocyk7IC8vIHdhcm5pbmcgaGVyZVxuIiArIAogCQkiCSAgICAgICAg
+ICAgICAgXlxuIiArIAotCQkiVHlwZSBtaXNtYXRjaDogcmVxdWlyZWQgXCdATm9uTnVsbCBTdHJp
+bmdcJyBidXQgdGhlIHByb3ZpZGVkIHZhbHVlIGNhbiBiZSBudWxsXG4iICsgCisJCSJUeXBlIG1p
+c21hdGNoOiByZXF1aXJlZCBcJ0BOb25OdWxsIFN0cmluZ1wnIGJ1dCB0aGUgcHJvdmlkZWQgdmFs
+dWUgaXMgc3BlY2lmaWVkIGFzIEBOdWxsYWJsZVxuIiArIAogCQkiLS0tLS0tLS0tLVxuIik7CiB9
+CiBwdWJsaWMgdm9pZCB0ZXN0X2Fzc2lnbm1lbnRfZXhwcmVzc2lvbl8xKCkgewpAQCAtMzM0Nyw3
+ICszMzQ3LDcgQEAKIAkJIjEuIEVSUk9SIGluIFguamF2YSAoYXQgbGluZSAxNilcbiIgKwogCQki
+CXByaW50KHMyKTtcbiIgKwogCQkiCSAgICAgIF5eXG4iICsKLQkJIlR5cGUgbWlzbWF0Y2g6IHJl
+cXVpcmVkIFwnQE5vbk51bGwgU3RyaW5nXCcgYnV0IHRoZSBwcm92aWRlZCB2YWx1ZSBjYW4gYmUg
+bnVsbFxuIiArCisJCSJUeXBlIG1pc21hdGNoOiByZXF1aXJlZCBcJ0BOb25OdWxsIFN0cmluZ1wn
+IGJ1dCB0aGUgcHJvdmlkZWQgdmFsdWUgaXMgc3BlY2lmaWVkIGFzIEBOdWxsYWJsZVxuIiArCiAJ
+CSItLS0tLS0tLS0tXG4iICsKIAkJIjIuIEVSUk9SIGluIFguamF2YSAoYXQgbGluZSAyNSlcbiIg
+KwogCQkiCUBOb25OdWxsIFN0cmluZyBzM1IgPSBzMztcbiIgKwpkaWZmIC0tZ2l0IGEvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2NvcmUvY29tcGlsZXIvSVBy
+b2JsZW0uamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL2NvbXBpbGVyL0lQcm9ibGVtLmphdmEKaW5kZXggYzg4NDRhMy4uYmFlODQyMiAxMDA2
+NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2Nv
+cmUvY29tcGlsZXIvSVByb2JsZW0uamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21w
+aWxlci9vcmcvZWNsaXBzZS9qZHQvY29yZS9jb21waWxlci9JUHJvYmxlbS5qYXZhCkBAIC0xNDY0
+LDcgKzE0NjQsNyBAQAogCS8qKiBAc2luY2UgMy44ICovCiAJaW50IElsbGVnYWxBbm5vdGF0aW9u
+Rm9yQmFzZVR5cGUgPSBUeXBlUmVsYXRlZCArIDkyMzsKIAkvKiogQHNpbmNlIDMuOCAqLwotCWlu
+dCBSZWR1bmRhbnROdWxsRGVmYXVsdEFubm90YXRpb24gPSBJbnRlcm5hbCArIDkyNTsKKwlpbnQg
+UmVkdW5kYW50TnVsbERlZmF1bHRBbm5vdGF0aW9uID0gSW50ZXJuYWwgKyA5MjU7IC8vIHNob3Vs
+ZG4ndCBhY3R1YWxseSBvY2N1ciBhbnkgbW9yZSBhZnRlciBidWcgMzY2MDYzCiAJLyoqIEBzaW5j
+ZSAzLjggKi8KIAlpbnQgUmVkdW5kYW50TnVsbERlZmF1bHRBbm5vdGF0aW9uUGFja2FnZSA9IElu
+dGVybmFsICsgOTI2OwogCS8qKiBAc2luY2UgMy44ICovCkBAIC0xNDczLDYgKzE0NzMsMTIgQEAK
+IAlpbnQgUmVkdW5kYW50TnVsbERlZmF1bHRBbm5vdGF0aW9uTWV0aG9kID0gSW50ZXJuYWwgKyA5
+Mjg7CiAJLyoqIEBzaW5jZSAzLjggKi8KIAlpbnQgQ29udHJhZGljdG9yeU51bGxBbm5vdGF0aW9u
+cyA9IEludGVybmFsICsgOTI5OworCS8qKiBAc2luY2UgMy44ICovCisJaW50IFJlZHVuZGFudE51
+bGxDaGVja09uU3BlY2ROb25OdWxsTG9jYWxWYXJpYWJsZSA9IEludGVybmFsICsgOTMwOworCS8q
+KiBAc2luY2UgMy44ICovCisJaW50IFNwZWNkTm9uTnVsbExvY2FsVmFyaWFibGVDb21wYXJpc29u
+WWllbGRzRmFsc2UgPSBJbnRlcm5hbCArIDkzMTsKKwkvKiogQHNpbmNlIDMuOCAqLworCWludCBS
+ZXF1aXJlZE5vbk51bGxCdXRQcm92aWRlZFNwZWNkTnVsbCA9IEludGVybmFsICsgOTMyOwogCiAJ
+LyoqCiAJICogRXh0ZXJuYWwgcHJvYmxlbXMgLS0gVGhlc2UgYXJlIHByb2JsZW1zIGRlZmluZWQg
+Ynkgb3RoZXIgcGx1Z2lucwpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGls
+ZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9WYXJpYWJsZUJpbmRp
+bmcuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9p
+bnRlcm5hbC9jb21waWxlci9sb29rdXAvVmFyaWFibGVCaW5kaW5nLmphdmEKaW5kZXggZGMzOWUz
+Ni4uOWExOWYzOCAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3Jn
+L2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9WYXJpYWJsZUJpbmRpbmcuamF2
+YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50
+ZXJuYWwvY29tcGlsZXIvbG9va3VwL1ZhcmlhYmxlQmluZGluZy5qYXZhCkBAIC0xLDUgKzEsNSBA
+QAogLyoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioKLSAqIENvcHlyaWdodCAoYykgMjAwMCwgMjAxMSBJ
+Qk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy4KKyAqIENvcHlyaWdodCAoYykgMjAwMCwgMjAxMiBJ
+Qk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy4KICAqIEFsbCByaWdodHMgcmVzZXJ2ZWQuIFRoaXMg
+cHJvZ3JhbSBhbmQgdGhlIGFjY29tcGFueWluZyBtYXRlcmlhbHMKICAqIGFyZSBtYWRlIGF2YWls
+YWJsZSB1bmRlciB0aGUgdGVybXMgb2YgdGhlIEVjbGlwc2UgUHVibGljIExpY2Vuc2UgdjEuMAog
+ICogd2hpY2ggYWNjb21wYW5pZXMgdGhpcyBkaXN0cmlidXRpb24sIGFuZCBpcyBhdmFpbGFibGUg
+YXQKQEAgLTUzLDYgKzUzLDE0IEBACiAJCXJldHVybiAodGhpcy50YWdCaXRzICYgVGFnQml0cy5J
+c0VmZmVjdGl2ZWx5RmluYWwpICE9IDA7CiAJfQogCQorCXB1YmxpYyBib29sZWFuIGlzTm9uTnVs
+bCgpIHsKKwkJcmV0dXJuICh0aGlzLnRhZ0JpdHMgJiBUYWdCaXRzLkFubm90YXRpb25Ob25OdWxs
+KSAhPSAwOworCX0KKwkKKwlwdWJsaWMgYm9vbGVhbiBpc051bGxhYmxlKCkgeworCQlyZXR1cm4g
+KHRoaXMudGFnQml0cyAmIFRhZ0JpdHMuQW5ub3RhdGlvbk51bGxhYmxlKSAhPSAwOworCX0KKwog
+CXB1YmxpYyBjaGFyW10gcmVhZGFibGVOYW1lKCkgewogCQlyZXR1cm4gdGhpcy5uYW1lOwogCX0K
+ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9wcm9ibGVtL1Byb2JsZW1SZXBvcnRlci5qYXZhIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L3Byb2JsZW0vUHJvYmxlbVJlcG9ydGVyLmphdmEKaW5kZXggM2RkNjM5YS4uMzE2NTVkOCAxMDA2
+NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2lu
+dGVybmFsL2NvbXBpbGVyL3Byb2JsZW0vUHJvYmxlbVJlcG9ydGVyLmphdmEKKysrIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L3Byb2JsZW0vUHJvYmxlbVJlcG9ydGVyLmphdmEKQEAgLTExMiw2ICsxMTIsNyBAQAogaW1wb3J0
+IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuVHlwZUNvbnN0YW50czsK
+IGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwLlR5cGVJZHM7
+CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmxvb2t1cC5UeXBlVmFy
+aWFibGVCaW5kaW5nOworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5s
+b29rdXAuVmFyaWFibGVCaW5kaW5nOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5j
+b21waWxlci5sb29rdXAuV2lsZGNhcmRCaW5kaW5nOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5p
+bnRlcm5hbC5jb21waWxlci5wYXJzZXIuSmF2YWRvY1RhZ0NvbnN0YW50czsKIGltcG9ydCBvcmcu
+ZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIucGFyc2VyLlBhcnNlcjsKQEAgLTMwMyw5ICsz
+MDQsMTIgQEAKIAkJY2FzZSBJUHJvYmxlbS5OdWxsTG9jYWxWYXJpYWJsZUNvbXBhcmlzb25ZaWVs
+ZHNGYWxzZToKIAkJY2FzZSBJUHJvYmxlbS5OdWxsTG9jYWxWYXJpYWJsZUluc3RhbmNlb2ZZaWVs
+ZHNGYWxzZToKIAkJY2FzZSBJUHJvYmxlbS5SZWR1bmRhbnROdWxsQ2hlY2tPbk5vbk51bGxNZXNz
+YWdlU2VuZDoKKwkJY2FzZSBJUHJvYmxlbS5SZWR1bmRhbnROdWxsQ2hlY2tPblNwZWNkTm9uTnVs
+bExvY2FsVmFyaWFibGU6CisJCWNhc2UgSVByb2JsZW0uU3BlY2ROb25OdWxsTG9jYWxWYXJpYWJs
+ZUNvbXBhcmlzb25ZaWVsZHNGYWxzZToKIAkJCXJldHVybiBDb21waWxlck9wdGlvbnMuUmVkdW5k
+YW50TnVsbENoZWNrOwogCiAJCWNhc2UgSVByb2JsZW0uUmVxdWlyZWROb25OdWxsQnV0UHJvdmlk
+ZWROdWxsOgorCQljYXNlIElQcm9ibGVtLlJlcXVpcmVkTm9uTnVsbEJ1dFByb3ZpZGVkU3BlY2RO
+dWxsOgogCQljYXNlIElQcm9ibGVtLklsbGVnYWxSZXR1cm5OdWxsaXR5UmVkZWZpbml0aW9uOgog
+CQljYXNlIElQcm9ibGVtLklsbGVnYWxSZWRlZmluaXRpb25Ub05vbk51bGxQYXJhbWV0ZXI6CiAJ
+CWNhc2UgSVByb2JsZW0uSWxsZWdhbERlZmluaXRpb25Ub05vbk51bGxQYXJhbWV0ZXI6CkBAIC01
+MDgyLDkgKzUwODYsMTggQEAKIHB1YmxpYyB2b2lkIGxvY2FsVmFyaWFibGVOb25OdWxsQ29tcGFy
+ZWRUb051bGwoTG9jYWxWYXJpYWJsZUJpbmRpbmcgbG9jYWwsIEFTVE5vZGUgbG9jYXRpb24pIHsK
+IAlpbnQgc2V2ZXJpdHkgPSBjb21wdXRlU2V2ZXJpdHkoSVByb2JsZW0uTm9uTnVsbExvY2FsVmFy
+aWFibGVDb21wYXJpc29uWWllbGRzRmFsc2UpOwogCWlmIChzZXZlcml0eSA9PSBQcm9ibGVtU2V2
+ZXJpdGllcy5JZ25vcmUpIHJldHVybjsKLQlTdHJpbmdbXSBhcmd1bWVudHMgPSBuZXcgU3RyaW5n
+W10ge25ldyBTdHJpbmcobG9jYWwubmFtZSkgIH07CisJU3RyaW5nW10gYXJndW1lbnRzOworCWlu
+dCBwcm9ibGVtSWQ7CisJaWYgKGxvY2FsLmlzTm9uTnVsbCgpKSB7CisJCWNoYXJbXVtdIGFubm90
+YXRpb25OYW1lID0gdGhpcy5vcHRpb25zLm5vbk51bGxBbm5vdGF0aW9uTmFtZTsgLy8gY2Fubm90
+IGJlIG51bGwgaWYgbG9jYWwgaXMgZGVjbGFyZWQgQE5vbk51bGwKKwkJYXJndW1lbnRzID0gbmV3
+IFN0cmluZ1tdIHtuZXcgU3RyaW5nKGxvY2FsLm5hbWUpLCBuZXcgU3RyaW5nKGFubm90YXRpb25O
+YW1lW2Fubm90YXRpb25OYW1lLmxlbmd0aC0xXSkgIH07CisJCXByb2JsZW1JZCA9IElQcm9ibGVt
+LlNwZWNkTm9uTnVsbExvY2FsVmFyaWFibGVDb21wYXJpc29uWWllbGRzRmFsc2U7CisJfSBlbHNl
+IHsKKwkJYXJndW1lbnRzID0gbmV3IFN0cmluZ1tdIHtuZXcgU3RyaW5nKGxvY2FsLm5hbWUpICB9
+OworCQlwcm9ibGVtSWQgPSBJUHJvYmxlbS5Ob25OdWxsTG9jYWxWYXJpYWJsZUNvbXBhcmlzb25Z
+aWVsZHNGYWxzZTsgCisJfQogCXRoaXMuaGFuZGxlKAotCQlJUHJvYmxlbS5Ob25OdWxsTG9jYWxW
+YXJpYWJsZUNvbXBhcmlzb25ZaWVsZHNGYWxzZSwKKwkJcHJvYmxlbUlkLAogCQlhcmd1bWVudHMs
+CiAJCWFyZ3VtZW50cywKIAkJc2V2ZXJpdHksCkBAIC01MTQ3LDkgKzUxNjAsMTggQEAKIHB1Ymxp
+YyB2b2lkIGxvY2FsVmFyaWFibGVSZWR1bmRhbnRDaGVja09uTm9uTnVsbChMb2NhbFZhcmlhYmxl
+QmluZGluZyBsb2NhbCwgQVNUTm9kZSBsb2NhdGlvbikgewogCWludCBzZXZlcml0eSA9IGNvbXB1
+dGVTZXZlcml0eShJUHJvYmxlbS5SZWR1bmRhbnROdWxsQ2hlY2tPbk5vbk51bGxMb2NhbFZhcmlh
+YmxlKTsKIAlpZiAoc2V2ZXJpdHkgPT0gUHJvYmxlbVNldmVyaXRpZXMuSWdub3JlKSByZXR1cm47
+Ci0JU3RyaW5nW10gYXJndW1lbnRzID0gbmV3IFN0cmluZ1tdIHtuZXcgU3RyaW5nKGxvY2FsLm5h
+bWUpICB9OworCVN0cmluZ1tdIGFyZ3VtZW50czsKKwlpbnQgcHJvYmxlbUlkOworCWlmIChsb2Nh
+bC5pc05vbk51bGwoKSkgeworCQljaGFyW11bXSBhbm5vdGF0aW9uTmFtZSA9IHRoaXMub3B0aW9u
+cy5ub25OdWxsQW5ub3RhdGlvbk5hbWU7IC8vIGNhbm5vdCBiZSBudWxsIGlmIGxvY2FsIGlzIGRl
+Y2xhcmVkIEBOb25OdWxsCisJCWFyZ3VtZW50cyA9IG5ldyBTdHJpbmdbXSB7bmV3IFN0cmluZyhs
+b2NhbC5uYW1lKSwgbmV3IFN0cmluZyhhbm5vdGF0aW9uTmFtZVthbm5vdGF0aW9uTmFtZS5sZW5n
+dGgtMV0pICB9OworCQlwcm9ibGVtSWQgPSBJUHJvYmxlbS5SZWR1bmRhbnROdWxsQ2hlY2tPblNw
+ZWNkTm9uTnVsbExvY2FsVmFyaWFibGU7CisJfSBlbHNlIHsKKwkJYXJndW1lbnRzID0gbmV3IFN0
+cmluZ1tdIHtuZXcgU3RyaW5nKGxvY2FsLm5hbWUpICB9OworCQlwcm9ibGVtSWQgPSBJUHJvYmxl
+bS5SZWR1bmRhbnROdWxsQ2hlY2tPbk5vbk51bGxMb2NhbFZhcmlhYmxlOyAKKwl9CiAJdGhpcy5o
+YW5kbGUoCi0JCUlQcm9ibGVtLlJlZHVuZGFudE51bGxDaGVja09uTm9uTnVsbExvY2FsVmFyaWFi
+bGUsCisJCXByb2JsZW1JZCwgCiAJCWFyZ3VtZW50cywKIAkJYXJndW1lbnRzLAogCQlzZXZlcml0
+eSwKQEAgLTgxMTcsOCArODEzOSw2IEBACiAJaW50IHByb2JsZW1JZCA9IElQcm9ibGVtLlJlcXVp
+cmVkTm9uTnVsbEJ1dFByb3ZpZGVkVW5rbm93bjsKIAlpZiAoKG51bGxTdGF0dXMgJiBGbG93SW5m
+by5OVUxMKSAhPSAwKQogCQlwcm9ibGVtSWQgPSBJUHJvYmxlbS5SZXF1aXJlZE5vbk51bGxCdXRQ
+cm92aWRlZE51bGw7Ci0JaWYgKChudWxsU3RhdHVzICYgRmxvd0luZm8uUE9URU5USUFMTFlfTlVM
+TCkgIT0gMCkKLQkJcHJvYmxlbUlkID0gSVByb2JsZW0uUmVxdWlyZWROb25OdWxsQnV0UHJvdmlk
+ZWRQb3RlbnRpYWxOdWxsOwogCVN0cmluZ1tdIGFyZ3VtZW50cyA9IG5ldyBTdHJpbmdbXSB7CiAJ
+CQlTdHJpbmcudmFsdWVPZihDaGFyT3BlcmF0aW9uLmNvbmNhdFdpdGgoYW5ub3RhdGlvbk5hbWUs
+ICcuJykpLAogCQkJU3RyaW5nLnZhbHVlT2YocmVxdWlyZWRUeXBlLnJlYWRhYmxlTmFtZSgpKQpA
+QCAtODEyNyw2ICs4MTQ3LDI4IEBACiAJCQlTdHJpbmcudmFsdWVPZihhbm5vdGF0aW9uTmFtZVth
+bm5vdGF0aW9uTmFtZS5sZW5ndGgtMV0pLAogCQkJU3RyaW5nLnZhbHVlT2YocmVxdWlyZWRUeXBl
+LnNob3J0UmVhZGFibGVOYW1lKCkpCiAJfTsKKwlpZiAoKG51bGxTdGF0dXMgJiBGbG93SW5mby5Q
+T1RFTlRJQUxMWV9OVUxMKSAhPSAwKSB7CisJCXByb2JsZW1JZCA9IElQcm9ibGVtLlJlcXVpcmVk
+Tm9uTnVsbEJ1dFByb3ZpZGVkUG90ZW50aWFsTnVsbDsKKwkJaWYgKGV4cHJlc3Npb24gaW5zdGFu
+Y2VvZiBTaW5nbGVOYW1lUmVmZXJlbmNlKSB7CisJCQlTaW5nbGVOYW1lUmVmZXJlbmNlIHNuciA9
+IChTaW5nbGVOYW1lUmVmZXJlbmNlKSBleHByZXNzaW9uOworCQkJaWYgKHNuci5iaW5kaW5nIGlu
+c3RhbmNlb2YgVmFyaWFibGVCaW5kaW5nKSB7CisJCQkJaWYgKCgoVmFyaWFibGVCaW5kaW5nKXNu
+ci5iaW5kaW5nKS5pc051bGxhYmxlKCkpIHsKKwkJCQkJcHJvYmxlbUlkID0gSVByb2JsZW0uUmVx
+dWlyZWROb25OdWxsQnV0UHJvdmlkZWRTcGVjZE51bGw7CisJCQkJCWNoYXJbXVtdIG51bGxhYmxl
+TmFtZSA9IHRoaXMub3B0aW9ucy5udWxsYWJsZUFubm90YXRpb25OYW1lOworCQkJCQlhcmd1bWVu
+dHMgPSBuZXcgU3RyaW5nW10geworCQkJCQkJCVN0cmluZy52YWx1ZU9mKENoYXJPcGVyYXRpb24u
+Y29uY2F0V2l0aChhbm5vdGF0aW9uTmFtZSwgJy4nKSksCisJCQkJCQkJU3RyaW5nLnZhbHVlT2Yo
+cmVxdWlyZWRUeXBlLnJlYWRhYmxlTmFtZSgpKSwKKwkJCQkJCQlTdHJpbmcudmFsdWVPZihDaGFy
+T3BlcmF0aW9uLmNvbmNhdFdpdGgobnVsbGFibGVOYW1lLCAnLicpKQorCQkJCQl9OworCQkJCQlh
+cmd1bWVudHNTaG9ydCA9IG5ldyBTdHJpbmdbXSB7CisJCQkJCQkJU3RyaW5nLnZhbHVlT2YoYW5u
+b3RhdGlvbk5hbWVbYW5ub3RhdGlvbk5hbWUubGVuZ3RoLTFdKSwKKwkJCQkJCQlTdHJpbmcudmFs
+dWVPZihyZXF1aXJlZFR5cGUuc2hvcnRSZWFkYWJsZU5hbWUoKSksCisJCQkJCQkJU3RyaW5nLnZh
+bHVlT2YobnVsbGFibGVOYW1lW251bGxhYmxlTmFtZS5sZW5ndGgtMV0pCisJCQkJCX07CisJCQkJ
+fQorCQkJfQorCQl9CisJfQogCXRoaXMuaGFuZGxlKAogCQlwcm9ibGVtSWQsCiAJCWFyZ3VtZW50
+cywKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNl
+L2pkdC9pbnRlcm5hbC9jb21waWxlci9wcm9ibGVtL21lc3NhZ2VzLnByb3BlcnRpZXMgYi9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGls
+ZXIvcHJvYmxlbS9tZXNzYWdlcy5wcm9wZXJ0aWVzCmluZGV4IDI2NWVmYWUuLjFjMDZkYzcgMTAw
+NjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9p
+bnRlcm5hbC9jb21waWxlci9wcm9ibGVtL21lc3NhZ2VzLnByb3BlcnRpZXMKKysrIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L3Byb2JsZW0vbWVzc2FnZXMucHJvcGVydGllcwpAQCAtNjc4LDYgKzY3OCw5IEBACiA5MjcgPSBO
+dWxsbmVzcyBkZWZhdWx0IGlzIHJlZHVuZGFudCB3aXRoIGEgZGVmYXVsdCBzcGVjaWZpZWQgZm9y
+IHRoZSBlbmNsb3NpbmcgdHlwZSB7MH0KIDkyOCA9IE51bGxuZXNzIGRlZmF1bHQgaXMgcmVkdW5k
+YW50IHdpdGggYSBkZWZhdWx0IHNwZWNpZmllZCBmb3IgdGhlIGVuY2xvc2luZyBtZXRob2QgezB9
+CiA5MjkgPSBDb250cmFkaWN0b3J5IG51bGwgc3BlY2lmaWNhdGlvbjsgb25seSBvbmUgb2YgQHsw
+fSBhbmQgQHsxfSBjYW4gYmUgc3BlY2lmaWVkIGF0IGFueSBsb2NhdGlvbgorOTMwID0gUmVkdW5k
+YW50IG51bGwgY2hlY2s6IFRoZSB2YXJpYWJsZSB7MH0gaXMgc3BlY2lmaWVkIGFzIEB7MX0KKzkz
+MSA9IE51bGwgY29tcGFyaXNvbiBhbHdheXMgeWllbGRzIGZhbHNlOiBUaGUgdmFyaWFibGUgezB9
+IGlzIHNwZWNpZmllZCBhcyBAezF9Cis5MzIgPSBUeXBlIG1pc21hdGNoOiByZXF1aXJlZCAnJ0B7
+MH0gezF9JycgYnV0IHRoZSBwcm92aWRlZCB2YWx1ZSBpcyBzcGVjaWZpZWQgYXMgQHsyfQogCiAj
+IyMgRUxBQk9SQVRJT05TCiAjIyBBY2Nlc3MgcmVzdHJpY3Rpb25zCg==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>212569</attachid>
+            <date>2012-03-13 12:10:00 -0400</date>
+            <delta_ts>2012-03-13 12:10:46 -0400</delta_ts>
+            <desc>fix for API names</desc>
+            <filename>Fixed-API-names-after-changes-in-bug-365859-compiler.patch</filename>
+            <type>text/plain</type>
+            <size>32230</size>
+            <attacher name="Ayushman Jain">amj87.iitr</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0JhdGNoQ29tcGlsZXJU
+ZXN0LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2Vj
+bGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9CYXRjaENvbXBpbGVyVGVz
+dC5qYXZhCmluZGV4IDJkMzMwNGQuLmVhZTNjYWQgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21w
+aWxlci9yZWdyZXNzaW9uL0JhdGNoQ29tcGlsZXJUZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2Uu
+amR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Nv
+bXBpbGVyL3JlZ3Jlc3Npb24vQmF0Y2hDb21waWxlclRlc3QuamF2YQpAQCAtMTkwMSwxNSArMTkw
+MSwxNSBAQAogCQkJIgkJPG9wdGlvbiBrZXk9XCJvcmcuZWNsaXBzZS5qZHQuY29yZS5jb21waWxl
+ci5wcm9ibGVtLm5vRWZmZWN0QXNzaWdubWVudFwiIHZhbHVlPVwid2FybmluZ1wiLz5cbiIgKyAK
+IAkJCSIJCTxvcHRpb24ga2V5PVwib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIucHJvYmxl
+bS5ub0ltcGxpY2l0U3RyaW5nQ29udmVyc2lvblwiIHZhbHVlPVwid2FybmluZ1wiLz5cbiIgKyAK
+IAkJCSIJCTxvcHRpb24ga2V5PVwib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIucHJvYmxl
+bS5ub25FeHRlcm5hbGl6ZWRTdHJpbmdMaXRlcmFsXCIgdmFsdWU9XCJpZ25vcmVcIi8+XG4iICsg
+CisJCQkiCQk8b3B0aW9uIGtleT1cIm9yZy5lY2xpcHNlLmpkdC5jb3JlLmNvbXBpbGVyLnByb2Js
+ZW0ubnVsbEFubm90YXRpb25JbmZlcmVuY2VDb25mbGljdFwiIHZhbHVlPVwiZXJyb3JcIi8+XG4i
+ICsgCiAJCQkiCQk8b3B0aW9uIGtleT1cIm9yZy5lY2xpcHNlLmpkdC5jb3JlLmNvbXBpbGVyLnBy
+b2JsZW0ubnVsbFJlZmVyZW5jZVwiIHZhbHVlPVwid2FybmluZ1wiLz5cbiIgKyAKLQkJCSIJCTxv
+cHRpb24ga2V5PVwib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIucHJvYmxlbS5udWxsU3Bl
+Y0luc3VmZmljaWVudEluZm9cIiB2YWx1ZT1cIndhcm5pbmdcIi8+XG4iICsgCiAJCQkiCQk8b3B0
+aW9uIGtleT1cIm9yZy5lY2xpcHNlLmpkdC5jb3JlLmNvbXBpbGVyLnByb2JsZW0ubnVsbFNwZWNW
+aW9sYXRpb25cIiB2YWx1ZT1cImVycm9yXCIvPlxuIiArIAorCQkJIgkJPG9wdGlvbiBrZXk9XCJv
+cmcuZWNsaXBzZS5qZHQuY29yZS5jb21waWxlci5wcm9ibGVtLm51bGxVbmNoZWNrZWRDb252ZXJz
+aW9uXCIgdmFsdWU9XCJ3YXJuaW5nXCIvPlxuIiArIAogCQkJIgkJPG9wdGlvbiBrZXk9XCJvcmcu
+ZWNsaXBzZS5qZHQuY29yZS5jb21waWxlci5wcm9ibGVtLm92ZXJyaWRpbmdNZXRob2RXaXRob3V0
+U3VwZXJJbnZvY2F0aW9uXCIgdmFsdWU9XCJpZ25vcmVcIi8+XG4iICsgCiAJCQkiCQk8b3B0aW9u
+IGtleT1cIm9yZy5lY2xpcHNlLmpkdC5jb3JlLmNvbXBpbGVyLnByb2JsZW0ub3ZlcnJpZGluZ1Bh
+Y2thZ2VEZWZhdWx0TWV0aG9kXCIgdmFsdWU9XCJ3YXJuaW5nXCIvPlxuIiArIAogCQkJIgkJPG9w
+dGlvbiBrZXk9XCJvcmcuZWNsaXBzZS5qZHQuY29yZS5jb21waWxlci5wcm9ibGVtLnBhcmFtZXRl
+ckFzc2lnbm1lbnRcIiB2YWx1ZT1cImlnbm9yZVwiLz5cbiIgKyAKIAkJCSIJCTxvcHRpb24ga2V5
+PVwib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIucHJvYmxlbS5wb3NzaWJsZUFjY2lkZW50
+YWxCb29sZWFuQXNzaWdubWVudFwiIHZhbHVlPVwiaWdub3JlXCIvPlxuIiArIAogCQkJIgkJPG9w
+dGlvbiBrZXk9XCJvcmcuZWNsaXBzZS5qZHQuY29yZS5jb21waWxlci5wcm9ibGVtLnBvdGVudGlh
+bE51bGxSZWZlcmVuY2VcIiB2YWx1ZT1cImlnbm9yZVwiLz5cbiIgKyAKLQkJCSIJCTxvcHRpb24g
+a2V5PVwib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIucHJvYmxlbS5wb3RlbnRpYWxOdWxs
+U3BlY1Zpb2xhdGlvblwiIHZhbHVlPVwiZXJyb3JcIi8+XG4iICsgCiAJCQkiCQk8b3B0aW9uIGtl
+eT1cIm9yZy5lY2xpcHNlLmpkdC5jb3JlLmNvbXBpbGVyLnByb2JsZW0ucG90ZW50aWFsbHlVbmNs
+b3NlZENsb3NlYWJsZVwiIHZhbHVlPVwiaWdub3JlXCIvPlxuIiArIAogCQkJIgkJPG9wdGlvbiBr
+ZXk9XCJvcmcuZWNsaXBzZS5qZHQuY29yZS5jb21waWxlci5wcm9ibGVtLnJhd1R5cGVSZWZlcmVu
+Y2VcIiB2YWx1ZT1cIndhcm5pbmdcIi8+XG4iICsgCiAJCQkiCQk8b3B0aW9uIGtleT1cIm9yZy5l
+Y2xpcHNlLmpkdC5jb3JlLmNvbXBpbGVyLnByb2JsZW0ucmVkdW5kYW50TnVsbEFubm90YXRpb25c
+IiB2YWx1ZT1cIndhcm5pbmdcIi8+XG4iICsgCkBAIC0xOTUzLDcgKzE5NTMsNyBAQAogCQkJIgkJ
+PG9wdGlvbiBrZXk9XCJvcmcuZWNsaXBzZS5qZHQuY29yZS5jb21waWxlci5zb3VyY2VcIiB2YWx1
+ZT1cIjEuNVwiLz5cbiIgKyAKIAkJCSIJCTxvcHRpb24ga2V5PVwib3JnLmVjbGlwc2UuamR0LmNv
+cmUuY29tcGlsZXIudGFza0Nhc2VTZW5zaXRpdmVcIiB2YWx1ZT1cImVuYWJsZWRcIi8+XG4iICsg
+CiAJCQkiCQk8b3B0aW9uIGtleT1cIm9yZy5lY2xpcHNlLmpkdC5jb3JlLmNvbXBpbGVyLnRhc2tQ
+cmlvcml0aWVzXCIgdmFsdWU9XCJcIi8+XG4iICsgCi0JCQkiCQk8b3B0aW9uIGtleT1cIm9yZy5l
+Y2xpcHNlLmpkdC5jb3JlLmNvbXBpbGVyLnRhc2tUYWdzXCIgdmFsdWU9XCJcIi8+XG4iICsKKwkJ
+CSIJCTxvcHRpb24ga2V5PVwib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIudGFza1RhZ3Nc
+IiB2YWx1ZT1cIlwiLz5cbiIgKyAKIAkJCSIJPC9vcHRpb25zPlxuIiArIAogCQkJIgk8Y2xhc3Nw
+YXRocz5OT1JNQUxJWkVEIFNFQ1RJT048L2NsYXNzcGF0aHM+XG4iICsgCiAJCQkiCTxzb3VyY2Vz
+PlxuIiArIApkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIv
+c3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vQ29tcGls
+ZXJJbnZvY2F0aW9uVGVzdHMuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBp
+bGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0Nv
+bXBpbGVySW52b2NhdGlvblRlc3RzLmphdmEKaW5kZXggM2M3ZDYzMi4uNzQ1NWQ0NiAxMDA2NDQK
+LS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNl
+L2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vQ29tcGlsZXJJbnZvY2F0aW9uVGVz
+dHMuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3Jn
+L2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9Db21waWxlckludm9j
+YXRpb25UZXN0cy5qYXZhCkBAIC0xNTA3LDggKzE1MDcsOCBAQAogCQlleHBlY3RlZFByb2JsZW1B
+dHRyaWJ1dGVzLnB1dCgiUmVmZXJlbmNlVG9Gb3J3YXJkRmllbGQiLCBTS0lQKTsKIAkJZXhwZWN0
+ZWRQcm9ibGVtQXR0cmlidXRlcy5wdXQoIlJlZmVyZW5jZVRvRm9yd2FyZFR5cGVWYXJpYWJsZSIs
+IFNLSVApOwogCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1dCgiUmVxdWlyZWROb25OdWxs
+QnV0UHJvdmlkZWROdWxsIiwgbmV3IFByb2JsZW1BdHRyaWJ1dGVzKEphdmFDb3JlLkNPTVBJTEVS
+X1BCX05VTExfU1BFQ0lGSUNBVElPTl9WSU9MQVRJT04pKTsKLQkJZXhwZWN0ZWRQcm9ibGVtQXR0
+cmlidXRlcy5wdXQoIlJlcXVpcmVkTm9uTnVsbEJ1dFByb3ZpZGVkUG90ZW50aWFsTnVsbCIsIG5l
+dyBQcm9ibGVtQXR0cmlidXRlcyhKYXZhQ29yZS5DT01QSUxFUl9QQl9QT1RFTlRJQUxfTlVMTF9T
+UEVDSUZJQ0FUSU9OX1ZJT0xBVElPTikpOwotCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1
+dCgiUmVxdWlyZWROb25OdWxsQnV0UHJvdmlkZWRVbmtub3duIiwgbmV3IFByb2JsZW1BdHRyaWJ1
+dGVzKEphdmFDb3JlLkNPTVBJTEVSX1BCX05VTExfU1BFQ0lGSUNBVElPTl9JTlNVRkZJQ0lFTlRf
+SU5GTykpOworCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1dCgiUmVxdWlyZWROb25OdWxs
+QnV0UHJvdmlkZWRQb3RlbnRpYWxOdWxsIiwgbmV3IFByb2JsZW1BdHRyaWJ1dGVzKEphdmFDb3Jl
+LkNPTVBJTEVSX1BCX05VTExfQU5OT1RBVElPTl9JTkZFUkVOQ0VfQ09ORkxJQ1QpKTsKKwkJZXhw
+ZWN0ZWRQcm9ibGVtQXR0cmlidXRlcy5wdXQoIlJlcXVpcmVkTm9uTnVsbEJ1dFByb3ZpZGVkVW5r
+bm93biIsIG5ldyBQcm9ibGVtQXR0cmlidXRlcyhKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1VO
+Q0hFQ0tFRF9DT05WRVJTSU9OKSk7CiAJCWV4cGVjdGVkUHJvYmxlbUF0dHJpYnV0ZXMucHV0KCJS
+ZXF1aXJlZE5vbk51bGxCdXRQcm92aWRlZFNwZWNkTnVsbGFibGUiLCBuZXcgUHJvYmxlbUF0dHJp
+YnV0ZXMoSmF2YUNvcmUuQ09NUElMRVJfUEJfTlVMTF9TUEVDSUZJQ0FUSU9OX1ZJT0xBVElPTikp
+OwogCQlleHBlY3RlZFByb2JsZW1BdHRyaWJ1dGVzLnB1dCgiUmVzb3VyY2VIYXNUb0ltcGxlbWVu
+dEF1dG9DbG9zZWFibGUiLCBTS0lQKTsKIAkJZXhwZWN0ZWRQcm9ibGVtQXR0cmlidXRlcy5wdXQo
+IlJldHVyblR5cGVBbWJpZ3VvdXMiLCBTS0lQKTsKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21w
+aWxlci9yZWdyZXNzaW9uL051bGxBbm5vdGF0aW9uVGVzdC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBp
+bGVyL3JlZ3Jlc3Npb24vTnVsbEFubm90YXRpb25UZXN0LmphdmEKaW5kZXggMGFkNGNjZi4uNWYw
+ZWJjZCAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3Jj
+L29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbEFubm90
+YXRpb25UZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIv
+c3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbEFu
+bm90YXRpb25UZXN0LmphdmEKQEAgLTMyMyw3ICszMjMsNyBAQAogLy8gYSB0ZXJuYXJ5IG5vbi1u
+dWxsIGV4cHJlc3Npb24gaXMgcGFzc2VkIHRvIGEgbm9ubnVsbCBwYXJhbWV0ZXIKIHB1YmxpYyB2
+b2lkIHRlc3Rfbm9ubnVsbF9wYXJhbWV0ZXJfMDA2KCkgewogCU1hcCBjdXN0b21PcHRpb25zID0g
+Z2V0Q29tcGlsZXJPcHRpb25zKCk7Ci0JY3VzdG9tT3B0aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElM
+RVJfUEJfTlVMTF9TUEVDSUZJQ0FUSU9OX0lOU1VGRklDSUVOVF9JTkZPLCBKYXZhQ29yZS5FUlJP
+Uik7CisJY3VzdG9tT3B0aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElMRVJfUEJfTlVMTF9VTkNIRUNL
+RURfQ09OVkVSU0lPTiwgSmF2YUNvcmUuRVJST1IpOwogCXJ1bkNvbmZvcm1UZXN0V2l0aExpYnMo
+CiAJCW5ldyBTdHJpbmdbXSB7CiAJCQkiWC5qYXZhIiwKQEAgLTM0MCw3ICszNDAsNyBAQAogLy8g
+bnVsbGFibGUgdmFsdWUgcGFzc2VkIHRvIGEgbm9uLW51bGwgcGFyYW1ldGVyIGluIGEgc3VwZXIt
+Y2FsbAogcHVibGljIHZvaWQgdGVzdF9ub25udWxsX3BhcmFtZXRlcl8wMDcoKSB7CiAJTWFwIGN1
+c3RvbU9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsKLQljdXN0b21PcHRpb25zLnB1dChK
+YXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1NQRUNJRklDQVRJT05fSU5TVUZGSUNJRU5UX0lORk8s
+IEphdmFDb3JlLkVSUk9SKTsKKwljdXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxFUl9Q
+Ql9OVUxMX1VOQ0hFQ0tFRF9DT05WRVJTSU9OLCBKYXZhQ29yZS5FUlJPUik7CiAJcnVuTmVnYXRp
+dmVUZXN0V2l0aExpYnMoCiAJCW5ldyBTdHJpbmdbXSB7CiAJCQkiWFN1Yi5qYXZhIiwKQEAgLTM2
+OCw3ICszNjgsNyBAQAogLy8gYSBudWxsYWJsZSB2YWx1ZSBpcyBwYXNzZWQgdG8gYSBub24tbnVs
+bCBwYXJhbWV0ZXIgaW4gYW4gYWxsb2NhdGlvbiBleHByZXNzaW9uCiBwdWJsaWMgdm9pZCB0ZXN0
+X25vbm51bGxfcGFyYW1ldGVyXzAwOCgpIHsKIAlNYXAgY3VzdG9tT3B0aW9ucyA9IGdldENvbXBp
+bGVyT3B0aW9ucygpOwotCWN1c3RvbU9wdGlvbnMucHV0KEphdmFDb3JlLkNPTVBJTEVSX1BCX05V
+TExfU1BFQ0lGSUNBVElPTl9JTlNVRkZJQ0lFTlRfSU5GTywgSmF2YUNvcmUuRVJST1IpOworCWN1
+c3RvbU9wdGlvbnMucHV0KEphdmFDb3JlLkNPTVBJTEVSX1BCX05VTExfVU5DSEVDS0VEX0NPTlZF
+UlNJT04sIEphdmFDb3JlLkVSUk9SKTsKIAlydW5OZWdhdGl2ZVRlc3RXaXRoTGlicygKIAkJbmV3
+IFN0cmluZ1tdIHsKIAkJCSJYLmphdmEiLApAQCAtMzkwLDcgKzM5MCw3IEBACiAvLyBhIG51bGxh
+YmxlIHZhbHVlIGlzIHBhc3NlZCB0byBhIG5vbi1udWxsIHBhcmFtZXRlciBpbiBhIHF1YWxpZmll
+ZCBhbGxvY2F0aW9uIGV4cHJlc3Npb24KIHB1YmxpYyB2b2lkIHRlc3Rfbm9ubnVsbF9wYXJhbWV0
+ZXJfMDA5KCkgewogCU1hcCBjdXN0b21PcHRpb25zID0gZ2V0Q29tcGlsZXJPcHRpb25zKCk7Ci0J
+Y3VzdG9tT3B0aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElMRVJfUEJfTlVMTF9TUEVDSUZJQ0FUSU9O
+X0lOU1VGRklDSUVOVF9JTkZPLCBKYXZhQ29yZS5FUlJPUik7CisJY3VzdG9tT3B0aW9ucy5wdXQo
+SmF2YUNvcmUuQ09NUElMRVJfUEJfTlVMTF9VTkNIRUNLRURfQ09OVkVSU0lPTiwgSmF2YUNvcmUu
+RVJST1IpOwogCXJ1bk5lZ2F0aXZlVGVzdFdpdGhMaWJzKAogCQluZXcgU3RyaW5nW10gewogCQkJ
+IlguamF2YSIsCkBAIC00MTQsNyArNDE0LDcgQEAKIC8vIG51bGwgaXMgcGFzc2VkIHRvIGEgbm9u
+LW51bGwgcGFyYW1ldGVyIGluIGEgcXVhbGlmaWVkIGFsbG9jYXRpb24gZXhwcmVzc2lvbiwgYWNy
+b3NzIENVcwogcHVibGljIHZvaWQgdGVzdF9ub25udWxsX3BhcmFtZXRlcl8wMTAoKSB7CiAJTWFw
+IGN1c3RvbU9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsKLQljdXN0b21PcHRpb25zLnB1
+dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1NQRUNJRklDQVRJT05fSU5TVUZGSUNJRU5UX0lO
+Rk8sIEphdmFDb3JlLkVSUk9SKTsKKwljdXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxF
+Ul9QQl9OVUxMX1VOQ0hFQ0tFRF9DT05WRVJTSU9OLCBKYXZhQ29yZS5FUlJPUik7CiAJcnVuTmVn
+YXRpdmVUZXN0V2l0aExpYnMoCiAJCW5ldyBTdHJpbmdbXSB7CiAJCQkiQ29udGFpbmluZ0lubmVy
+Mi5qYXZhIiwKQEAgLTQ0OSw3ICs0NDksNyBAQAogLy8gbnVsbCBpcyBwYXNzZWQgdG8gYSBub24t
+bnVsbCBwYXJhbWV0ZXIgaW4gYSBxdWFsaWZpZWQgYWxsb2NhdGlvbiBleHByZXNzaW9uLCB0YXJn
+ZXQgY2xhc3MgcmVhZCBmcm9tIC5jbGFzcwogcHVibGljIHZvaWQgdGVzdF9ub25udWxsX3BhcmFt
+ZXRlcl8wMTEoKSB7CiAJTWFwIGN1c3RvbU9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsK
+LQljdXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1NQRUNJRklDQVRJ
+T05fSU5TVUZGSUNJRU5UX0lORk8sIEphdmFDb3JlLkVSUk9SKTsKKwljdXN0b21PcHRpb25zLnB1
+dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1VOQ0hFQ0tFRF9DT05WRVJTSU9OLCBKYXZhQ29y
+ZS5FUlJPUik7CiAJcnVuQ29uZm9ybVRlc3RXaXRoTGlicygKIAkJCW5ldyBTdHJpbmdbXSB7CiAJ
+CQkJIkNvbnRhaW5pbmdJbm5lcjIuamF2YSIsCkBAIC00OTAsNyArNDkwLDcgQEAKIC8vIG51bGwg
+aXMgcGFzc2VkIHRvIGEgbm9uLW51bGwgcGFyYW1ldGVyIGluIGEgcXVhbGlmaWVkIGFsbG9jYXRp
+b24gZXhwcmVzc2lvbiwgZ2VuZXJpYyBjb25zdHJ1Y3RvciwgdGFyZ2V0IGNsYXNzIHJlYWQgZnJv
+bSAuY2xhc3MKIHB1YmxpYyB2b2lkIHRlc3Rfbm9ubnVsbF9wYXJhbWV0ZXJfMDEyKCkgewogCU1h
+cCBjdXN0b21PcHRpb25zID0gZ2V0Q29tcGlsZXJPcHRpb25zKCk7Ci0JY3VzdG9tT3B0aW9ucy5w
+dXQoSmF2YUNvcmUuQ09NUElMRVJfUEJfTlVMTF9TUEVDSUZJQ0FUSU9OX0lOU1VGRklDSUVOVF9J
+TkZPLCBKYXZhQ29yZS5FUlJPUik7CisJY3VzdG9tT3B0aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElM
+RVJfUEJfTlVMTF9VTkNIRUNLRURfQ09OVkVSU0lPTiwgSmF2YUNvcmUuRVJST1IpOwogCXJ1bkNv
+bmZvcm1UZXN0V2l0aExpYnMoCiAJCQluZXcgU3RyaW5nW10gewogCQkJCSJDb250YWluaW5nSW5u
+ZXIyLmphdmEiLApAQCAtMTAzMyw3ICsxMDMzLDcgQEAKIC8vIGEgY2xpZW50IHBvdGVudGlhbGx5
+IHZpb2xhdGVzIHRoZSBpbmhlcml0ZWQgbnVsbCBzcGVjaWZpY2F0aW9uLCBzdXBlciBpbnRlcmZh
+Y2UgZGVjbGFyZXMgQE5vbk51bGwgcGFyYW1ldGVyCiBwdWJsaWMgdm9pZCB0ZXN0X3BhcmFtZXRl
+cl9zcGVjaWZpY2F0aW9uX2luaGVyaXRhbmNlXzAwOCgpIHsKIAlNYXAgb3B0aW9ucyA9IGdldENv
+bXBpbGVyT3B0aW9ucygpOwotCW9wdGlvbnMucHV0KEphdmFDb3JlLkNPTVBJTEVSX1BCX05VTExf
+U1BFQ0lGSUNBVElPTl9JTlNVRkZJQ0lFTlRfSU5GTywgSmF2YUNvcmUuRVJST1IpOworCW9wdGlv
+bnMucHV0KEphdmFDb3JlLkNPTVBJTEVSX1BCX05VTExfVU5DSEVDS0VEX0NPTlZFUlNJT04sIEph
+dmFDb3JlLkVSUk9SKTsKIAlydW5Db25mb3JtVGVzdFdpdGhMaWJzKAogCQluZXcgU3RyaW5nW10g
+ewogCQkJIklYLmphdmEiLApAQCAtMTA5NSw3ICsxMDk1LDcgQEAKIC8vIGNsYXNzIGRlZmF1bHQg
+aXMgbm9ubnVsbCwgbWV0aG9kIGFuZCBpdHMgc3VwZXIgYm90aCB1c2UgdGhlIGRlZmF1bHQKIHB1
+YmxpYyB2b2lkIHRlc3RfcGFyYW1ldGVyX3NwZWNpZmljYXRpb25faW5oZXJpdGFuY2VfMDEwKCkg
+ewogCU1hcCBjdXN0b21PcHRpb25zID0gZ2V0Q29tcGlsZXJPcHRpb25zKCk7Ci0JY3VzdG9tT3B0
+aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElMRVJfUEJfTlVMTF9TUEVDSUZJQ0FUSU9OX0lOU1VGRklD
+SUVOVF9JTkZPLCBKYXZhQ29yZS5FUlJPUik7CisJY3VzdG9tT3B0aW9ucy5wdXQoSmF2YUNvcmUu
+Q09NUElMRVJfUEJfTlVMTF9VTkNIRUNLRURfQ09OVkVSU0lPTiwgSmF2YUNvcmUuRVJST1IpOwog
+CXJ1bkNvbmZvcm1UZXN0V2l0aExpYnMoCiAJCW5ldyBTdHJpbmdbXSB7CiAJInAxL1guamF2YSIs
+CkBAIC0xMTI2LDcgKzExMjYsNyBAQAogLy8gY2xhc3MgZGVmYXVsdCBpcyBub25udWxsLCBtZXRo
+b2QgYW5kIGl0cyBzdXBlciBib3RoIHVzZSB0aGUgZGVmYXVsdCwgc3VwZXItY2FsbCBwYXNzZXMg
+bnVsbAogcHVibGljIHZvaWQgdGVzdF9wYXJhbWV0ZXJfc3BlY2lmaWNhdGlvbl9pbmhlcml0YW5j
+ZV8wMTEoKSB7CiAJTWFwIGN1c3RvbU9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsKLQlj
+dXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1NQRUNJRklDQVRJT05f
+SU5TVUZGSUNJRU5UX0lORk8sIEphdmFDb3JlLkVSUk9SKTsKKwljdXN0b21PcHRpb25zLnB1dChK
+YXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1VOQ0hFQ0tFRF9DT05WRVJTSU9OLCBKYXZhQ29yZS5F
+UlJPUik7CiAJcnVuTmVnYXRpdmVUZXN0V2l0aExpYnMoCiAJCW5ldyBTdHJpbmdbXSB7CiAJInAx
+L1guamF2YSIsCkBAIC0xMTYzLDcgKzExNjMsNyBAQAogLy8gc3ViLWNsYXNzIG1lcmdlcyBib3Ro
+IHVzaW5nIHRoZSB3ZWFrZXN0IGNvbW1vbiBjb250cmFjdAogcHVibGljIHZvaWQgdGVzdF9wYXJh
+bWV0ZXJfc3BlY2lmaWNhdGlvbl9pbmhlcml0YW5jZV8wMTIoKSB7CiAJTWFwIGN1c3RvbU9wdGlv
+bnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsKLQljdXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5D
+T01QSUxFUl9QQl9OVUxMX1NQRUNJRklDQVRJT05fSU5TVUZGSUNJRU5UX0lORk8sIEphdmFDb3Jl
+LkVSUk9SKTsKKwljdXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1VO
+Q0hFQ0tFRF9DT05WRVJTSU9OLCBKYXZhQ29yZS5FUlJPUik7CiAJcnVuQ29uZm9ybVRlc3RXaXRo
+TGlicygKIAkJbmV3IFN0cmluZ1tdIHsKIAkicDEvWC5qYXZhIiwKQEAgLTExOTcsNyArMTE5Nyw3
+IEBACiAvLyBzdWItY2xhc3Mgb3ZlcnJpZGVzIHRoaXMgbWV0aG9kIGluIG5vbi1jb25mb3JtaW5n
+IHdheXMKIHB1YmxpYyB2b2lkIHRlc3RfcGFyYW1ldGVyX3NwZWNpZmljYXRpb25faW5oZXJpdGFu
+Y2VfMDEzKCkgewogCU1hcCBjdXN0b21PcHRpb25zID0gZ2V0Q29tcGlsZXJPcHRpb25zKCk7Ci0J
+Y3VzdG9tT3B0aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElMRVJfUEJfTlVMTF9TUEVDSUZJQ0FUSU9O
+X0lOU1VGRklDSUVOVF9JTkZPLCBKYXZhQ29yZS5FUlJPUik7CisJY3VzdG9tT3B0aW9ucy5wdXQo
+SmF2YUNvcmUuQ09NUElMRVJfUEJfTlVMTF9VTkNIRUNLRURfQ09OVkVSU0lPTiwgSmF2YUNvcmUu
+RVJST1IpOwogCXJ1bk5lZ2F0aXZlVGVzdFdpdGhMaWJzKAogCQluZXcgU3RyaW5nW10gewogCSJw
+MS9YLmphdmEiLApAQCAtMTI1MSw3ICsxMjUxLDcgQEAKIC8vIHN1Yi1jbGFzcyBkb2VzIG5vdCBv
+dmVycmlkZSwgYnV0IHNob3VsZCB0byBicmlkZ2UgdGhlIGluY29tcGF0aWJpbGl0eQogcHVibGlj
+IHZvaWQgdGVzdF9wYXJhbWV0ZXJfc3BlY2lmaWNhdGlvbl9pbmhlcml0YW5jZV8wMTQoKSB7CiAJ
+TWFwIGN1c3RvbU9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsKLQljdXN0b21PcHRpb25z
+LnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1NQRUNJRklDQVRJT05fSU5TVUZGSUNJRU5U
+X0lORk8sIEphdmFDb3JlLkVSUk9SKTsKKwljdXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01Q
+SUxFUl9QQl9OVUxMX1VOQ0hFQ0tFRF9DT05WRVJTSU9OLCBKYXZhQ29yZS5FUlJPUik7CiAJcnVu
+TmVnYXRpdmVUZXN0V2l0aExpYnMoCiAJCW5ldyBTdHJpbmdbXSB7CiAJInAxL0lZLmphdmEiLApA
+QCAtMTY1MCw3ICsxNjUwLDcgQEAKIC8vIGEgbm9uLW51bGwgbWV0aG9kIHJldHVybnMgYSBjaGVj
+a2VkLWZvciBudWxsIHZhbHVlLCBidXQgdGhhdCBicmFuY2ggaXMgZGVhZCBjb2RlCiBwdWJsaWMg
+dm9pZCB0ZXN0X25vbm51bGxfcmV0dXJuXzAxMSgpIHsKIAlNYXAgY3VzdG9tT3B0aW9ucyA9IGdl
+dENvbXBpbGVyT3B0aW9ucygpOwotCWN1c3RvbU9wdGlvbnMucHV0KEphdmFDb3JlLkNPTVBJTEVS
+X1BCX05VTExfU1BFQ0lGSUNBVElPTl9JTlNVRkZJQ0lFTlRfSU5GTywgSmF2YUNvcmUuRVJST1Ip
+OworCWN1c3RvbU9wdGlvbnMucHV0KEphdmFDb3JlLkNPTVBJTEVSX1BCX05VTExfVU5DSEVDS0VE
+X0NPTlZFUlNJT04sIEphdmFDb3JlLkVSUk9SKTsKIAlydW5OZWdhdGl2ZVRlc3RXaXRoTGlicygK
+IAkJbmV3IFN0cmluZ1tdIHsKIAkJCSJYLmphdmEiLApAQCAtMTY4Miw3ICsxNjgyLDcgQEAKIC8v
+IFRPRE8oU0gpOiBFTkFCTEUhCiBwdWJsaWMgdm9pZCBfdGVzdF9ub25udWxsX3JldHVybl8wMTIo
+KSB7CiAJTWFwIGN1c3RvbU9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsKLQljdXN0b21P
+cHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1NQRUNJRklDQVRJT05fSU5TVUZG
+SUNJRU5UX0lORk8sIEphdmFDb3JlLkVSUk9SKTsKKwljdXN0b21PcHRpb25zLnB1dChKYXZhQ29y
+ZS5DT01QSUxFUl9QQl9OVUxMX1VOQ0hFQ0tFRF9DT05WRVJTSU9OLCBKYXZhQ29yZS5FUlJPUik7
+CiAJcnVuTmVnYXRpdmVUZXN0V2l0aExpYnMoCiAJCW5ldyBTdHJpbmdbXSB7CiAJCQkiWC5qYXZh
+IiwKQEAgLTE3MTAsNyArMTcxMCw3IEBACiAvLyBkb24ndCBhcHBseSBhbnkgZGVmYXVsdCBhbm5v
+dGF0aW9ucyB0byByZXR1cm4gdm9pZAogcHVibGljIHZvaWQgdGVzdF9ub25udWxsX3JldHVybl8w
+MTMoKSB7CiAJTWFwIGN1c3RvbU9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsKLQljdXN0
+b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1NQRUNJRklDQVRJT05fSU5T
+VUZGSUNJRU5UX0lORk8sIEphdmFDb3JlLkVSUk9SKTsKKwljdXN0b21PcHRpb25zLnB1dChKYXZh
+Q29yZS5DT01QSUxFUl9QQl9OVUxMX1VOQ0hFQ0tFRF9DT05WRVJTSU9OLCBKYXZhQ29yZS5FUlJP
+Uik7CiAJcnVuQ29uZm9ybVRlc3RXaXRoTGlicygKIAkJbmV3IFN0cmluZ1tdIHsKIAkJCSJYLmph
+dmEiLApAQCAtMTgzOCw3ICsxODM4LDcgQEAKIC8vIHVzaW5nIGEgTGliIHdpdGhvdXQgbnVsbCBz
+cGVjaWZpY2F0aW9ucwogcHVibGljIHZvaWQgdGVzdF9hbm5vdGF0aW9uX2ltcG9ydF8wMDUoKSB7
+CiAJTWFwIGN1c3RvbU9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsKLQljdXN0b21PcHRp
+b25zLnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1NQRUNJRklDQVRJT05fSU5TVUZGSUNJ
+RU5UX0lORk8sIEphdmFDb3JlLkVSUk9SKTsKKwljdXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5D
+T01QSUxFUl9QQl9OVUxMX1VOQ0hFQ0tFRF9DT05WRVJTSU9OLCBKYXZhQ29yZS5FUlJPUik7CiAJ
+Y3VzdG9tT3B0aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElMRVJfTlVMTEFCTEVfQU5OT1RBVElPTl9O
+QU1FLCAib3JnLmZvby5NYXlCZU51bGwiKTsKIAljdXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5D
+T01QSUxFUl9OT05OVUxMX0FOTk9UQVRJT05fTkFNRSwgIm9yZy5mb28uTXVzdE5vdEJlTnVsbCIp
+OwogCXJ1bk5lZ2F0aXZlVGVzdCgKQEAgLTE4ODIsNyArMTg4Miw3IEBACiAvLyBhIG5vbi1udWxs
+IG1ldGhvZCByZXR1cm5zIGEgdmFsdWUgb2J0YWluZWQgZnJvbSBhbiB1bmFubm90YXRlZCBtZXRo
+b2QsIG1pc3NpbmcgYW5ub3RhdGlvbiB0eXBlcwogcHVibGljIHZvaWQgdGVzdF9hbm5vdGF0aW9u
+X2ltcG9ydF8wMDYoKSB7CiAJTWFwIGN1c3RvbU9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMo
+KTsKLQljdXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1NQRUNJRklD
+QVRJT05fSU5TVUZGSUNJRU5UX0lORk8sIEphdmFDb3JlLkVSUk9SKTsKKwljdXN0b21PcHRpb25z
+LnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1VOQ0hFQ0tFRF9DT05WRVJTSU9OLCBKYXZh
+Q29yZS5FUlJPUik7CiAJY3VzdG9tT3B0aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElMRVJfTlVMTEFC
+TEVfQU5OT1RBVElPTl9OQU1FLCAib3JnLmZvby5NYXlCZU51bGwiKTsKIAljdXN0b21PcHRpb25z
+LnB1dChKYXZhQ29yZS5DT01QSUxFUl9OT05OVUxMX0FOTk9UQVRJT05fTkFNRSwgIm9yZy5mb28u
+TXVzdE5vdEJlTnVsbCIpOwogCXJ1bk5lZ2F0aXZlVGVzdCgKQEAgLTMxNDEsNyArMzE0MSw3IEBA
+CiAvLyB3aXRuZXNzIGZvciBhbiBBSU9PQkUgaW4gRmxvd0NvbnRleHQucmVjb3JkRXhwZWN0ZWRU
+eXBlKCkKIHB1YmxpYyB2b2lkIHRlc3RfbWVzc2FnZV9zZW5kX2luX2NvbnRyb2xfc3RydWN0dXJl
+XzAxKCkgewogCU1hcCBjdXN0b21PcHRpb25zID0gZ2V0Q29tcGlsZXJPcHRpb25zKCk7Ci0JY3Vz
+dG9tT3B0aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElMRVJfUEJfTlVMTF9TUEVDSUZJQ0FUSU9OX0lO
+U1VGRklDSUVOVF9JTkZPLCBKYXZhQ29yZS5JR05PUkUpOworCWN1c3RvbU9wdGlvbnMucHV0KEph
+dmFDb3JlLkNPTVBJTEVSX1BCX05VTExfVU5DSEVDS0VEX0NPTlZFUlNJT04sIEphdmFDb3JlLklH
+Tk9SRSk7CiAJY3VzdG9tT3B0aW9ucy5wdXQoSmF2YUNvcmUuQ09NUElMRVJfUEJfUE9URU5USUFM
+X05VTExfUkVGRVJFTkNFLCBKYXZhQ29yZS5XQVJOSU5HKTsKIAlydW5OZWdhdGl2ZVRlc3RXaXRo
+TGlicygKIAkJbmV3IFN0cmluZ1tdIHsKQEAgLTM0MDAsNyArMzQwMCw3IEBACiAvLyB0ZXN0IGFu
+YWx5c2lzIGRpc2FibGVtZW50LCBiaW5hcnkgdHlwZSBjb250YWlucyBhbm5vdGF0aW9uCiBwdWJs
+aWMgdm9pZCB0ZXN0X29wdGlvbnNfMDEoKSB7CiAJTWFwIGN1c3RvbU9wdGlvbnMgPSBnZXRDb21w
+aWxlck9wdGlvbnMoKTsKLQljdXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9O
+VUxMX1NQRUNJRklDQVRJT05fSU5TVUZGSUNJRU5UX0lORk8sIEphdmFDb3JlLkVSUk9SKTsKKwlj
+dXN0b21PcHRpb25zLnB1dChKYXZhQ29yZS5DT01QSUxFUl9QQl9OVUxMX1VOQ0hFQ0tFRF9DT05W
+RVJTSU9OLCBKYXZhQ29yZS5FUlJPUik7CiAJcnVuQ29uZm9ybVRlc3RXaXRoTGlicygKIAkJCW5l
+dyBTdHJpbmdbXSB7CiAJCQkJIkNvbnRhaW5pbmdJbm5lcjIuamF2YSIsCmRpZmYgLS1naXQgYS9v
+cmcuZWNsaXBzZS5qZHQuY29yZS9iYXRjaC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGls
+ZXIvYmF0Y2gvTWFpbi5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvYmF0Y2gvb3JnL2VjbGlw
+c2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2JhdGNoL01haW4uamF2YQppbmRleCBmNTFhMmJjLi43
+NTYyZDM4IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9iYXRjaC9vcmcvZWNsaXBz
+ZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYmF0Y2gvTWFpbi5qYXZhCisrKyBiL29yZy5lY2xpcHNl
+LmpkdC5jb3JlL2JhdGNoL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9iYXRjaC9N
+YWluLmphdmEKQEAgLTM0OTgsOCArMzQ5OCw4IEBACiAJCQkJCQlDb21waWxlck9wdGlvbnMuT1BU
+SU9OX0Fubm90YXRpb25CYXNlZE51bGxBbmFseXNpcywKIAkJCQkJCWlzRW5hYmxpbmcgPyBDb21w
+aWxlck9wdGlvbnMuRU5BQkxFRCA6IENvbXBpbGVyT3B0aW9ucy5ESVNBQkxFRCk7CiAJCQkJc2V0
+U2V2ZXJpdHkoQ29tcGlsZXJPcHRpb25zLk9QVElPTl9SZXBvcnROdWxsU3BlY1Zpb2xhdGlvbiwg
+c2V2ZXJpdHksIGlzRW5hYmxpbmcpOwotCQkJCXNldFNldmVyaXR5KENvbXBpbGVyT3B0aW9ucy5P
+UFRJT05fUmVwb3J0UG90ZW50aWFsTnVsbFNwZWNWaW9sYXRpb24sIHNldmVyaXR5LCBpc0VuYWJs
+aW5nKTsKLQkJCQlzZXRTZXZlcml0eShDb21waWxlck9wdGlvbnMuT1BUSU9OX1JlcG9ydE51bGxT
+cGVjSW5zdWZmaWNpZW50SW5mbywgc2V2ZXJpdHksIGlzRW5hYmxpbmcpOworCQkJCXNldFNldmVy
+aXR5KENvbXBpbGVyT3B0aW9ucy5PUFRJT05fUmVwb3J0TnVsbEFubm90YXRpb25JbmZlcmVuY2VD
+b25mbGljdCwgc2V2ZXJpdHksIGlzRW5hYmxpbmcpOworCQkJCXNldFNldmVyaXR5KENvbXBpbGVy
+T3B0aW9ucy5PUFRJT05fUmVwb3J0TnVsbFVuY2hlY2tlZENvbnZlcnNpb24sIHNldmVyaXR5LCBp
+c0VuYWJsaW5nKTsKIAkJCQlzZXRTZXZlcml0eShDb21waWxlck9wdGlvbnMuT1BUSU9OX1JlcG9y
+dFJlZHVuZGFudE51bGxBbm5vdGF0aW9uLCBzZXZlcml0eSwgaXNFbmFibGluZyk7CiAJCQkJcmV0
+dXJuOwogCQkJfQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3Jn
+L2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2ltcGwvQ29tcGlsZXJPcHRpb25zLmphdmEg
+Yi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwv
+Y29tcGlsZXIvaW1wbC9Db21waWxlck9wdGlvbnMuamF2YQppbmRleCA1ZWIwZGM3Li40YWIwMGI3
+IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvY29tcGlsZXIvaW1wbC9Db21waWxlck9wdGlvbnMuamF2YQorKysgYi9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGls
+ZXIvaW1wbC9Db21waWxlck9wdGlvbnMuamF2YQpAQCAtMTQ2LDggKzE0Niw4IEBACiAJcHVibGlj
+IHN0YXRpYyBmaW5hbCBTdHJpbmcgT1BUSU9OX1JlcG9ydFBvdGVudGlhbGx5VW5jbG9zZWRDbG9z
+ZWFibGUgPSAib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIucHJvYmxlbS5wb3RlbnRpYWxs
+eVVuY2xvc2VkQ2xvc2VhYmxlIjsgLy8kTk9OLU5MUy0xJAogCXB1YmxpYyBzdGF0aWMgZmluYWwg
+U3RyaW5nIE9QVElPTl9SZXBvcnRFeHBsaWNpdGx5Q2xvc2VkQXV0b0Nsb3NlYWJsZSA9ICJvcmcu
+ZWNsaXBzZS5qZHQuY29yZS5jb21waWxlci5wcm9ibGVtLmV4cGxpY2l0bHlDbG9zZWRBdXRvQ2xv
+c2VhYmxlIjsgLy8kTk9OLU5MUy0xJAogCXB1YmxpYyBzdGF0aWMgZmluYWwgU3RyaW5nIE9QVElP
+Tl9SZXBvcnROdWxsU3BlY1Zpb2xhdGlvbiA9ICJvcmcuZWNsaXBzZS5qZHQuY29yZS5jb21waWxl
+ci5wcm9ibGVtLm51bGxTcGVjVmlvbGF0aW9uIjsgIC8vJE5PTi1OTFMtMSQKLQlwdWJsaWMgc3Rh
+dGljIGZpbmFsIFN0cmluZyBPUFRJT05fUmVwb3J0UG90ZW50aWFsTnVsbFNwZWNWaW9sYXRpb24g
+PSAib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIucHJvYmxlbS5wb3RlbnRpYWxOdWxsU3Bl
+Y1Zpb2xhdGlvbiI7ICAvLyROT04tTkxTLTEkCi0JcHVibGljIHN0YXRpYyBmaW5hbCBTdHJpbmcg
+T1BUSU9OX1JlcG9ydE51bGxTcGVjSW5zdWZmaWNpZW50SW5mbyA9ICJvcmcuZWNsaXBzZS5qZHQu
+Y29yZS5jb21waWxlci5wcm9ibGVtLm51bGxTcGVjSW5zdWZmaWNpZW50SW5mbyI7ICAvLyROT04t
+TkxTLTEkCisJcHVibGljIHN0YXRpYyBmaW5hbCBTdHJpbmcgT1BUSU9OX1JlcG9ydE51bGxBbm5v
+dGF0aW9uSW5mZXJlbmNlQ29uZmxpY3QgPSAib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIu
+cHJvYmxlbS5udWxsQW5ub3RhdGlvbkluZmVyZW5jZUNvbmZsaWN0IjsgIC8vJE5PTi1OTFMtMSQK
+KwlwdWJsaWMgc3RhdGljIGZpbmFsIFN0cmluZyBPUFRJT05fUmVwb3J0TnVsbFVuY2hlY2tlZENv
+bnZlcnNpb24gPSAib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIucHJvYmxlbS5udWxsVW5j
+aGVja2VkQ29udmVyc2lvbiI7ICAvLyROT04tTkxTLTEkCiAJcHVibGljIHN0YXRpYyBmaW5hbCBT
+dHJpbmcgT1BUSU9OX1JlcG9ydFJlZHVuZGFudE51bGxBbm5vdGF0aW9uID0gIm9yZy5lY2xpcHNl
+LmpkdC5jb3JlLmNvbXBpbGVyLnByb2JsZW0ucmVkdW5kYW50TnVsbEFubm90YXRpb24iOyAgLy8k
+Tk9OLU5MUy0xJAogCXB1YmxpYyBzdGF0aWMgZmluYWwgU3RyaW5nIE9QVElPTl9Bbm5vdGF0aW9u
+QmFzZWROdWxsQW5hbHlzaXMgPSAib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIuYW5ub3Rh
+dGlvbi5udWxsYW5hbHlzaXMiOyAvLyROT04tTkxTLTEkCiAJcHVibGljIHN0YXRpYyBmaW5hbCBT
+dHJpbmcgT1BUSU9OX051bGxhYmxlQW5ub3RhdGlvbk5hbWUgPSAib3JnLmVjbGlwc2UuamR0LmNv
+cmUuY29tcGlsZXIuYW5ub3RhdGlvbi5udWxsYWJsZSI7IC8vJE5PTi1OTFMtMSQKQEAgLTI2NSw4
+ICsyNjUsOCBAQAogCXB1YmxpYyBzdGF0aWMgZmluYWwgaW50IFBvdGVudGlhbGx5VW5jbG9zZWRD
+bG9zZWFibGUgPSBJcnJpdGFudFNldC5HUk9VUDIgfCBBU1ROb2RlLkJpdDk7CiAJcHVibGljIHN0
+YXRpYyBmaW5hbCBpbnQgRXhwbGljaXRseUNsb3NlZEF1dG9DbG9zZWFibGUgPSBJcnJpdGFudFNl
+dC5HUk9VUDIgfCBBU1ROb2RlLkJpdDEwOwogCXB1YmxpYyBzdGF0aWMgZmluYWwgaW50IE51bGxT
+cGVjVmlvbGF0aW9uID0gSXJyaXRhbnRTZXQuR1JPVVAyIHwgQVNUTm9kZS5CaXQxMTsKLQlwdWJs
+aWMgc3RhdGljIGZpbmFsIGludCBQb3RlbnRpYWxOdWxsU3BlY1Zpb2xhdGlvbiA9IElycml0YW50
+U2V0LkdST1VQMiB8IEFTVE5vZGUuQml0MTI7Ci0JcHVibGljIHN0YXRpYyBmaW5hbCBpbnQgTnVs
+bFNwZWNJbnN1ZmZpY2llbnRJbmZvID0gSXJyaXRhbnRTZXQuR1JPVVAyIHwgQVNUTm9kZS5CaXQx
+MzsKKwlwdWJsaWMgc3RhdGljIGZpbmFsIGludCBOdWxsQW5ub3RhdGlvbkluZmVyZW5jZUNvbmZs
+aWN0ID0gSXJyaXRhbnRTZXQuR1JPVVAyIHwgQVNUTm9kZS5CaXQxMjsKKwlwdWJsaWMgc3RhdGlj
+IGZpbmFsIGludCBOdWxsVW5jaGVja2VkQ29udmVyc2lvbiA9IElycml0YW50U2V0LkdST1VQMiB8
+IEFTVE5vZGUuQml0MTM7CiAJcHVibGljIHN0YXRpYyBmaW5hbCBpbnQgUmVkdW5kYW50TnVsbEFu
+bm90YXRpb24gPSBJcnJpdGFudFNldC5HUk9VUDIgfCBBU1ROb2RlLkJpdDE0OwogCXB1YmxpYyBz
+dGF0aWMgZmluYWwgaW50IE1pc3NpbmdOb25OdWxsQnlEZWZhdWx0QW5ub3RhdGlvbiA9IElycml0
+YW50U2V0LkdST1VQMiB8IEFTVE5vZGUuQml0MTU7CiAKQEAgLTYxMCwxMCArNjEwLDEwIEBACiAJ
+CQkJcmV0dXJuIE9QVElPTl9SZXBvcnRFeHBsaWNpdGx5Q2xvc2VkQXV0b0Nsb3NlYWJsZTsKIAkJ
+CWNhc2UgTnVsbFNwZWNWaW9sYXRpb24gOgogCQkJCXJldHVybiBPUFRJT05fUmVwb3J0TnVsbFNw
+ZWNWaW9sYXRpb247Ci0JCQljYXNlIFBvdGVudGlhbE51bGxTcGVjVmlvbGF0aW9uIDoKLQkJCQly
+ZXR1cm4gT1BUSU9OX1JlcG9ydFBvdGVudGlhbE51bGxTcGVjVmlvbGF0aW9uOwotCQkJY2FzZSBO
+dWxsU3BlY0luc3VmZmljaWVudEluZm8gOgotCQkJCXJldHVybiBPUFRJT05fUmVwb3J0TnVsbFNw
+ZWNJbnN1ZmZpY2llbnRJbmZvOworCQkJY2FzZSBOdWxsQW5ub3RhdGlvbkluZmVyZW5jZUNvbmZs
+aWN0IDoKKwkJCQlyZXR1cm4gT1BUSU9OX1JlcG9ydE51bGxBbm5vdGF0aW9uSW5mZXJlbmNlQ29u
+ZmxpY3Q7CisJCQljYXNlIE51bGxVbmNoZWNrZWRDb252ZXJzaW9uIDoKKwkJCQlyZXR1cm4gT1BU
+SU9OX1JlcG9ydE51bGxVbmNoZWNrZWRDb252ZXJzaW9uOwogCQkJY2FzZSBSZWR1bmRhbnROdWxs
+QW5ub3RhdGlvbiA6CiAJCQkJcmV0dXJuIE9QVElPTl9SZXBvcnRSZWR1bmRhbnROdWxsQW5ub3Rh
+dGlvbjsKIAkJfQpAQCAtNzg4LDggKzc4OCw4IEBACiAJCQlPUFRJT05fTm9uTnVsbEJ5RGVmYXVs
+dEFubm90YXRpb25OYW1lLAogCQkJT1BUSU9OX1JlcG9ydE1pc3NpbmdOb25OdWxsQnlEZWZhdWx0
+QW5ub3RhdGlvbiwKIAkJCU9QVElPTl9SZXBvcnROdWxsU3BlY1Zpb2xhdGlvbiwKLQkJCU9QVElP
+Tl9SZXBvcnRQb3RlbnRpYWxOdWxsU3BlY1Zpb2xhdGlvbiwKLQkJCU9QVElPTl9SZXBvcnROdWxs
+U3BlY0luc3VmZmljaWVudEluZm8sCisJCQlPUFRJT05fUmVwb3J0TnVsbEFubm90YXRpb25JbmZl
+cmVuY2VDb25mbGljdCwKKwkJCU9QVElPTl9SZXBvcnROdWxsVW5jaGVja2VkQ29udmVyc2lvbiwK
+IAkJCU9QVElPTl9SZXBvcnRSZWR1bmRhbnROdWxsQW5ub3RhdGlvbgogCQl9OwogCQlyZXR1cm4g
+cmVzdWx0OwpAQCAtODU0LDggKzg1NCw4IEBACiAJCQljYXNlIFBvdGVudGlhbE51bGxSZWZlcmVu
+Y2UgOgogCQkJY2FzZSBSZWR1bmRhbnROdWxsQ2hlY2sgOgogCQkJY2FzZSBOdWxsU3BlY1Zpb2xh
+dGlvbiA6Ci0JCQljYXNlIFBvdGVudGlhbE51bGxTcGVjVmlvbGF0aW9uIDoKLQkJCWNhc2UgTnVs
+bFNwZWNJbnN1ZmZpY2llbnRJbmZvIDoKKwkJCWNhc2UgTnVsbEFubm90YXRpb25JbmZlcmVuY2VD
+b25mbGljdCA6CisJCQljYXNlIE51bGxVbmNoZWNrZWRDb252ZXJzaW9uIDoKIAkJCWNhc2UgUmVk
+dW5kYW50TnVsbEFubm90YXRpb24gOgogCQkJY2FzZSBNaXNzaW5nTm9uTnVsbEJ5RGVmYXVsdEFu
+bm90YXRpb246CiAJCQkJcmV0dXJuICJudWxsIjsgLy8kTk9OLU5MUy0xJApAQCAtMTA3Nyw4ICsx
+MDc3LDggQEAKIAkJb3B0aW9uc01hcC5wdXQoT1BUSU9OX1JlcG9ydEV4cGxpY2l0bHlDbG9zZWRB
+dXRvQ2xvc2VhYmxlLCBnZXRTZXZlcml0eVN0cmluZyhFeHBsaWNpdGx5Q2xvc2VkQXV0b0Nsb3Nl
+YWJsZSkpOwogCQlvcHRpb25zTWFwLnB1dChPUFRJT05fQW5ub3RhdGlvbkJhc2VkTnVsbEFuYWx5
+c2lzLCB0aGlzLmlzQW5ub3RhdGlvbkJhc2VkTnVsbEFuYWx5c2lzRW5hYmxlZCA/IEVOQUJMRUQg
+OiBESVNBQkxFRCk7CiAJCW9wdGlvbnNNYXAucHV0KE9QVElPTl9SZXBvcnROdWxsU3BlY1Zpb2xh
+dGlvbiwgZ2V0U2V2ZXJpdHlTdHJpbmcoTnVsbFNwZWNWaW9sYXRpb24pKTsKLQkJb3B0aW9uc01h
+cC5wdXQoT1BUSU9OX1JlcG9ydFBvdGVudGlhbE51bGxTcGVjVmlvbGF0aW9uLCBnZXRTZXZlcml0
+eVN0cmluZyhQb3RlbnRpYWxOdWxsU3BlY1Zpb2xhdGlvbikpOwotCQlvcHRpb25zTWFwLnB1dChP
+UFRJT05fUmVwb3J0TnVsbFNwZWNJbnN1ZmZpY2llbnRJbmZvLCBnZXRTZXZlcml0eVN0cmluZyhO
+dWxsU3BlY0luc3VmZmljaWVudEluZm8pKTsKKwkJb3B0aW9uc01hcC5wdXQoT1BUSU9OX1JlcG9y
+dE51bGxBbm5vdGF0aW9uSW5mZXJlbmNlQ29uZmxpY3QsIGdldFNldmVyaXR5U3RyaW5nKE51bGxB
+bm5vdGF0aW9uSW5mZXJlbmNlQ29uZmxpY3QpKTsKKwkJb3B0aW9uc01hcC5wdXQoT1BUSU9OX1Jl
+cG9ydE51bGxVbmNoZWNrZWRDb252ZXJzaW9uLCBnZXRTZXZlcml0eVN0cmluZyhOdWxsVW5jaGVj
+a2VkQ29udmVyc2lvbikpOwogCQlvcHRpb25zTWFwLnB1dChPUFRJT05fUmVwb3J0UmVkdW5kYW50
+TnVsbEFubm90YXRpb24sIGdldFNldmVyaXR5U3RyaW5nKFJlZHVuZGFudE51bGxBbm5vdGF0aW9u
+KSk7CiAJCW9wdGlvbnNNYXAucHV0KE9QVElPTl9OdWxsYWJsZUFubm90YXRpb25OYW1lLCBTdHJp
+bmcudmFsdWVPZihDaGFyT3BlcmF0aW9uLmNvbmNhdFdpdGgodGhpcy5udWxsYWJsZUFubm90YXRp
+b25OYW1lLCAnLicpKSk7CiAJCW9wdGlvbnNNYXAucHV0KE9QVElPTl9Ob25OdWxsQW5ub3RhdGlv
+bk5hbWUsIFN0cmluZy52YWx1ZU9mKENoYXJPcGVyYXRpb24uY29uY2F0V2l0aCh0aGlzLm5vbk51
+bGxBbm5vdGF0aW9uTmFtZSwgJy4nKSkpOwpAQCAtMTU0OCw4ICsxNTQ4LDggQEAKIAkJCQl9CiAJ
+CQkJLy8gImlnbm9yZSIgaXMgbm90IHZhbGlkIGZvciB0aGlzIG9wdGlvbgogCQkJfQotCQkJaWYg
+KChvcHRpb25WYWx1ZSA9IG9wdGlvbnNNYXAuZ2V0KE9QVElPTl9SZXBvcnRQb3RlbnRpYWxOdWxs
+U3BlY1Zpb2xhdGlvbikpICE9IG51bGwpIHVwZGF0ZVNldmVyaXR5KFBvdGVudGlhbE51bGxTcGVj
+VmlvbGF0aW9uLCBvcHRpb25WYWx1ZSk7Ci0JCQlpZiAoKG9wdGlvblZhbHVlID0gb3B0aW9uc01h
+cC5nZXQoT1BUSU9OX1JlcG9ydE51bGxTcGVjSW5zdWZmaWNpZW50SW5mbykpICE9IG51bGwpIHVw
+ZGF0ZVNldmVyaXR5KE51bGxTcGVjSW5zdWZmaWNpZW50SW5mbywgb3B0aW9uVmFsdWUpOworCQkJ
+aWYgKChvcHRpb25WYWx1ZSA9IG9wdGlvbnNNYXAuZ2V0KE9QVElPTl9SZXBvcnROdWxsQW5ub3Rh
+dGlvbkluZmVyZW5jZUNvbmZsaWN0KSkgIT0gbnVsbCkgdXBkYXRlU2V2ZXJpdHkoTnVsbEFubm90
+YXRpb25JbmZlcmVuY2VDb25mbGljdCwgb3B0aW9uVmFsdWUpOworCQkJaWYgKChvcHRpb25WYWx1
+ZSA9IG9wdGlvbnNNYXAuZ2V0KE9QVElPTl9SZXBvcnROdWxsVW5jaGVja2VkQ29udmVyc2lvbikp
+ICE9IG51bGwpIHVwZGF0ZVNldmVyaXR5KE51bGxVbmNoZWNrZWRDb252ZXJzaW9uLCBvcHRpb25W
+YWx1ZSk7CiAJCQlpZiAoKG9wdGlvblZhbHVlID0gb3B0aW9uc01hcC5nZXQoT1BUSU9OX1JlcG9y
+dFJlZHVuZGFudE51bGxBbm5vdGF0aW9uKSkgIT0gbnVsbCkgdXBkYXRlU2V2ZXJpdHkoUmVkdW5k
+YW50TnVsbEFubm90YXRpb24sIG9wdGlvblZhbHVlKTsKIAkJCWlmICgob3B0aW9uVmFsdWUgPSBv
+cHRpb25zTWFwLmdldChPUFRJT05fTnVsbGFibGVBbm5vdGF0aW9uTmFtZSkpICE9IG51bGwpIHsK
+IAkJCQl0aGlzLm51bGxhYmxlQW5ub3RhdGlvbk5hbWUgPSBDaGFyT3BlcmF0aW9uLnNwbGl0QW5k
+VHJpbU9uKCcuJywgKChTdHJpbmcpb3B0aW9uVmFsdWUpLnRvQ2hhckFycmF5KCkpOwpkaWZmIC0t
+Z2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVy
+bmFsL2NvbXBpbGVyL2ltcGwvSXJyaXRhbnRTZXQuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+L2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9pbXBsL0lycml0YW50
+U2V0LmphdmEKaW5kZXggMWY1M2ZmNy4uNmExYWE3NiAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2Uu
+amR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2ltcGwv
+SXJyaXRhbnRTZXQuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcv
+ZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvaW1wbC9JcnJpdGFudFNldC5qYXZhCkBAIC0x
+MDksMTIgKzEwOSwxMiBAQAogCQkJCUNvbXBpbGVyT3B0aW9ucy5EZWFkQ29kZQogCQkJCXxDb21w
+aWxlck9wdGlvbnMuVGFza3MKIAkJCQl8Q29tcGlsZXJPcHRpb25zLlVuY2xvc2VkQ2xvc2VhYmxl
+Ci0JCQkJfENvbXBpbGVyT3B0aW9ucy5OdWxsU3BlY0luc3VmZmljaWVudEluZm8KKwkJCQl8Q29t
+cGlsZXJPcHRpb25zLk51bGxVbmNoZWNrZWRDb252ZXJzaW9uCiAJCQkJfENvbXBpbGVyT3B0aW9u
+cy5SZWR1bmRhbnROdWxsQW5ub3RhdGlvbik7CiAJCS8vIGRlZmF1bHQgZXJyb3JzIElGIEFubm90
+YXRpb25CYXNlZE51bGxBbmFseXNpcyBpcyBlbmFibGVkOgogCQlDT01QSUxFUl9ERUZBVUxUX0VS
+Uk9SUy5zZXQoCiAJCQkJQ29tcGlsZXJPcHRpb25zLk51bGxTcGVjVmlvbGF0aW9uCi0JCQkJfENv
+bXBpbGVyT3B0aW9ucy5Qb3RlbnRpYWxOdWxsU3BlY1Zpb2xhdGlvbik7CisJCQkJfENvbXBpbGVy
+T3B0aW9ucy5OdWxsQW5ub3RhdGlvbkluZmVyZW5jZUNvbmZsaWN0KTsKIAogCQlBTEwuc2V0QWxs
+KCk7CiAJCUhJRElORwpAQCAtMTI1LDggKzEyNSw4IEBACiAJCQkuc2V0KENvbXBpbGVyT3B0aW9u
+cy5Qb3RlbnRpYWxOdWxsUmVmZXJlbmNlKQogCQkJLnNldChDb21waWxlck9wdGlvbnMuUmVkdW5k
+YW50TnVsbENoZWNrKQogCQkJLnNldChDb21waWxlck9wdGlvbnMuTnVsbFNwZWNWaW9sYXRpb24p
+Ci0JCQkuc2V0KENvbXBpbGVyT3B0aW9ucy5Qb3RlbnRpYWxOdWxsU3BlY1Zpb2xhdGlvbikKLQkJ
+CS5zZXQoQ29tcGlsZXJPcHRpb25zLk51bGxTcGVjSW5zdWZmaWNpZW50SW5mbykKKwkJCS5zZXQo
+Q29tcGlsZXJPcHRpb25zLk51bGxBbm5vdGF0aW9uSW5mZXJlbmNlQ29uZmxpY3QpCisJCQkuc2V0
+KENvbXBpbGVyT3B0aW9ucy5OdWxsVW5jaGVja2VkQ29udmVyc2lvbikKIAkJCS5zZXQoQ29tcGls
+ZXJPcHRpb25zLlJlZHVuZGFudE51bGxBbm5vdGF0aW9uKTsKIAogCQlSRVNUUklDVElPTi5zZXQo
+Q29tcGlsZXJPcHRpb25zLkRpc2NvdXJhZ2VkUmVmZXJlbmNlKTsKZGlmZiAtLWdpdCBhL29yZy5l
+Y2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxl
+ci9wcm9ibGVtL1Byb2JsZW1SZXBvcnRlci5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29t
+cGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3Byb2JsZW0vUHJvYmxlbVJl
+cG9ydGVyLmphdmEKaW5kZXggYjYxZTk1NS4uNmEyZTdmNyAxMDA2NDQKLS0tIGEvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3By
+b2JsZW0vUHJvYmxlbVJlcG9ydGVyLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29t
+cGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3Byb2JsZW0vUHJvYmxlbVJl
+cG9ydGVyLmphdmEKQEAgLTMxOSw5ICszMTksOSBAQAogCQkJcmV0dXJuIENvbXBpbGVyT3B0aW9u
+cy5OdWxsU3BlY1Zpb2xhdGlvbjsKIAogCQljYXNlIElQcm9ibGVtLlJlcXVpcmVkTm9uTnVsbEJ1
+dFByb3ZpZGVkUG90ZW50aWFsTnVsbDoKLQkJCXJldHVybiBDb21waWxlck9wdGlvbnMuUG90ZW50
+aWFsTnVsbFNwZWNWaW9sYXRpb247CisJCQlyZXR1cm4gQ29tcGlsZXJPcHRpb25zLk51bGxBbm5v
+dGF0aW9uSW5mZXJlbmNlQ29uZmxpY3Q7CiAJCWNhc2UgSVByb2JsZW0uUmVxdWlyZWROb25OdWxs
+QnV0UHJvdmlkZWRVbmtub3duOgotCQkJcmV0dXJuIENvbXBpbGVyT3B0aW9ucy5OdWxsU3BlY0lu
+c3VmZmljaWVudEluZm87CisJCQlyZXR1cm4gQ29tcGlsZXJPcHRpb25zLk51bGxVbmNoZWNrZWRD
+b252ZXJzaW9uOwogCQljYXNlIElQcm9ibGVtLlJlZHVuZGFudE51bGxBbm5vdGF0aW9uOgogCQlj
+YXNlIElQcm9ibGVtLlJlZHVuZGFudE51bGxEZWZhdWx0QW5ub3RhdGlvbjoKIAkJY2FzZSBJUHJv
+YmxlbS5SZWR1bmRhbnROdWxsRGVmYXVsdEFubm90YXRpb25QYWNrYWdlOgpAQCAtNTgwLDggKzU4
+MCw4IEBACiAJCQkJcmV0dXJuIENhdGVnb3JpemVkUHJvYmxlbS5DQVRfUkVTVFJJQ1RJT047CiAK
+IAkJCWNhc2UgQ29tcGlsZXJPcHRpb25zLk51bGxTcGVjVmlvbGF0aW9uIDoKLQkJCWNhc2UgQ29t
+cGlsZXJPcHRpb25zLlBvdGVudGlhbE51bGxTcGVjVmlvbGF0aW9uIDoKLQkJCWNhc2UgQ29tcGls
+ZXJPcHRpb25zLk51bGxTcGVjSW5zdWZmaWNpZW50SW5mbyA6CisJCQljYXNlIENvbXBpbGVyT3B0
+aW9ucy5OdWxsQW5ub3RhdGlvbkluZmVyZW5jZUNvbmZsaWN0IDoKKwkJCWNhc2UgQ29tcGlsZXJP
+cHRpb25zLk51bGxVbmNoZWNrZWRDb252ZXJzaW9uIDoKIAkJCWNhc2UgQ29tcGlsZXJPcHRpb25z
+Lk1pc3NpbmdOb25OdWxsQnlEZWZhdWx0QW5ub3RhdGlvbjoKIAkJCQlyZXR1cm4gQ2F0ZWdvcml6
+ZWRQcm9ibGVtLkNBVF9QT1RFTlRJQUxfUFJPR1JBTU1JTkdfUFJPQkxFTTsKIAkJCWNhc2UgQ29t
+cGlsZXJPcHRpb25zLlJlZHVuZGFudE51bGxBbm5vdGF0aW9uIDoKZGlmZiAtLWdpdCBhL29yZy5l
+Y2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9jb3JlL0phdmFDb3JlLmphdmEg
+Yi9vcmcuZWNsaXBzZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvY29yZS9KYXZhQ29y
+ZS5qYXZhCmluZGV4IDlkZTQ3N2YuLmRjNjUwMTMgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9jb3JlL0phdmFDb3JlLmphdmEKKysrIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2NvcmUvSmF2YUNvcmUuamF2
+YQpAQCAtMTQyMiw4ICsxNDIyLDggQEAKIAkgKiAgICBhcyBzcGVjaWZ5aW5nIHdoZXRoZXIgb3Ig
+bm90IGEgZ2l2ZW4gdHlwZSBpbmNsdWRlcyB0aGUgdmFsdWUgPGNvZGU+bnVsbDwvY29kZT4uPC9w
+PgogCSAqIDxwPlRoZSBlZmZlY3Qgb2YgdGhlc2UgYW5hbHlzZXMgaXMgZnVydGhlciBjb250cm9s
+bGVkIGJ5IHRoZSBvcHRpb25zCiAJICogICAge0BsaW5rICNDT01QSUxFUl9QQl9OVUxMX1NQRUNJ
+RklDQVRJT05fVklPTEFUSU9OfSwKLQkgKiAgICB7QGxpbmsgI0NPTVBJTEVSX1BCX1BPVEVOVElB
+TF9OVUxMX1NQRUNJRklDQVRJT05fVklPTEFUSU9OfSBhbmQKLQkgKiAgICB7QGxpbmsgI0NPTVBJ
+TEVSX1BCX05VTExfU1BFQ0lGSUNBVElPTl9JTlNVRkZJQ0lFTlRfSU5GT30uCisJICogICAge0Bs
+aW5rICNDT01QSUxFUl9QQl9OVUxMX0FOTk9UQVRJT05fSU5GRVJFTkNFX0NPTkZMSUNUfSBhbmQK
+KwkgKiAgICB7QGxpbmsgI0NPTVBJTEVSX1BCX05VTExfVU5DSEVDS0VEX0NPTlZFUlNJT059Lgog
+CSAqIDwvcD4KIAkgKiA8ZGw+CiAJICogPGR0Pk9wdGlvbiBpZDo8L2R0PjxkZD48Y29kZT4ib3Jn
+LmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIuYW5ub3RhdGlvbi5udWxsYW5hbHlzaXMiPC9jb2Rl
+PjwvZGQ+CkBAIC0xNDQ4LDggKzE0NDgsOCBAQAogCSAqICAgIHtAbGluayAjQ09NUElMRVJfUEJf
+UE9URU5USUFMX05VTExfUkVGRVJFTkNFfS48L3A+CiAJICogPHA+VGhlIGNvbXBpbGVyIG1heSBm
+dXJ0aGVybW9yZSBjaGVjayBhZGhlcmVuY2UgdG8gdGhlIG51bGwgc3BlY2lmaWNhdGlvbiBhcwog
+CSAqICAgIGZ1cnRoZXIgY29udHJvbGxlZCBieSB7QGxpbmsgI0NPTVBJTEVSX1BCX05VTExfU1BF
+Q0lGSUNBVElPTl9WSU9MQVRJT059LAotCSAqICAgIHtAbGluayAjQ09NUElMRVJfUEJfUE9URU5U
+SUFMX05VTExfU1BFQ0lGSUNBVElPTl9WSU9MQVRJT059IGFuZAotCSAqICAgIHtAbGluayAjQ09N
+UElMRVJfUEJfTlVMTF9TUEVDSUZJQ0FUSU9OX0lOU1VGRklDSUVOVF9JTkZPfS48L3A+CisJICog
+ICAge0BsaW5rICNDT01QSUxFUl9QQl9OVUxMX0FOTk9UQVRJT05fSU5GRVJFTkNFX0NPTkZMSUNU
+fSBhbmQKKwkgKiAgICB7QGxpbmsgI0NPTVBJTEVSX1BCX05VTExfVU5DSEVDS0VEX0NPTlZFUlNJ
+T059LjwvcD4KIAkgKiA8cD5UaGlzIG9wdGlvbiBvbmx5IGhhcyBhbiBlZmZlY3QgaWYgdGhlIG9w
+dGlvbiB7QGxpbmsgI0NPTVBJTEVSX0FOTk9UQVRJT05fTlVMTF9BTkFMWVNJU30gaXMgZW5hYmxl
+ZC48L3A+CiAJICogPGRsPgogCSAqIDxkdD5PcHRpb24gaWQ6PC9kdD48ZGQ+PGNvZGU+Im9yZy5l
+Y2xpcHNlLmpkdC5jb3JlLmNvbXBpbGVyLmFubm90YXRpb24ubnVsbGFibGUiPC9jb2RlPjwvZGQ+
+CkBAIC0xNDc0LDggKzE0NzQsOCBAQAogCSAqICAgIHdpbGwgbmV2ZXIgb2NjdXIgYXQgcnVudGlt
+ZSBpbiB0aGVzZSBwb3NpdGlvbnMuPC9wPgogCSAqIDxwPlRoZSBjb21waWxlciBtYXkgZnVydGhl
+cm1vcmUgY2hlY2sgYWRoZXJlbmNlIHRvIHRoZSBudWxsIHNwZWNpZmljYXRpb24gYXMgZnVydGhl
+cgogCSAqICAgIGNvbnRyb2xsZWQgYnkge0BsaW5rICNDT01QSUxFUl9QQl9OVUxMX1NQRUNJRklD
+QVRJT05fVklPTEFUSU9OfSwKLQkgKiAgICB7QGxpbmsgI0NPTVBJTEVSX1BCX1BPVEVOVElBTF9O
+VUxMX1NQRUNJRklDQVRJT05fVklPTEFUSU9OfSBhbmQKLQkgKiAgICB7QGxpbmsgI0NPTVBJTEVS
+X1BCX05VTExfU1BFQ0lGSUNBVElPTl9JTlNVRkZJQ0lFTlRfSU5GT30uPC9wPgorCSAqICAgIHtA
+bGluayAjQ09NUElMRVJfUEJfTlVMTF9BTk5PVEFUSU9OX0lORkVSRU5DRV9DT05GTElDVH0gYW5k
+CisJICogICAge0BsaW5rICNDT01QSUxFUl9QQl9OVUxMX1VOQ0hFQ0tFRF9DT05WRVJTSU9OfS48
+L3A+CiAJICogPHA+VGhpcyBvcHRpb24gb25seSBoYXMgYW4gZWZmZWN0IGlmIHRoZSBvcHRpb24g
+e0BsaW5rICNDT01QSUxFUl9BTk5PVEFUSU9OX05VTExfQU5BTFlTSVN9IGlzIGVuYWJsZWQuPC9w
+PgogCSAqIDxkbD4KIAkgKiA8ZHQ+T3B0aW9uIGlkOjwvZHQ+PGRkPjxjb2RlPiJvcmcuZWNsaXBz
+ZS5qZHQuY29yZS5jb21waWxlci5hbm5vdGF0aW9uLm5vbm51bGwiPC9jb2RlPjwvZGQ+CkBAIC0x
+NTI5LDEzICsxNTI5LDEzIEBACiAJICogPHA+RGVwZW5kaW5nIG9uIHRoaXMgb3B0aW9uLCB0aGUg
+Y29tcGlsZXIgd2lsbCBpc3N1ZSBlaXRoZXIgYW4gZXJyb3Igb3IgYSB3YXJuaW5nCiAJICogICAg
+d2hlbmV2ZXIgb25lIG9mIHRoZSBmb2xsb3dpbmcgc2l0dWF0aW9ucyBpcyBkZXRlY3RlZDoKIAkg
+KiAgICA8b2w+Ci0JICogICAgPGxpPkEgbWV0aG9kIGRlY2xhcmVkIHdpdGggYSBub25udWxsIGFu
+bm90YXRpb24gcmV0dXJucyBhbiBleHByZXNzaW9uCXRoYXQgaXMKLQkgKiAgICAgICAgICBzdGF0
+aWNhbGx5IGtub3duIHRvIGV2YWx1YXRlIHRvIGEgbnVsbCB2YWx1ZS48L2xpPgotCSAqICAgIDxs
+aT5BbiBleHByZXNzaW9uIHRoYXQgaXMgc3RhdGljYWxseSBrbm93biB0byBldmFsdWF0ZSB0byBh
+IG51bGwgdmFsdWUgaXMJcGFzc2VkCi0JICogICAgICAgIGFzIGFuIGFyZ3VtZW50IGluIGEgbWV0
+aG9kIGNhbGwgd2hlcmUgdGhlIGNvcnJlc3BvbmRpbmcgcGFyYW1ldGVyIG9mIHRoZSBjYWxsZWQK
+LQkgKiAgICAgICAgbWV0aG9kIGlzIGRlY2xhcmVkIHdpdGggYSBub25udWxsIGFubm90YXRpb24u
+PC9saT4KLQkgKiAgICA8bGk+QW4gZXhwcmVzc2lvbiB0aGF0IGlzIHN0YXRpY2FsbHkga25vd24g
+dG8gZXZhbHVhdGUgdG8gYSBudWxsIHZhbHVlIGlzCWFzc2lnbmVkCi0JICogICAgICAgIHRvIGEg
+bG9jYWwgdmFyaWFibGUgdGhhdCBpcyBkZWNsYXJlZCB3aXRoIGEgbm9ubnVsbCBhbm5vdGF0aW9u
+LjwvbGk+CisJICogICAgPGxpPkEgbWV0aG9kIGRlY2xhcmVkIHdpdGggYSBub25udWxsIGFubm90
+YXRpb24gcmV0dXJucyBhCisJICogICAgICAgIDxlbT5udWxsYWJsZTwvZW0+IGV4cHJlc3Npb24u
+PC9saT4KKwkgKiAgICA8bGk+QSA8ZW0+bnVsbGFibGU8L2VtPiBleHByZXNzaW9uIGlzIHBhc3Nl
+ZAorICAgICAqICAgICAgICBhcyBhbiBhcmd1bWVudCBpbiBhIG1ldGhvZCBjYWxsIHdoZXJlIHRo
+ZSBjb3JyZXNwb25kaW5nIHBhcmFtZXRlciBvZiB0aGUgY2FsbGVkCisgICAgICogICAgICAgIG1l
+dGhvZCBpcyBkZWNsYXJlZCB3aXRoIGEgbm9ubnVsbCBhbm5vdGF0aW9uLjwvbGk+CisJICogICAg
+PGxpPkEgPGVtPm51bGxhYmxlPC9lbT4gZXhwcmVzc2lvbiBpcyBhc3NpZ25lZAorICAgICAqICAg
+ICAgICB0byBhIGxvY2FsIHZhcmlhYmxlIHRoYXQgaXMgZGVjbGFyZWQgd2l0aCBhIG5vbm51bGwg
+YW5ub3RhdGlvbi48L2xpPgogCSAqICAgIDxsaT5BIG1ldGhvZCB0aGF0IG92ZXJyaWRlcyBhbiBp
+bmhlcml0ZWQgbWV0aG9kIGRlY2xhcmVkIHdpdGggYSBub25udWxsIGFubm90YXRpb24KIAkgKiAg
+ICAgICAgdHJpZXMgdG8gcmVsYXggdGhhdCBjb250cmFjdCBieSBzcGVjaWZ5aW5nIGEgbnVsbGFi
+bGUgYW5ub3RhdGlvbgogCSAqICAgICAgICAocHJvaGliaXRpb24gb2YgY29udHJhdmFyaWFudCBy
+ZXR1cm4pLjwvbGk+CkBAIC0xNTQ0LDYgKzE1NDQsOSBAQAogCSAqICAgICAgICBzcGVjaWZ5aW5n
+IGEgbm9ubnVsbCBhbm5vdGF0aW9uIGZvciBpdHMgY29ycmVzcG9uZGluZyBwYXJhbWV0ZXIKIAkg
+KiAgICAgICAgKHByb2hpYml0aW9uIG9mIGNvdmFyaWFudCBwYXJhbWV0ZXJzKS48L2xpPgogCSAq
+ICAgIDwvb2w+CisJICogICAgSW4gdGhlIGFib3ZlIGFuIGV4cHJlc3Npb24gaXMgY29uc2lkZXJl
+ZCBhcyA8ZW0+bnVsbGFibGU8L2VtPiBpZgorCSAqICAgIGVpdGhlciBpdCBpcyBzdGF0aWNhbGx5
+IGtub3duIHRvIGV2YWx1YXRlIHRvIHRoZSB2YWx1ZSA8Y29kZT5udWxsPC9jb2RlPiwgb3IgaWYg
+aXQgaXMKKwkgKiAgICBkZWNsYXJlZCB3aXRoIGEgbnVsbGFibGUgYW5ub3RhdGlvbi4KIAkgKiA8
+L3A+CiAJICogPHA+VGhlIGNvbXBpbGVyIG9wdGlvbnMge0BsaW5rICNDT01QSUxFUl9OT05OVUxM
+X0FOTk9UQVRJT05fTkFNRX0gYW5kCiAJICogICAge0BsaW5rICNDT01QSUxFUl9OVUxMQUJMRV9B
+Tk5PVEFUSU9OX05BTUV9IGNvbnRyb2wgd2hpY2ggYW5ub3RhdGlvbnMgdGhlIGNvbXBpbGVyCkBA
+IC0xNTYwLDcgKzE1NjMsNyBAQAogCSAqLwogCXB1YmxpYyBzdGF0aWMgZmluYWwgU3RyaW5nIENP
+TVBJTEVSX1BCX05VTExfU1BFQ0lGSUNBVElPTl9WSU9MQVRJT04gPSBQTFVHSU5fSUQgKyAiLmNv
+bXBpbGVyLnByb2JsZW0ubnVsbFNwZWNWaW9sYXRpb24iOyAvLyROT04tTkxTLTEkCiAJLyoqCi0J
+ICogQ29tcGlsZXIgb3B0aW9uIElEOiBSZXBvcnRpbmcgVmlvbGF0aW9ucyBvZiBOdWxsIFNwZWNp
+ZmljYXRpb25zIHdpdGggUG90ZW50aWFsIE51bGwgVmFsdWUuCisJICogQ29tcGlsZXIgb3B0aW9u
+IElEOiBSZXBvcnRpbmcgY29uZmxpY3RzIGJldHdlZW4gZGVjbGFyZWQgbnVsbCBhbm5vdGF0aW9u
+IGFuZCBpbmZlcnJlZCBudWxsIHZhbHVlIAogCSAqIDxwPldoZW4gZW5hYmxlZCwgdGhlIGNvbXBp
+bGVyIHdpbGwgaXNzdWUgYW4gZXJyb3Igb3IgYSB3YXJuaW5nIHdoZW5ldmVyIG9uZSBvZiB0aGUK
+IAkgKiAgICBmb2xsb3dpbmcgc2l0dWF0aW9ucyBpcyBkZXRlY3RlZDoKIAkgKiAgICA8b2w+CkBA
+IC0xNTc5LDE2ICsxNTgyLDE2IEBACiAJICogPC9wPgogCSAqIDxwPlRoaXMgb3B0aW9uIG9ubHkg
+aGFzIGFuIGVmZmVjdCBpZiB0aGUgb3B0aW9uIHtAbGluayAjQ09NUElMRVJfQU5OT1RBVElPTl9O
+VUxMX0FOQUxZU0lTfSBpcyBlbmFibGVkLjwvcD4KIAkgKiA8ZGw+Ci0JICogPGR0Pk9wdGlvbiBp
+ZDo8L2R0PjxkZD48Y29kZT4ib3JnLmVjbGlwc2UuamR0LmNvcmUuY29tcGlsZXIucHJvYmxlbS5w
+b3RlbnRpYWxOdWxsU3BlY1Zpb2xhdGlvbiI8L2NvZGU+PC9kZD4KKwkgKiA8ZHQ+T3B0aW9uIGlk
+OjwvZHQ+PGRkPjxjb2RlPiJvcmcuZWNsaXBzZS5qZHQuY29yZS5jb21waWxlci5wcm9ibGVtLm51
+bGxBbm5vdGF0aW9uSW5mZXJlbmNlQ29uZmxpY3QiPC9jb2RlPjwvZGQ+CiAJICogPGR0PlBvc3Np
+YmxlIHZhbHVlczo8L2R0PjxkZD48Y29kZT57ICJlcnJvciIsICJ3YXJuaW5nIiwgImlnbm9yZSIg
+fTwvY29kZT48L2RkPgogCSAqIDxkdD5EZWZhdWx0OjwvZHQ+PGRkPjxjb2RlPiJlcnJvciI8L2Nv
+ZGU+PC9kZD4KIAkgKiA8L2RsPgogCSAqIEBzaW5jZSAzLjgKIAkgKiBAY2F0ZWdvcnkgQ29tcGls
+ZXJPcHRpb25JRAogCSAqLwotCXB1YmxpYyBzdGF0aWMgZmluYWwgU3RyaW5nIENPTVBJTEVSX1BC
+X1BPVEVOVElBTF9OVUxMX1NQRUNJRklDQVRJT05fVklPTEFUSU9OID0gUExVR0lOX0lEICsgIi5j
+b21waWxlci5wcm9ibGVtLnBvdGVudGlhbE51bGxTcGVjVmlvbGF0aW9uIjsgLy8kTk9OLU5MUy0x
+JAorCXB1YmxpYyBzdGF0aWMgZmluYWwgU3RyaW5nIENPTVBJTEVSX1BCX05VTExfQU5OT1RBVElP
+Tl9JTkZFUkVOQ0VfQ09ORkxJQ1QgPSBQTFVHSU5fSUQgKyAiLmNvbXBpbGVyLnByb2JsZW0ubnVs
+bEFubm90YXRpb25JbmZlcmVuY2VDb25mbGljdCI7IC8vJE5PTi1OTFMtMSQKIAkvKioKLQkgKiBD
+b21waWxlciBvcHRpb24gSUQ6IFJlcG9ydGluZyBJbnN1ZmZpY2llbnQgSW5mb3JtYXRpb24gZm9y
+IEFuYWx5c2luZyBBZGhlcmVuY2UgdG8gTnVsbCBTcGVjaWZpY2F0aW9ucy4KKwkgKiBDb21waWxl
+ciBvcHRpb24gSUQ6IFJlcG9ydGluZyB1bmNoZWNrZWQgY29udmVyc2lvbiBmcm9tIGEgdHlwZSB3
+aXRoIHVua25vd24gbnVsbG5lc3MgdG8gYSBudWxsIGFubm90YXRlZCB0eXBlCiAJICogPHA+V2hl
+biBlbmFibGVkLCB0aGUgY29tcGlsZXIgd2lsbCBpc3N1ZSBhbiBlcnJvciBvciBhIHdhcm5pbmcg
+d2hlbmV2ZXIgb25lIG9mIHRoZQogCSAqICAgIGZvbGxvd2luZyBzaXR1YXRpb25zIGlzIGRldGVj
+dGVkOgogCSAqICAgIDxvbD4KQEAgLTE2MDMsNyArMTYwNiw3IEBACiAJICogICAgICAgIHN0YXRp
+Y2FsbHkgcHJvdmluZyB0aGF0IGl0IHdpbGwgbmV2ZXIgZXZhbHVhdGUgdG8gYSBudWxsIHZhbHVl
+IGF0IHJ1bnRpbWUKIAkgKiAgICAgICAgaXMgYXNzaWduZWQgdG8gYSBsb2NhbCB2YXJpYWJsZSB0
+aGF0IGlzIGRlY2xhcmVkIHdpdGggYSBub25udWxsIGFubm90YXRpb24uPC9saT4KIAkgKiAgICA8
+L29sPgotCSAqICAgIEluc3VmZmljaWVudCBudWxsbmVzcyBpbmZvcm1hdGlvbiBpcyB1c3VhbGx5
+IGEgY29uc2VxdWVuY2Ugb2YgdXNpbmcgb3RoZXIgdW5hbm5vdGF0ZWQKKwkgKiAgICBVbmNoZWNr
+ZWQgbnVsbCBjb252ZXJzaW9uIGlzIHVzdWFsbHkgYSBjb25zZXF1ZW5jZSBvZiB1c2luZyBvdGhl
+ciB1bmFubm90YXRlZAogCSAqICAgIHZhcmlhYmxlcyBvciBtZXRob2RzLgogCSAqIDwvcD4KIAkg
+KiA8cD5UaGUgY29tcGlsZXIgb3B0aW9ucyB7QGxpbmsgI0NPTVBJTEVSX05PTk5VTExfQU5OT1RB
+VElPTl9OQU1FfSBhbmQKQEAgLTE2MTIsMTQgKzE2MTUsMTQgQEAKIAkgKiA8L3A+CiAJICogPHA+
+VGhpcyBvcHRpb24gb25seSBoYXMgYW4gZWZmZWN0IGlmIHRoZSBvcHRpb24ge0BsaW5rICNDT01Q
+SUxFUl9BTk5PVEFUSU9OX05VTExfQU5BTFlTSVN9IGlzIGVuYWJsZWQuPC9wPgogCSAqIDxkbD4K
+LQkgKiA8ZHQ+T3B0aW9uIGlkOjwvZHQ+PGRkPjxjb2RlPiJvcmcuZWNsaXBzZS5qZHQuY29yZS5j
+b21waWxlci5wcm9ibGVtLm51bGxTcGVjSW5zdWZmaWNpZW50SW5mbyI8L2NvZGU+PC9kZD4KKwkg
+KiA8ZHQ+T3B0aW9uIGlkOjwvZHQ+PGRkPjxjb2RlPiJvcmcuZWNsaXBzZS5qZHQuY29yZS5jb21w
+aWxlci5wcm9ibGVtLm51bGxVbmNoZWNrZWRDb252ZXJzaW9uIjwvY29kZT48L2RkPgogCSAqIDxk
+dD5Qb3NzaWJsZSB2YWx1ZXM6PC9kdD48ZGQ+PGNvZGU+eyAiZXJyb3IiLCAid2FybmluZyIsICJp
+Z25vcmUiIH08L2NvZGU+PC9kZD4KIAkgKiA8ZHQ+RGVmYXVsdDo8L2R0PjxkZD48Y29kZT4id2Fy
+bmluZyI8L2NvZGU+PC9kZD4KIAkgKiA8L2RsPgogCSAqIEBzaW5jZSAzLjgKIAkgKiBAY2F0ZWdv
+cnkgQ29tcGlsZXJPcHRpb25JRAogCSAqLwotCXB1YmxpYyBzdGF0aWMgZmluYWwgU3RyaW5nIENP
+TVBJTEVSX1BCX05VTExfU1BFQ0lGSUNBVElPTl9JTlNVRkZJQ0lFTlRfSU5GTyA9IFBMVUdJTl9J
+RCArICIuY29tcGlsZXIucHJvYmxlbS5udWxsU3BlY0luc3VmZmljaWVudEluZm8iOyAvLyROT04t
+TkxTLTEkCisJcHVibGljIHN0YXRpYyBmaW5hbCBTdHJpbmcgQ09NUElMRVJfUEJfTlVMTF9VTkNI
+RUNLRURfQ09OVkVSU0lPTiA9IFBMVUdJTl9JRCArICIuY29tcGlsZXIucHJvYmxlbS5udWxsVW5j
+aGVja2VkQ29udmVyc2lvbiI7IC8vJE5PTi1OTFMtMSQKIAkvKioKIAkgKiBDb21waWxlciBvcHRp
+b24gSUQ6IFJlcG9ydGluZyBSZWR1bmRhbnQgTnVsbCBBbm5vdGF0aW9ucy4KIAkgKiA8cD5XaGVu
+IGVuYWJsZWQsIHRoZSBjb21waWxlciB3aWxsIGlzc3VlIGFuIGVycm9yIG9yIGEgd2FybmluZyB3
+aGVuIGEgbm9uLW51bGwgYW5ub3RhdGlvbg==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,112 @@
+BUG REPORT COMMENTS:
+User-Agent:       Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; .NET CLR 2.0.50727; .NET CLR 1.1.4322)
+Build Identifier: 
+
+On line 59 of CompilerEnvirons.java, the initFromContext method initializes the useDynamicScope field from the compileFunctionsWithDynamicScopeFlag of the passed-in context.  Instead, it should initialize that field with the value returned by cx.hasFeature(Context.FEATURE_DYNAMIC_SCOPE).
+
+Reproducible: Always
+
+Steps to Reproduce:
+1. Define a custom ContextFactory and override its hasFeature method to return true for the FEATURE_DYNAMIC_SCOPE feature.
+2. Enter a Context created by the custom ContextFactory and use it to compile a JavaScript function.
+Actual Results:  
+The compiled function does not use dynamic scoping. :-(
+
+Expected Results:  
+The compiled function should use dynamic scoping since the ContextFactory that created the Context being used for compilation returns true for hasFeature(Context.FEATURE_DYNAMIC_SCOPE).
+
+Workaround:
+Override the makeContext method in the custom ContextFactory and call cx.setCompileFunctionsWithDynamicScope(true).  Unfortunately, this call is deprecated and produces a warning.
+I've noticed this bug long ago, but chosen the simple workaround instead of digging for the cause (shame on me).
+
+This patch uses logical or to set the useDynamicScope field, checking both cx.hasFeature(Context.FEATURE_DYNAMIC_SCOPE) and cx.compileFunctionsWithDynamicScopeFlag, so behaviour for people using the old deprecated way for whatever reason will not change. 
+Oops, I think CompilerEnvirons is _meant_ to only check compileFunctionsWithDynamicScope, since the new dynamic scope implementation does not rely on special treatment at compile time. Can somebody confirm this? If so, consider my patch obsolte.
+Well, I can't say -- right now, nothing sets that flag in the current code, so it will always be false. As far as I can tell, it's being used by interpreted mode as well, so I guess it should probably use cx.hasFeature(). But I don't have enough insight to say for sure. Anyone else care to comment?
+I'm now pretty sure that CompilerEnvirons is meant to use the deprecated compileFunctionsWithDynamicScopeFlag. The new method for enabling per-thread scopes based on cx.hasFeature(Context.FEATURE_DYNAMIC_SCOPE) does not require any special compile time treatment, it does all its magic at runtime using the Context.topCallScope field. 
+
+The old Context.compileFunctionsWithDynamicScopeFlag method is broken in regard to nested functions: When a nested/local function is called, it operates on the local scope of the calling function, which can be pretty dangerous.
+
+Thus, I think this bug should be marked as INVALID.
+
+PS: It took some time and expermenting to find all this out. It would be good to add a note to the @deprecated tags in the corresponding Context methods. http://www.mozilla.org/rhino/apidocs/org/mozilla/javascript/Context.html#hasCompileFunctionsWithDynamicScope()
+
+So then how should the behavior of compileFunctionsWithDynamicScopeFlag be achieved without using that deprecated flag?  Simply returning true from cx.hasFeature(Context.FEATURE_DYNAMIC_SCOPE) does not produce the same results as setting compileFunctionsWithDynamicScopeFlag to true.
+(In reply to comment #5)
+> So then how should the behavior of compileFunctionsWithDynamicScopeFlag be
+> achieved without using that deprecated flag?  Simply returning true from
+> cx.hasFeature(Context.FEATURE_DYNAMIC_SCOPE) does not produce the same results
+> as setting compileFunctionsWithDynamicScopeFlag to true.
+
+It does for me. What different behaviour do you see?
+Compile a function f against a scope A.  The function should contain an access to a global variable x.  Now create a new scope B with no parent and with A as its prototype.  Set the variable x in scope B.  Execute function f against scope B.  The function cannot see the variable x, presumably because the function was compiled against scope A, which does not include x.
+
+Turning on compileFunctionsWithDynamicScopeFlag before compiling the function allows the use case to work as intended.  Returning true from cx.hasFeature(Context.FEATURE_DYNAMIC_SCOPE) does not.
+This is basically what examples/DynamicScopes.java does, which works for me, and it also works with our own software (Helma). 
+
+Are you calling ContextFactory.initGlobal() with your ContextFactory implementation somewhere? If yes, can you please post/attach your code so I can have a look?
+
+public static final ContextFactory CONTEXT_FACTORY = new ContextFactory() {
+
+	@Override
+	protected boolean hasFeature(Context cx, int featureIndex) {
+		switch (featureIndex) {
+			case Context.FEATURE_DYNAMIC_SCOPE:
+				return true;
+			default:
+				return super.hasFeature(cx, featureIndex);
+		}
+	}
+
+	@Override
+	protected Context makeContext() {
+		Context cx = super.makeContext();
+		cx.setCompileFunctionsWithDynamicScope(true);
+		return cx;
+	}
+
+};
+
+
+Deleting the makeContext() override causes behavior to break.
+
+
+I use my CONTEXT_FACTORY in the following way:
+
+CONTEXT_FACTORY.enter();
+try {
+    // do stuff
+}
+finally {
+    CONTEXT_FACTORY.exit();
+}
+Ok, I see now. Blame it on the Rhino Context/ContextFactory API, which is really confusing, to put it mildly. Right now, the only ways to associate a specific ContextFactory with the current Context are these:
+
+* Install it as global ContextFactory, using some code like this:
+     static {
+         // Initialize GlobalFactory with custom factory
+         ContextFactory.initGlobal(new MyFactory());
+     }
+
+* Use the ContextFactory.call(ContextAction) method on the ContextFactory you want to use.
+
+* Use static Context.call(ContextFactory, Callable, Scriptable, Scriptable, Object[]) method, passing your ContextFactory as first argument.
+
+All other ways, including using ContextFactory.enter(), will _not_ make the Context use the given ContextFactory to check features. Although this is counterintuitive, it isn't (strictly speaking) a bug, because it actually conforms to what the API doc says.
+
+IMO, calling ContextFactory.enter() should cause Context.factory to be set to the given ContextFactory. Unfortunately, this isn't easy to do because the Context.factory field carries additional semantics (if it is not null, it causes the context enter count to be ommitted because we know the context will be exited in the finally clause of the call() methods listed above). 
+
+With Rhino's current bahaviour, the right thing to do would probably be to subclass Context and override its hasFeature(int) method directly, and have your ContextFactory.makeContext() return an instance of this class. (Currently, the existence of Context.hasFeature() is a bit neglected in the API docs, might need fixing, too.)
+That behavior strictly breaks the factory pattern.  It's certainly not how I would have implemented it.  But thanks for explaining it to me.
+(In reply to comment #11)
+> That behavior strictly breaks the factory pattern.  It's certainly not how I
+> would have implemented it. 
+
+Me neither. Honestly, I don't even like the concept of a static "global" context factory. I'd be most glad to rewrite it if I could figure out how to do it without breaking backward compatibility.
+
+
+
+Independent of the issues with ContextFactory, what's the upshot for the original issue? Is the current use of the compileFunctionsWithDynamicScopeFlag acceptable, or do people believe it should change?
+My assessment in comment #4 was correct - CompilerEnvirons.useDynamicScope was the means by which the old, deprecated way was implemented. 
+
+I'm in the process of removing the old dynscope implementation so it will soon be gone. Closing as invalid.
+

@@ -1,0 +1,656 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>436542</bug_id>
+          
+          <creation_ts>2014-06-04 04:13:00 -0400</creation_ts>
+          <short_desc>Eclipse 4.4 compiler generates &quot;bad class file&quot; according to javac</short_desc>
+          <delta_ts>2014-08-28 07:07:55 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>critical</bug_severity>
+          <target_milestone>4.4.1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Neil Brown">nccb</reporter>
+          <assigned_to name="Sasikanth Bharadwaj">saammana</assigned_to>
+          <cc>amjdhsn</cc>
+    
+    <cc>cossacking</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>krampenschiesser</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>nccb</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>1</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="62958"
+          type_id="1"
+          status="+"
+          setter="srikanth_sankaran"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2412469</commentid>
+    <comment_count>0</comment_count>
+    <who name="Neil Brown">nccb</who>
+    <bug_when>2014-06-04 04:13:39 -0400</bug_when>
+    <thetext>This bug has been reproduced with Eclipse 4.4RC3, both on Linux and on Mac.  Here are the steps to reproduce.  Make a new project called test in your workspace.  In a test.Utility class, paste this code (I trimmed the class down as best I could to just the problematic part):
+
+/////
+package test;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import javafx.collections.ListChangeListener;
+import javafx.collections.ObservableList;
+
+public class Utility
+{
+    
+    public static &lt;T, R&gt; List&lt;R&gt; mapList(Collection&lt;T&gt; original, Function&lt;T, R&gt; func)
+    {
+        return original.stream().map(func).collect(Collectors.toList());
+    }
+    /**
+     * &quot;Binds&quot; the destination list to the observable source list with a transformation function applied.
+     * Whenever the source list changes, the destination list is altered to match by applying
+     * the given function to each element in the source list.
+     */
+    public static &lt;S, T&gt; void bindMap(List&lt;T&gt; dest, ObservableList&lt;S&gt; src, Function&lt;S, T&gt; func)
+    {
+        dest.clear();
+        dest.addAll(mapList(src, func));
+        
+        src.addListener((ListChangeListener&lt;S&gt;) changes -&gt; {
+            while (changes.next())
+            {
+                if (changes.wasPermutated() || changes.wasUpdated())
+                {
+                    // Same code for updated, replaced and permutation, just recalc the range:
+                    for (int i = changes.getFrom(); i &lt; changes.getTo(); i++)
+                        dest.set(i, func.apply(src.get(i)));
+                }
+                else
+                {
+                    for (int i = 0; i &lt; changes.getRemovedSize(); i++)
+                        dest.remove(changes.getFrom());
+                    for (int i = 0; i &lt; changes.getAddedSubList().size();i++)
+                        dest.add(i + changes.getFrom(), func.apply(changes.getAddedSubList().get(i)));
+                }
+            }
+        });
+        
+    }
+
+}
+
+//////
+
+Let eclipse compile that class -- it should compile successfully, once your source level is set to Java 8.  In a terminal window, create this simple Import.java file:
+
+//////
+import test.Utility;
+
+class Import
+{
+}
+//////
+
+Then ask javac (I am using 8u5, the current latest javac release) to compile it, giving the classpath to the .class files from the Eclipse project:
+
+javac Import.java -cp ~/workspace/test/bin/
+
+I get back the following response:
+
+Import.java:1: error: cannot access Utility
+import test.Utility;
+           ^
+  bad class file: /home/neil/workspace/test/bin/test/Utility.class
+    undeclared type variable: T
+    Please remove or make sure it appears in the correct subdirectory of the classpath.
+
+If I get javac to compile both classes, everything works fine.  If I get eclipse to compile both classes, everything works fine.  But if eclipse compiles the Utility class and javac the Import class (which I need to do in my workflow), I get this message.  My best guess is that this is an eclipse bug (generating a bad class file), so I am filing it here.  If you think it is instead a javac bug (rejecting a valid class file) then let me know and I will file it against javac instead.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2420241</commentid>
+    <comment_count>1</comment_count>
+    <who name="Neil Brown">nccb</who>
+    <bug_when>2014-06-25 04:47:52 -0400</bug_when>
+    <thetext>I am now trying to work around this issue.  It seems that the problem is something to do with a static method with generic type arguments, that uses a lambda in its body.  It seems that if I turn the lambdas in my functions (several functions trip this bug, not just the one I supplied) into anonymous inner classes with exactly the same behaviour, then javac no longer flags up the class as problematic.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2422143</commentid>
+    <comment_count>2</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2014-06-30 07:39:05 -0400</bug_when>
+    <thetext>Please investigate for 4.4.1.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2422938</commentid>
+    <comment_count>3</comment_count>
+      <attachid>244702</attachid>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-07-01 06:14:54 -0400</bug_when>
+    <thetext>Created attachment 244702
+Proposed fix and test</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2422939</commentid>
+    <comment_count>4</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-07-01 06:21:20 -0400</bug_when>
+    <thetext>The problem occurs because of the generic signature we generate for the lambda method
+
+This is what javac generates
+  private static void lambda$bindMap$0(java.util.List, java.util.function.Function, javafx.collections.ObservableList, javafx.collections.ListChangeListener$Change);
+    descriptor: (Ljava/util/List;Ljava/util/function/Function;Ljavafx/collections/ObservableList;Ljavafx/collections/ListChangeListener$Change;)V
+    flags: ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+
+and this is generated by eclipse
+
+private static void lambda$0(java.util.List&lt;T&gt;, java.util.function.Function&lt;S, T&gt;, javafx.collections.ObservableList&lt;S&gt;, javafx.collections.ListChangeListener$Change&lt;? extends S&gt;);
+    descriptor: (Ljava/util/List;Ljava/util/function/Function;Ljavafx/collections/ObservableList;Ljavafx/collections/ListChangeListener$Change;)V
+    flags: ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+    Signature: #80                          // (Ljava/util/List&lt;TT;&gt;;Ljava/util/function/Function&lt;TS;TT;&gt;;Ljavafx/collections/ObservableList&lt;TS;&gt;;Ljavafx/collections/ListChangeListener$Change&lt;+TS;&gt;;)V
+    
+Given that we explicitly set the typeVariables of the lambda expression&apos;s binding to NO_TYPE_VARIABLES, the generic signature should not be generated for lambda methods.
+Fix clears the flag ExtraCompilerModifiers.AccGenericSignature for the binding created for lambda expressions
+
+All tests pass with this change Srikanth, please review</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2423229</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-07-02 00:03:01 -0400</bug_when>
+    <thetext>(In reply to Sasikanth Bharadwaj from comment #4)
+&gt; The problem occurs because of the generic signature we generate for the
+&gt; lambda method
+
+[...]
+
+&gt; Given that we explicitly set the typeVariables of the lambda expression&apos;s
+&gt; binding to NO_TYPE_VARIABLES, the generic signature should not be generated
+&gt; for lambda methods.
+
+I think this analysis reads correct to me,
+
+&gt; Fix clears the flag ExtraCompilerModifiers.AccGenericSignature for the
+&gt; binding created for lambda expressions
+
+but I am not sure the fix is the most apt.
+
+Sasi, could you take a look at the uses of AccGenericSignature in LE.java
+to see if the correction should happen earlier rather than later at SMB
+level ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2423231</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-07-02 00:14:51 -0400</bug_when>
+    <thetext>I released the present fix here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=8bd886e250da1d7ba05246af4bcb8cd1f0eb1b1d
+
+as it is correct. 
+
+I&apos;ll wait for Sasi&apos;s evaluation on whether we could/should inhibit
+generic signature attribute earlier than what this fix does.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2428618</commentid>
+    <comment_count>7</comment_count>
+      <attachid>245133</attachid>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-07-17 02:38:03 -0400</bug_when>
+    <thetext>Created attachment 245133
+Patch to suppress the generic signature flag for lambda methods early</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2428620</commentid>
+    <comment_count>8</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-07-17 02:40:00 -0400</bug_when>
+    <thetext>(In reply to comment #6)
+&gt; I released the present fix here:
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=8bd886e250da1d7ba05246af4bcb8cd1f0eb1b1d
+&gt; 
+&gt; as it is correct.
+&gt; 
+&gt; I&apos;ll wait for Sasi&apos;s evaluation on whether we could/should inhibit
+&gt; generic signature attribute earlier than what this fix does.
+We could by not setting the flag on the binding created in resolveType. AllJava8Tests pass with this change as well, and I cannot think of any side effect of doing this, so attaching a patch with the new behavior.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2429667</commentid>
+    <comment_count>9</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-07-21 05:28:51 -0400</bug_when>
+    <thetext>My contribution for this defect fix complies with http://www.eclipse.org/legal/CoO.php</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2429670</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-07-21 05:32:52 -0400</bug_when>
+    <thetext>Thanks Sasi. Fix looks good. Released for 4.5 M1 here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=c06e13e9aeabb18d56c35dde17d5071d4d5aa159,
+
+Could you provide a cumulative patch for 4.4.1 ? TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2429691</commentid>
+    <comment_count>11</comment_count>
+      <attachid>245228</attachid>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-07-21 06:25:13 -0400</bug_when>
+    <thetext>Created attachment 245228
+cumulative patch on 4.4.1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2429692</commentid>
+    <comment_count>12</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-07-21 06:26:28 -0400</bug_when>
+    <thetext>(In reply to comment #10)
+&gt; Thanks Sasi. Fix looks good. Released for 4.5 M1 here:
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=c06e13e9aeabb18d56c35dde17d5071d4d5aa159,
+&gt; 
+&gt; Could you provide a cumulative patch for 4.4.1 ? TIA.
+Attached patch on 4.4.1. Verified AllJava8Tests pass</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2429724</commentid>
+    <comment_count>13</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-07-21 07:57:20 -0400</bug_when>
+    <thetext>*** Bug 438534 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2429727</commentid>
+    <comment_count>14</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-07-21 08:05:01 -0400</bug_when>
+    <thetext>Released for 4.4.1 here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=R4_4_maintenance&amp;id=413275ac625d1944e4aa6774723df12e1e2450c4.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435419</commentid>
+    <comment_count>15</comment_count>
+    <who name="Tadas">cossacking</who>
+    <bug_when>2014-08-05 01:25:03 -0400</bug_when>
+    <thetext>(In reply to Neil Brown from comment #1)
+&gt; I am now trying to work around this issue.  It seems that the problem is
+&gt; something to do with a static method with generic type arguments, that uses
+&gt; a lambda in its body.  It seems that if I turn the lambdas in my functions
+&gt; (several functions trip this bug, not just the one I supplied) into
+&gt; anonymous inner classes with exactly the same behaviour, then javac no
+&gt; longer flags up the class as problematic.
+
+The proposed workaround works perfectly, as expected :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435506</commentid>
+    <comment_count>16</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-08-05 04:33:33 -0400</bug_when>
+    <thetext>Verified for 4.5 M1 using I20140804-2000 build.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2436047</commentid>
+    <comment_count>17</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-08-06 00:39:21 -0400</bug_when>
+    <thetext>Keeping it in RESOLVED for 4.4.1 test cycle.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2436192</commentid>
+    <comment_count>18</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-08-06 06:12:04 -0400</bug_when>
+    <thetext>Verified fixed for Eclipse 4.5 M1 Build id: I20140804-2000</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2444777</commentid>
+    <comment_count>19</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-08-28 05:59:28 -0400</bug_when>
+    <thetext>Verified Fixed for Eclipse Luna SR1 4.4.1 Build id: M20140827-0800.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>244702</attachid>
+            <date>2014-07-01 06:14:00 -0400</date>
+            <delta_ts>2014-07-01 06:14:54 -0400</delta_ts>
+            <desc>Proposed fix and test</desc>
+            <filename>Fix-and-tests-for-bug-436542.patch</filename>
+            <type>text/plain</type>
+            <size>5530</size>
+            <attacher name="Sasikanth Bharadwaj">saammana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0xhbWJkYUV4cHJlc3Np
+b25zVGVzdC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTGFtYmRhRXhwcmVz
+c2lvbnNUZXN0LmphdmEKaW5kZXggODI1YTFlZC4uODUwMGMwNCAxMDA2NDQKLS0tIGEvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rl
+c3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTGFtYmRhRXhwcmVzc2lvbnNUZXN0LmphdmEKKysrIGIv
+b3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9j
+b3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTGFtYmRhRXhwcmVzc2lvbnNUZXN0LmphdmEK
+QEAgLTE0LDggKzE0LDE1IEBACiAgKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKi8KIHBhY2thZ2Ugb3Jn
+LmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIucmVncmVzc2lvbjsKIAoraW1wb3J0IGph
+dmEuaW8uRmlsZTsKIGltcG9ydCBqYXZhLnV0aWwuTWFwOwogCitpbXBvcnQgb3JnLmVjbGlwc2Uu
+amR0LmNvcmUuVG9vbEZhY3Rvcnk7CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMu
+dXRpbC5VdGlsOworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLnV0aWwuSUF0dHJpYnV0ZU5h
+bWVzQ29uc3RhbnRzOworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLnV0aWwuSUNsYXNzRmls
+ZUF0dHJpYnV0ZTsKK2ltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS51dGlsLklDbGFzc0ZpbGVS
+ZWFkZXI7CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUudXRpbC5JTWV0aG9kSW5mbzsKIGlt
+cG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuaW1wbC5Db21waWxlck9wdGlv
+bnM7CiAKIGltcG9ydCBqdW5pdC5mcmFtZXdvcmsuVGVzdDsKQEAgLTQ0MzQsNiArNDQ0MSw3MCBA
+QAogCQkJIn0iCiAJfSk7CiB9CisvLyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93
+X2J1Zy5jZ2k/aWQ9NDM2NTQyIDogRWNsaXBzZSA0LjQgY29tcGlsZXIgZ2VuZXJhdGVzICJiYWQg
+Y2xhc3MgZmlsZSIgYWNjb3JkaW5nIHRvIGphdmFjCitwdWJsaWMgdm9pZCB0ZXN0NDM2NTQyKCkg
+dGhyb3dzIEV4Y2VwdGlvbiB7CisJU3RyaW5nIGpyZURpcmVjdG9yeSA9IFV0aWwuZ2V0SlJFRGly
+ZWN0b3J5KCk7CisJU3RyaW5nIGpmeEphciA9IFV0aWwudG9OYXRpdmVQYXRoKGpyZURpcmVjdG9y
+eSArICIvbGliL2V4dC9qZnhydC5qYXIiKTsKKwl0aGlzLnJ1bkNvbmZvcm1UZXN0KAorCQluZXcg
+U3RyaW5nW10geworCQkJIlV0aWxpdHkuamF2YSIsCisJCQkiaW1wb3J0IGphdmEudXRpbC5Db2xs
+ZWN0aW9uO1xuIiArIAorCQkJImltcG9ydCBqYXZhLnV0aWwuTGlzdDtcbiIgKyAKKwkJCSJpbXBv
+cnQgamF2YS51dGlsLmZ1bmN0aW9uLkZ1bmN0aW9uO1xuIiArIAorCQkJImltcG9ydCBqYXZhLnV0
+aWwuc3RyZWFtLkNvbGxlY3RvcnM7XG4iICsgCisJCQkiaW1wb3J0IGphdmFmeC5jb2xsZWN0aW9u
+cy5MaXN0Q2hhbmdlTGlzdGVuZXI7XG4iICsgCisJCQkiaW1wb3J0IGphdmFmeC5jb2xsZWN0aW9u
+cy5PYnNlcnZhYmxlTGlzdDtcbiIgKyAKKwkJCSJwdWJsaWMgY2xhc3MgVXRpbGl0eSB7XG4iICsg
+CisJCQkiCXB1YmxpYyBzdGF0aWMgdm9pZCBtYWluKFN0cmluZ1tdIGFyZ3MpIHtcbiIgKyAKKwkJ
+CSIJCVN5c3RlbS5vdXQucHJpbnRsbihcIlN1Y2Nlc3NcIik7XG4iICsgCisJCQkiCX1cbiIgKyAK
+KwkJCSIgICAgcHVibGljIHN0YXRpYyA8VCwgUj4gTGlzdDxSPiBtYXBMaXN0KENvbGxlY3Rpb248
+VD4gb3JpZ2luYWwsIEZ1bmN0aW9uPFQsIFI+IGZ1bmMpIHtcbiIgKyAKKwkJCSIgICAgICAgIHJl
+dHVybiBvcmlnaW5hbC5zdHJlYW0oKS5tYXAoZnVuYykuY29sbGVjdChDb2xsZWN0b3JzLnRvTGlz
+dCgpKTtcbiIgKyAKKwkJCSIgICAgfVxuIiArIAorCQkJIiAgICAvKipcbiIgKyAKKwkJCSIgICAg
+ICogXCJCaW5kc1wiIHRoZSBkZXN0aW5hdGlvbiBsaXN0IHRvIHRoZSBvYnNlcnZhYmxlIHNvdXJj
+ZSBsaXN0IHdpdGggYSB0cmFuc2Zvcm1hdGlvbiBmdW5jdGlvbiBhcHBsaWVkLlxuIiArIAorCQkJ
+IiAgICAgKiBXaGVuZXZlciB0aGUgc291cmNlIGxpc3QgY2hhbmdlcywgdGhlIGRlc3RpbmF0aW9u
+IGxpc3QgaXMgYWx0ZXJlZCB0byBtYXRjaCBieSBhcHBseWluZ1xuIiArIAorCQkJIiAgICAgKiB0
+aGUgZ2l2ZW4gZnVuY3Rpb24gdG8gZWFjaCBlbGVtZW50IGluIHRoZSBzb3VyY2UgbGlzdC5cbiIg
+KyAKKwkJCSIgICAgICovXG4iICsgCisJCQkiICAgIHB1YmxpYyBzdGF0aWMgPFMsIFQ+IHZvaWQg
+YmluZE1hcChMaXN0PFQ+IGRlc3QsIE9ic2VydmFibGVMaXN0PFM+IHNyYywgRnVuY3Rpb248Uywg
+VD4gZnVuYykge1xuIiArIAorCQkJIiAgICAgICAgZGVzdC5jbGVhcigpO1xuIiArIAorCQkJIiAg
+ICAgICAgZGVzdC5hZGRBbGwobWFwTGlzdChzcmMsIGZ1bmMpKTtcbiIgKyAKKwkJCSIgICAgICAg
+IHNyYy5hZGRMaXN0ZW5lcigoTGlzdENoYW5nZUxpc3RlbmVyPFM+KSBjaGFuZ2VzIC0+IHtcbiIg
+KyAKKwkJCSIgICAgICAgICAgICB3aGlsZSAoY2hhbmdlcy5uZXh0KCkpIHtcbiIgKyAKKwkJCSIg
+ICAgICAgICAgICAgICAgaWYgKGNoYW5nZXMud2FzUGVybXV0YXRlZCgpIHx8IGNoYW5nZXMud2Fz
+VXBkYXRlZCgpKSB7XG4iICsgCisJCQkiICAgICAgICAgICAgICAgICAgICAvLyBTYW1lIGNvZGUg
+Zm9yIHVwZGF0ZWQsIHJlcGxhY2VkIGFuZCBwZXJtdXRhdGlvbiwganVzdCByZWNhbGMgdGhlIHJh
+bmdlOlxuIiArIAorCQkJIiAgICAgICAgICAgICAgICAgICAgZm9yIChpbnQgaSA9IGNoYW5nZXMu
+Z2V0RnJvbSgpOyBpIDwgY2hhbmdlcy5nZXRUbygpOyBpKyspXG4iICsgCisJCQkiICAgICAgICAg
+ICAgICAgICAgICAgICAgZGVzdC5zZXQoaSwgZnVuYy5hcHBseShzcmMuZ2V0KGkpKSk7XG4iICsg
+CisJCQkiICAgICAgICAgICAgICAgIH0gZWxzZSB7XG4iICsgCisJCQkiICAgICAgICAgICAgICAg
+ICAgICBmb3IgKGludCBpID0gMDsgaSA8IGNoYW5nZXMuZ2V0UmVtb3ZlZFNpemUoKTsgaSsrKVxu
+IiArIAorCQkJIiAgICAgICAgICAgICAgICAgICAgICAgIGRlc3QucmVtb3ZlKGNoYW5nZXMuZ2V0
+RnJvbSgpKTtcbiIgKyAKKwkJCSIgICAgICAgICAgICAgICAgICAgIGZvciAoaW50IGkgPSAwOyBp
+IDwgY2hhbmdlcy5nZXRBZGRlZFN1Ykxpc3QoKS5zaXplKCk7aSsrKVxuIiArIAorCQkJIiAgICAg
+ICAgICAgICAgICAgICAgICAgIGRlc3QuYWRkKGkgKyBjaGFuZ2VzLmdldEZyb20oKSwgZnVuYy5h
+cHBseShjaGFuZ2VzLmdldEFkZGVkU3ViTGlzdCgpLmdldChpKSkpO1xuIiArIAorCQkJIiAgICAg
+ICAgICAgICAgICB9XG4iICsgCisJCQkiICAgICAgICAgICAgfVxuIiArIAorCQkJIiAgICAgICAg
+fSk7XG4iICsgCisJCQkiICAgIH1cbiIgKyAKKwkJCSJ9IiwKKwkJfSwKKwkJIlN1Y2Nlc3MiLAor
+CQlVdGlsLmNvbmNhdFdpdGhDbGFzc0xpYnMobmV3IFN0cmluZ1tde2pmeEphcixPVVRQVVRfRElS
+fSwgZmFsc2UpLAorCQl0cnVlLAorCQludWxsKTsKKwlJQ2xhc3NGaWxlUmVhZGVyIGNsYXNzRmls
+ZVJlYWRlciA9IFRvb2xGYWN0b3J5LmNyZWF0ZURlZmF1bHRDbGFzc0ZpbGVSZWFkZXIoT1VUUFVU
+X0RJUiArIEZpbGUuc2VwYXJhdG9yICsgIlV0aWxpdHkuY2xhc3MiLCBJQ2xhc3NGaWxlUmVhZGVy
+LkFMTCk7CisJSU1ldGhvZEluZm8gbGFtYmRhTWV0aG9kID0gbnVsbDsKKwlJTWV0aG9kSW5mb1td
+IG1ldGhvZEluZm9zID0gY2xhc3NGaWxlUmVhZGVyLmdldE1ldGhvZEluZm9zKCk7CisJaW50IGxl
+bmd0aCA9IG1ldGhvZEluZm9zLmxlbmd0aDsKKwlmb3IgKGludCBpID0gMDsgaSA8IGxlbmd0aDsg
+aSsrKSB7CisJCUlNZXRob2RJbmZvIG1ldGhvZEluZm8gPSBtZXRob2RJbmZvc1tpXTsKKwkJaWYg
+KCJsYW1iZGEkMCIuZXF1YWxzKG5ldyBTdHJpbmcobWV0aG9kSW5mby5nZXROYW1lKCkpKSkgewor
+CQkJbGFtYmRhTWV0aG9kID0gbWV0aG9kSW5mbzsKKwkJCWJyZWFrOworCQl9CisJfQorCWFzc2Vy
+dE5vdE51bGwoIkNvdWxkIG5vdCBmaW5kIGxhbWJkYSBtZXRob2QiLGxhbWJkYU1ldGhvZCk7CisJ
+SUNsYXNzRmlsZUF0dHJpYnV0ZSBzaWduYXR1cmUgPSBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwu
+Y29yZS51dGlsLlV0aWwuZ2V0QXR0cmlidXRlKGxhbWJkYU1ldGhvZCwgSUF0dHJpYnV0ZU5hbWVz
+Q29uc3RhbnRzLlNJR05BVFVSRSk7CisJYXNzZXJ0TnVsbCgiRm91bmQgZ2VuZXJpYyBzaWduYXR1
+cmUgZm9yIGxhbWJkYSBtZXRob2QiLCBzaWduYXR1cmUpOworfQogcHVibGljIHN0YXRpYyBDbGFz
+cyB0ZXN0Q2xhc3MoKSB7CiAJcmV0dXJuIExhbWJkYUV4cHJlc3Npb25zVGVzdC5jbGFzczsKIH0K
+ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvU3ludGhldGljTWV0aG9kQmluZGluZy5qYXZhIGIv
+b3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2Nv
+bXBpbGVyL2xvb2t1cC9TeW50aGV0aWNNZXRob2RCaW5kaW5nLmphdmEKaW5kZXggYmM0OWQxMC4u
+MGEyMDAxMCAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2Vj
+bGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9TeW50aGV0aWNNZXRob2RCaW5kaW5n
+LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0
+L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9TeW50aGV0aWNNZXRob2RCaW5kaW5nLmphdmEKQEAg
+LTM1OSw3ICszNTksNyBAQAogCQl0aGlzLmxhbWJkYSA9IGxhbWJkYTsKIAkgICAgdGhpcy5kZWNs
+YXJpbmdDbGFzcyA9IGRlY2xhcmluZ0NsYXNzOwogCSAgICB0aGlzLnNlbGVjdG9yID0gbGFtYmRh
+TmFtZTsKLQkgICAgdGhpcy5tb2RpZmllcnMgPSBsYW1iZGEuYmluZGluZy5tb2RpZmllcnM7CisJ
+ICAgIHRoaXMubW9kaWZpZXJzID0gbGFtYmRhLmJpbmRpbmcubW9kaWZpZXJzICYgfkV4dHJhQ29t
+cGlsZXJNb2RpZmllcnMuQWNjR2VuZXJpY1NpZ25hdHVyZTsKIAkJdGhpcy50YWdCaXRzIHw9IChU
+YWdCaXRzLkFubm90YXRpb25SZXNvbHZlZCB8IFRhZ0JpdHMuRGVwcmVjYXRlZEFubm90YXRpb25S
+ZXNvbHZlZCkgfCAobGFtYmRhLmJpbmRpbmcudGFnQml0cyAmIFRhZ0JpdHMuSGFzUGFyYW1ldGVy
+QW5ub3RhdGlvbnMpOwogCSAgICB0aGlzLnJldHVyblR5cGUgPSBsYW1iZGEuYmluZGluZy5yZXR1
+cm5UeXBlOwogCSAgICB0aGlzLnBhcmFtZXRlcnMgPSBsYW1iZGEuYmluZGluZy5wYXJhbWV0ZXJz
+Ow==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>245133</attachid>
+            <date>2014-07-17 02:38:00 -0400</date>
+            <delta_ts>2014-07-17 02:38:03 -0400</delta_ts>
+            <desc>Patch to suppress the generic signature flag for lambda methods early</desc>
+            <filename>Suppress-the-generic-signature-flag-earlier-than-SMB.patch</filename>
+            <type>text/plain</type>
+            <size>2766</size>
+            <attacher name="Sasikanth Bharadwaj">saammana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9hc3QvTGFtYmRhRXhwcmVzc2lvbi5qYXZhIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Fz
+dC9MYW1iZGFFeHByZXNzaW9uLmphdmEKaW5kZXggOTk0MDdmZC4uZDU0ZTVhOCAxMDA2NDQKLS0t
+IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFs
+L2NvbXBpbGVyL2FzdC9MYW1iZGFFeHByZXNzaW9uLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9MYW1i
+ZGFFeHByZXNzaW9uLmphdmEKQEAgLTMzMyw5ICszMzMsNiBAQAogCQkJCQl9CiAJCQkJfQogCi0J
+CQkJVHlwZUJpbmRpbmcgbGVhZlR5cGUgPSBwYXJhbWV0ZXJUeXBlLmxlYWZDb21wb25lbnRUeXBl
+KCk7Ci0JCQkJaWYgKGxlYWZUeXBlIGluc3RhbmNlb2YgUmVmZXJlbmNlQmluZGluZyAmJiAoKChS
+ZWZlcmVuY2VCaW5kaW5nKSBsZWFmVHlwZSkubW9kaWZpZXJzICYgRXh0cmFDb21waWxlck1vZGlm
+aWVycy5BY2NHZW5lcmljU2lnbmF0dXJlKSAhPSAwKQotCQkJCQl0aGlzLmJpbmRpbmcubW9kaWZp
+ZXJzIHw9IEV4dHJhQ29tcGlsZXJNb2RpZmllcnMuQWNjR2VuZXJpY1NpZ25hdHVyZTsKIAkJCQlu
+ZXdQYXJhbWV0ZXJzW2ldID0gYXJndW1lbnQuYmluZCh0aGlzLnNjb3BlLCBwYXJhbWV0ZXJUeXBl
+LCBmYWxzZSk7CQkJCQogCQkJCWlmIChhcmd1bWVudC5hbm5vdGF0aW9ucyAhPSBudWxsKSB7CiAJ
+CQkJCXRoaXMuYmluZGluZy50YWdCaXRzIHw9IFRhZ0JpdHMuSGFzUGFyYW1ldGVyQW5ub3RhdGlv
+bnM7CkBAIC0zNzEsNyArMzY4LDYgQEAKIAkJCWlmICgoZXhjZXB0aW9uLnRhZ0JpdHMgJiBUYWdC
+aXRzLkhhc01pc3NpbmdUeXBlKSAhPSAwKSB7CiAJCQkJdGhpcy5iaW5kaW5nLnRhZ0JpdHMgfD0g
+VGFnQml0cy5IYXNNaXNzaW5nVHlwZTsKIAkJCX0KLQkJCXRoaXMuYmluZGluZy5tb2RpZmllcnMg
+fD0gKGV4Y2VwdGlvbi5tb2RpZmllcnMgJiBFeHRyYUNvbXBpbGVyTW9kaWZpZXJzLkFjY0dlbmVy
+aWNTaWduYXR1cmUpOwogCQl9CiAJCQogCQlUeXBlQmluZGluZyByZXR1cm5UeXBlID0gdGhpcy5i
+aW5kaW5nLnJldHVyblR5cGU7CkBAIC0zNzksOSArMzc1LDYgQEAKIAkJCWlmICgocmV0dXJuVHlw
+ZS50YWdCaXRzICYgVGFnQml0cy5IYXNNaXNzaW5nVHlwZSkgIT0gMCkgewogCQkJCXRoaXMuYmlu
+ZGluZy50YWdCaXRzIHw9IFRhZ0JpdHMuSGFzTWlzc2luZ1R5cGU7CiAJCQl9Ci0JCQlUeXBlQmlu
+ZGluZyBsZWFmVHlwZSA9IHJldHVyblR5cGUubGVhZkNvbXBvbmVudFR5cGUoKTsKLQkJCWlmIChs
+ZWFmVHlwZSBpbnN0YW5jZW9mIFJlZmVyZW5jZUJpbmRpbmcgJiYgKCgoUmVmZXJlbmNlQmluZGlu
+ZykgbGVhZlR5cGUpLm1vZGlmaWVycyAmIEV4dHJhQ29tcGlsZXJNb2RpZmllcnMuQWNjR2VuZXJp
+Y1NpZ25hdHVyZSkgIT0gMCkKLQkJCQl0aGlzLmJpbmRpbmcubW9kaWZpZXJzIHw9IEV4dHJhQ29t
+cGlsZXJNb2RpZmllcnMuQWNjR2VuZXJpY1NpZ25hdHVyZTsKIAkJfSAvLyBUT0RPIChzdGVwaGFu
+KTogZWxzZT8gKGNhbiB0aGF0IGhhcHBlbj8pCiAKIAkJaWYgKGhhdmVEZXNjcmlwdG9yICYmICFi
+dWdneUFyZ3VtZW50cyAmJiBibG9ja1Njb3BlLmNvbXBpbGVyT3B0aW9ucygpLmlzQW5ub3RhdGlv
+bkJhc2VkTnVsbEFuYWx5c2lzRW5hYmxlZCkgewpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9T
+eW50aGV0aWNNZXRob2RCaW5kaW5nLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxl
+ci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1N5bnRoZXRpY01ldGhv
+ZEJpbmRpbmcuamF2YQppbmRleCAwYTIwMDEwLi5iYzQ5ZDEwIDEwMDY0NAotLS0gYS9vcmcuZWNs
+aXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIv
+bG9va3VwL1N5bnRoZXRpY01ldGhvZEJpbmRpbmcuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1N5
+bnRoZXRpY01ldGhvZEJpbmRpbmcuamF2YQpAQCAtMzU5LDcgKzM1OSw3IEBACiAJCXRoaXMubGFt
+YmRhID0gbGFtYmRhOwogCSAgICB0aGlzLmRlY2xhcmluZ0NsYXNzID0gZGVjbGFyaW5nQ2xhc3M7
+CiAJICAgIHRoaXMuc2VsZWN0b3IgPSBsYW1iZGFOYW1lOwotCSAgICB0aGlzLm1vZGlmaWVycyA9
+IGxhbWJkYS5iaW5kaW5nLm1vZGlmaWVycyAmIH5FeHRyYUNvbXBpbGVyTW9kaWZpZXJzLkFjY0dl
+bmVyaWNTaWduYXR1cmU7CisJICAgIHRoaXMubW9kaWZpZXJzID0gbGFtYmRhLmJpbmRpbmcubW9k
+aWZpZXJzOwogCQl0aGlzLnRhZ0JpdHMgfD0gKFRhZ0JpdHMuQW5ub3RhdGlvblJlc29sdmVkIHwg
+VGFnQml0cy5EZXByZWNhdGVkQW5ub3RhdGlvblJlc29sdmVkKSB8IChsYW1iZGEuYmluZGluZy50
+YWdCaXRzICYgVGFnQml0cy5IYXNQYXJhbWV0ZXJBbm5vdGF0aW9ucyk7CiAJICAgIHRoaXMucmV0
+dXJuVHlwZSA9IGxhbWJkYS5iaW5kaW5nLnJldHVyblR5cGU7CiAJICAgIHRoaXMucGFyYW1ldGVy
+cyA9IGxhbWJkYS5iaW5kaW5nLnBhcmFtZXRlcnM7
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>245228</attachid>
+            <date>2014-07-21 06:25:00 -0400</date>
+            <delta_ts>2014-07-21 06:25:13 -0400</delta_ts>
+            <desc>cumulative patch on 4.4.1</desc>
+            <filename>Fix-for-436542-on-4.4.1.patch</filename>
+            <type>text/plain</type>
+            <size>6355</size>
+            <attacher name="Sasikanth Bharadwaj">saammana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0xhbWJkYUV4cHJlc3Np
+b25zVGVzdC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTGFtYmRhRXhwcmVz
+c2lvbnNUZXN0LmphdmEKaW5kZXggODI1YTFlZC4uODUwMGMwNCAxMDA2NDQKLS0tIGEvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rl
+c3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTGFtYmRhRXhwcmVzc2lvbnNUZXN0LmphdmEKKysrIGIv
+b3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9j
+b3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTGFtYmRhRXhwcmVzc2lvbnNUZXN0LmphdmEK
+QEAgLTE0LDggKzE0LDE1IEBACiAgKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKi8KIHBhY2thZ2Ugb3Jn
+LmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIucmVncmVzc2lvbjsKIAoraW1wb3J0IGph
+dmEuaW8uRmlsZTsKIGltcG9ydCBqYXZhLnV0aWwuTWFwOwogCitpbXBvcnQgb3JnLmVjbGlwc2Uu
+amR0LmNvcmUuVG9vbEZhY3Rvcnk7CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMu
+dXRpbC5VdGlsOworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLnV0aWwuSUF0dHJpYnV0ZU5h
+bWVzQ29uc3RhbnRzOworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLnV0aWwuSUNsYXNzRmls
+ZUF0dHJpYnV0ZTsKK2ltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS51dGlsLklDbGFzc0ZpbGVS
+ZWFkZXI7CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUudXRpbC5JTWV0aG9kSW5mbzsKIGlt
+cG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuaW1wbC5Db21waWxlck9wdGlv
+bnM7CiAKIGltcG9ydCBqdW5pdC5mcmFtZXdvcmsuVGVzdDsKQEAgLTQ0MzQsNiArNDQ0MSw3MCBA
+QAogCQkJIn0iCiAJfSk7CiB9CisvLyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93
+X2J1Zy5jZ2k/aWQ9NDM2NTQyIDogRWNsaXBzZSA0LjQgY29tcGlsZXIgZ2VuZXJhdGVzICJiYWQg
+Y2xhc3MgZmlsZSIgYWNjb3JkaW5nIHRvIGphdmFjCitwdWJsaWMgdm9pZCB0ZXN0NDM2NTQyKCkg
+dGhyb3dzIEV4Y2VwdGlvbiB7CisJU3RyaW5nIGpyZURpcmVjdG9yeSA9IFV0aWwuZ2V0SlJFRGly
+ZWN0b3J5KCk7CisJU3RyaW5nIGpmeEphciA9IFV0aWwudG9OYXRpdmVQYXRoKGpyZURpcmVjdG9y
+eSArICIvbGliL2V4dC9qZnhydC5qYXIiKTsKKwl0aGlzLnJ1bkNvbmZvcm1UZXN0KAorCQluZXcg
+U3RyaW5nW10geworCQkJIlV0aWxpdHkuamF2YSIsCisJCQkiaW1wb3J0IGphdmEudXRpbC5Db2xs
+ZWN0aW9uO1xuIiArIAorCQkJImltcG9ydCBqYXZhLnV0aWwuTGlzdDtcbiIgKyAKKwkJCSJpbXBv
+cnQgamF2YS51dGlsLmZ1bmN0aW9uLkZ1bmN0aW9uO1xuIiArIAorCQkJImltcG9ydCBqYXZhLnV0
+aWwuc3RyZWFtLkNvbGxlY3RvcnM7XG4iICsgCisJCQkiaW1wb3J0IGphdmFmeC5jb2xsZWN0aW9u
+cy5MaXN0Q2hhbmdlTGlzdGVuZXI7XG4iICsgCisJCQkiaW1wb3J0IGphdmFmeC5jb2xsZWN0aW9u
+cy5PYnNlcnZhYmxlTGlzdDtcbiIgKyAKKwkJCSJwdWJsaWMgY2xhc3MgVXRpbGl0eSB7XG4iICsg
+CisJCQkiCXB1YmxpYyBzdGF0aWMgdm9pZCBtYWluKFN0cmluZ1tdIGFyZ3MpIHtcbiIgKyAKKwkJ
+CSIJCVN5c3RlbS5vdXQucHJpbnRsbihcIlN1Y2Nlc3NcIik7XG4iICsgCisJCQkiCX1cbiIgKyAK
+KwkJCSIgICAgcHVibGljIHN0YXRpYyA8VCwgUj4gTGlzdDxSPiBtYXBMaXN0KENvbGxlY3Rpb248
+VD4gb3JpZ2luYWwsIEZ1bmN0aW9uPFQsIFI+IGZ1bmMpIHtcbiIgKyAKKwkJCSIgICAgICAgIHJl
+dHVybiBvcmlnaW5hbC5zdHJlYW0oKS5tYXAoZnVuYykuY29sbGVjdChDb2xsZWN0b3JzLnRvTGlz
+dCgpKTtcbiIgKyAKKwkJCSIgICAgfVxuIiArIAorCQkJIiAgICAvKipcbiIgKyAKKwkJCSIgICAg
+ICogXCJCaW5kc1wiIHRoZSBkZXN0aW5hdGlvbiBsaXN0IHRvIHRoZSBvYnNlcnZhYmxlIHNvdXJj
+ZSBsaXN0IHdpdGggYSB0cmFuc2Zvcm1hdGlvbiBmdW5jdGlvbiBhcHBsaWVkLlxuIiArIAorCQkJ
+IiAgICAgKiBXaGVuZXZlciB0aGUgc291cmNlIGxpc3QgY2hhbmdlcywgdGhlIGRlc3RpbmF0aW9u
+IGxpc3QgaXMgYWx0ZXJlZCB0byBtYXRjaCBieSBhcHBseWluZ1xuIiArIAorCQkJIiAgICAgKiB0
+aGUgZ2l2ZW4gZnVuY3Rpb24gdG8gZWFjaCBlbGVtZW50IGluIHRoZSBzb3VyY2UgbGlzdC5cbiIg
+KyAKKwkJCSIgICAgICovXG4iICsgCisJCQkiICAgIHB1YmxpYyBzdGF0aWMgPFMsIFQ+IHZvaWQg
+YmluZE1hcChMaXN0PFQ+IGRlc3QsIE9ic2VydmFibGVMaXN0PFM+IHNyYywgRnVuY3Rpb248Uywg
+VD4gZnVuYykge1xuIiArIAorCQkJIiAgICAgICAgZGVzdC5jbGVhcigpO1xuIiArIAorCQkJIiAg
+ICAgICAgZGVzdC5hZGRBbGwobWFwTGlzdChzcmMsIGZ1bmMpKTtcbiIgKyAKKwkJCSIgICAgICAg
+IHNyYy5hZGRMaXN0ZW5lcigoTGlzdENoYW5nZUxpc3RlbmVyPFM+KSBjaGFuZ2VzIC0+IHtcbiIg
+KyAKKwkJCSIgICAgICAgICAgICB3aGlsZSAoY2hhbmdlcy5uZXh0KCkpIHtcbiIgKyAKKwkJCSIg
+ICAgICAgICAgICAgICAgaWYgKGNoYW5nZXMud2FzUGVybXV0YXRlZCgpIHx8IGNoYW5nZXMud2Fz
+VXBkYXRlZCgpKSB7XG4iICsgCisJCQkiICAgICAgICAgICAgICAgICAgICAvLyBTYW1lIGNvZGUg
+Zm9yIHVwZGF0ZWQsIHJlcGxhY2VkIGFuZCBwZXJtdXRhdGlvbiwganVzdCByZWNhbGMgdGhlIHJh
+bmdlOlxuIiArIAorCQkJIiAgICAgICAgICAgICAgICAgICAgZm9yIChpbnQgaSA9IGNoYW5nZXMu
+Z2V0RnJvbSgpOyBpIDwgY2hhbmdlcy5nZXRUbygpOyBpKyspXG4iICsgCisJCQkiICAgICAgICAg
+ICAgICAgICAgICAgICAgZGVzdC5zZXQoaSwgZnVuYy5hcHBseShzcmMuZ2V0KGkpKSk7XG4iICsg
+CisJCQkiICAgICAgICAgICAgICAgIH0gZWxzZSB7XG4iICsgCisJCQkiICAgICAgICAgICAgICAg
+ICAgICBmb3IgKGludCBpID0gMDsgaSA8IGNoYW5nZXMuZ2V0UmVtb3ZlZFNpemUoKTsgaSsrKVxu
+IiArIAorCQkJIiAgICAgICAgICAgICAgICAgICAgICAgIGRlc3QucmVtb3ZlKGNoYW5nZXMuZ2V0
+RnJvbSgpKTtcbiIgKyAKKwkJCSIgICAgICAgICAgICAgICAgICAgIGZvciAoaW50IGkgPSAwOyBp
+IDwgY2hhbmdlcy5nZXRBZGRlZFN1Ykxpc3QoKS5zaXplKCk7aSsrKVxuIiArIAorCQkJIiAgICAg
+ICAgICAgICAgICAgICAgICAgIGRlc3QuYWRkKGkgKyBjaGFuZ2VzLmdldEZyb20oKSwgZnVuYy5h
+cHBseShjaGFuZ2VzLmdldEFkZGVkU3ViTGlzdCgpLmdldChpKSkpO1xuIiArIAorCQkJIiAgICAg
+ICAgICAgICAgICB9XG4iICsgCisJCQkiICAgICAgICAgICAgfVxuIiArIAorCQkJIiAgICAgICAg
+fSk7XG4iICsgCisJCQkiICAgIH1cbiIgKyAKKwkJCSJ9IiwKKwkJfSwKKwkJIlN1Y2Nlc3MiLAor
+CQlVdGlsLmNvbmNhdFdpdGhDbGFzc0xpYnMobmV3IFN0cmluZ1tde2pmeEphcixPVVRQVVRfRElS
+fSwgZmFsc2UpLAorCQl0cnVlLAorCQludWxsKTsKKwlJQ2xhc3NGaWxlUmVhZGVyIGNsYXNzRmls
+ZVJlYWRlciA9IFRvb2xGYWN0b3J5LmNyZWF0ZURlZmF1bHRDbGFzc0ZpbGVSZWFkZXIoT1VUUFVU
+X0RJUiArIEZpbGUuc2VwYXJhdG9yICsgIlV0aWxpdHkuY2xhc3MiLCBJQ2xhc3NGaWxlUmVhZGVy
+LkFMTCk7CisJSU1ldGhvZEluZm8gbGFtYmRhTWV0aG9kID0gbnVsbDsKKwlJTWV0aG9kSW5mb1td
+IG1ldGhvZEluZm9zID0gY2xhc3NGaWxlUmVhZGVyLmdldE1ldGhvZEluZm9zKCk7CisJaW50IGxl
+bmd0aCA9IG1ldGhvZEluZm9zLmxlbmd0aDsKKwlmb3IgKGludCBpID0gMDsgaSA8IGxlbmd0aDsg
+aSsrKSB7CisJCUlNZXRob2RJbmZvIG1ldGhvZEluZm8gPSBtZXRob2RJbmZvc1tpXTsKKwkJaWYg
+KCJsYW1iZGEkMCIuZXF1YWxzKG5ldyBTdHJpbmcobWV0aG9kSW5mby5nZXROYW1lKCkpKSkgewor
+CQkJbGFtYmRhTWV0aG9kID0gbWV0aG9kSW5mbzsKKwkJCWJyZWFrOworCQl9CisJfQorCWFzc2Vy
+dE5vdE51bGwoIkNvdWxkIG5vdCBmaW5kIGxhbWJkYSBtZXRob2QiLGxhbWJkYU1ldGhvZCk7CisJ
+SUNsYXNzRmlsZUF0dHJpYnV0ZSBzaWduYXR1cmUgPSBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwu
+Y29yZS51dGlsLlV0aWwuZ2V0QXR0cmlidXRlKGxhbWJkYU1ldGhvZCwgSUF0dHJpYnV0ZU5hbWVz
+Q29uc3RhbnRzLlNJR05BVFVSRSk7CisJYXNzZXJ0TnVsbCgiRm91bmQgZ2VuZXJpYyBzaWduYXR1
+cmUgZm9yIGxhbWJkYSBtZXRob2QiLCBzaWduYXR1cmUpOworfQogcHVibGljIHN0YXRpYyBDbGFz
+cyB0ZXN0Q2xhc3MoKSB7CiAJcmV0dXJuIExhbWJkYUV4cHJlc3Npb25zVGVzdC5jbGFzczsKIH0K
+ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9hc3QvTGFtYmRhRXhwcmVzc2lvbi5qYXZhIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Fz
+dC9MYW1iZGFFeHByZXNzaW9uLmphdmEKaW5kZXggOTk0MDdmZC4uZDU0ZTVhOCAxMDA2NDQKLS0t
+IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFs
+L2NvbXBpbGVyL2FzdC9MYW1iZGFFeHByZXNzaW9uLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9MYW1i
+ZGFFeHByZXNzaW9uLmphdmEKQEAgLTMzMyw5ICszMzMsNiBAQAogCQkJCQl9CiAJCQkJfQogCi0J
+CQkJVHlwZUJpbmRpbmcgbGVhZlR5cGUgPSBwYXJhbWV0ZXJUeXBlLmxlYWZDb21wb25lbnRUeXBl
+KCk7Ci0JCQkJaWYgKGxlYWZUeXBlIGluc3RhbmNlb2YgUmVmZXJlbmNlQmluZGluZyAmJiAoKChS
+ZWZlcmVuY2VCaW5kaW5nKSBsZWFmVHlwZSkubW9kaWZpZXJzICYgRXh0cmFDb21waWxlck1vZGlm
+aWVycy5BY2NHZW5lcmljU2lnbmF0dXJlKSAhPSAwKQotCQkJCQl0aGlzLmJpbmRpbmcubW9kaWZp
+ZXJzIHw9IEV4dHJhQ29tcGlsZXJNb2RpZmllcnMuQWNjR2VuZXJpY1NpZ25hdHVyZTsKIAkJCQlu
+ZXdQYXJhbWV0ZXJzW2ldID0gYXJndW1lbnQuYmluZCh0aGlzLnNjb3BlLCBwYXJhbWV0ZXJUeXBl
+LCBmYWxzZSk7CQkJCQogCQkJCWlmIChhcmd1bWVudC5hbm5vdGF0aW9ucyAhPSBudWxsKSB7CiAJ
+CQkJCXRoaXMuYmluZGluZy50YWdCaXRzIHw9IFRhZ0JpdHMuSGFzUGFyYW1ldGVyQW5ub3RhdGlv
+bnM7CkBAIC0zNzEsNyArMzY4LDYgQEAKIAkJCWlmICgoZXhjZXB0aW9uLnRhZ0JpdHMgJiBUYWdC
+aXRzLkhhc01pc3NpbmdUeXBlKSAhPSAwKSB7CiAJCQkJdGhpcy5iaW5kaW5nLnRhZ0JpdHMgfD0g
+VGFnQml0cy5IYXNNaXNzaW5nVHlwZTsKIAkJCX0KLQkJCXRoaXMuYmluZGluZy5tb2RpZmllcnMg
+fD0gKGV4Y2VwdGlvbi5tb2RpZmllcnMgJiBFeHRyYUNvbXBpbGVyTW9kaWZpZXJzLkFjY0dlbmVy
+aWNTaWduYXR1cmUpOwogCQl9CiAJCQogCQlUeXBlQmluZGluZyByZXR1cm5UeXBlID0gdGhpcy5i
+aW5kaW5nLnJldHVyblR5cGU7CkBAIC0zNzksOSArMzc1LDYgQEAKIAkJCWlmICgocmV0dXJuVHlw
+ZS50YWdCaXRzICYgVGFnQml0cy5IYXNNaXNzaW5nVHlwZSkgIT0gMCkgewogCQkJCXRoaXMuYmlu
+ZGluZy50YWdCaXRzIHw9IFRhZ0JpdHMuSGFzTWlzc2luZ1R5cGU7CiAJCQl9Ci0JCQlUeXBlQmlu
+ZGluZyBsZWFmVHlwZSA9IHJldHVyblR5cGUubGVhZkNvbXBvbmVudFR5cGUoKTsKLQkJCWlmIChs
+ZWFmVHlwZSBpbnN0YW5jZW9mIFJlZmVyZW5jZUJpbmRpbmcgJiYgKCgoUmVmZXJlbmNlQmluZGlu
+ZykgbGVhZlR5cGUpLm1vZGlmaWVycyAmIEV4dHJhQ29tcGlsZXJNb2RpZmllcnMuQWNjR2VuZXJp
+Y1NpZ25hdHVyZSkgIT0gMCkKLQkJCQl0aGlzLmJpbmRpbmcubW9kaWZpZXJzIHw9IEV4dHJhQ29t
+cGlsZXJNb2RpZmllcnMuQWNjR2VuZXJpY1NpZ25hdHVyZTsKIAkJfSAvLyBUT0RPIChzdGVwaGFu
+KTogZWxzZT8gKGNhbiB0aGF0IGhhcHBlbj8pCiAKIAkJaWYgKGhhdmVEZXNjcmlwdG9yICYmICFi
+dWdneUFyZ3VtZW50cyAmJiBibG9ja1Njb3BlLmNvbXBpbGVyT3B0aW9ucygpLmlzQW5ub3RhdGlv
+bkJhc2VkTnVsbEFuYWx5c2lzRW5hYmxlZCkgew==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

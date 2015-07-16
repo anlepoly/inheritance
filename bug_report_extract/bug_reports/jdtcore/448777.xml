@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>448777</bug_id>
+          
+          <creation_ts>2014-10-24 18:09:00 -0400</creation_ts>
+          <short_desc>[1.8][null] The expression of type &apos;@NonNull @Nullable String&apos; needs unchecked conversion to conform to &apos;@NonNull @Nullable String&apos;</short_desc>
+          <delta_ts>2014-12-10 00:49:34 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>WORKSFORME</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M4</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>manpalat</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2471535</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-24 18:09:31 -0400</bug_when>
+    <thetext>When compiling the following source in master:
+
+//---
+import org.eclipse.jdt.annotation.*;
+
+public class DoubleInference {
+
+	@FunctionalInterface
+	interface Func&lt;@Nullable T&gt;  {
+		T a(T i);
+	}
+
+	&lt;X&gt; X applyWith(Func&lt;X&gt; f, X x) { return x; }
+
+	@NonNull String test1() {
+		return applyWith(i -&gt; i, &quot;hallo&quot;);
+	}
+}
+//---
+
+I get this warning reported at application of i (the lambda&apos;s result expression):
+
+  The expression of type &apos;@NonNull @Nullable String&apos; needs unchecked conversion to conform to &apos;@NonNull @Nullable String&apos;
+
+Sometimes(!) I get another warning against the message send (applyWith):
+  
+  Null type safety (type annotations): The expression of type &apos;String&apos; needs unchecked conversion to conform to &apos;@NonNull String&apos;
+
+
+Note that the declaration of Func already has an error (X is not a valid substitute), which is necessary to reproduce.
+
+But regardless of the error: 
+- the first mentioned warning is plain bogus
+- warnings should be deterministic
+
+Sounds like: when reporting the error we should be clearing some bogus bits ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471554</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-24 19:23:02 -0400</bug_when>
+    <thetext>(1)
+PTB.getSingleAbstractMethod() returns a method with contradictory null annotations. If this method would say
+
+  method = NullAnnotationMatching.checkForContraditions(method, null, null);
+
+when an otherwise valid sam has been found, we would simply not continue resolving based on this bogus result.
+
+
+(2)
+OTOH, this only seems to happen after we determined as a target type:
+
+  Func&lt;@NonNull String&gt;
+
+One location creating such bogus type was ConstraintFormula.applySubstitution(). Also this is a candidate that might need further null checking and stripping of null annotations, if this would create a conflict with the inference variable&apos;s type parameter.
+
+To my own surprise this would let us report:
+
+   The target type of this expression must be a functional interface
+
+Not optimal.
+
+
+(3)
+Climbing further towards the root we find that typeReference.checkNullConstraints would theoretically be in the position to adjust the type after error reporting, but this method family doesn&apos;t seem to be well prepared for updating the resolvedBinding.
+
+From the above, (1) would be the simplest fix indeed, but (3) deserves more experimenting. Anyway, all this seems to be about secondary warnings, only.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2486746</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-20 17:17:40 -0500</bug_when>
+    <thetext>I can no longer reproduce the original bogus message nor the non-determinism.
+
+In current HEAD we do get
+
+  The target type of this expression must be a functional interface
+
+This happens because PTB.getSingleAbstractMethod() now finds a ProblemMethodBinding(ContradictoryNullAnnotations), which is ignored during search and thus no SAM is answered.
+
+This being a natural consequence (secondary error) of a broken Func&lt;X&gt;, I&apos;ll leave it at this for now. I&apos;m adding another test snippet that shows how invoking a() on a broken Func&lt;@NonNull String&gt; surfaces the contradictory null annotations. 
+IMHO, it would be too much effort to tweak the actual type argument to fit all constraints of the type parameter (think null annotations on nested type arguments &amp; bounds), just for avoiding secondary errors.
+
+Regression test released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=00d1322f896f66fd5009a4ecf58348c0029c8dcb</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494955</commentid>
+    <comment_count>3</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-12-10 00:49:34 -0500</bug_when>
+    <thetext>Verified for Eclipse Mars 4.5 M4 using build  I20141209-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

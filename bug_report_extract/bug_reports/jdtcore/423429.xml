@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>423429</bug_id>
+          
+          <creation_ts>2013-12-06 08:34:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler] Issues in Lambda shape analysis</short_desc>
+          <delta_ts>2014-09-18 23:09:43 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>424290</dup_id>
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M3</target_milestone>
+          
+          <blocked>429430</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Sasikanth Bharadwaj">saammana</assigned_to>
+          <cc>noopur_gupta</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2338622</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-06 08:34:17 -0500</bug_when>
+    <thetext>java.lang.NullPointerException
+	at org.eclipse.jdt.internal.compiler.ast.LambdaExpression.analyseCode(LambdaExpression.java:346)
+	at 
+Test case: 
+
+interface I { 
+	J foo(String x, String y);
+}
+interface J {
+	K foo(String x, String y);
+}
+interface K {
+	int foo(String x, int y);
+}
+public class X {
+	static void goo(K i) {}
+	public static void main(String[] args) {
+		goo ((first, second) -&gt; {
+			return (xyz, pqr) -&gt; first.length();
+		});
+	}
+}
+
+
+Stack trace:
+
+org.eclipse.jdt.internal.compiler.ast.ReturnStatement.analyseCode(ReturnStatement.java:73)
+	at org.eclipse.jdt.internal.compiler.ast.Block.analyseCode(Block.java:43)
+	at org.eclipse.jdt.internal.compiler.ast.LambdaExpression.doesNotCompleteNormally(LambdaExpression.java:332)
+	at org.eclipse.jdt.internal.compiler.ast.LambdaExpression.isCompatibleWith(LambdaExpression.java:569)
+	at org.eclipse.jdt.internal.compiler.lookup.PolyTypeBinding.isCompatibleWith(PolyTypeBinding.java:37)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.parameterCompatibilityLevel(Scope.java:4435)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.parameterCompatibilityLevel(Scope.java:4404)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.computeCompatibleMethod(Scope.java:678)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.computeCompatibleMethod(Scope.java:620)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.findMethod(Scope.java:1508)
+	at org.eclipse.jdt.internal.compiler.lookup.Scope.getImplicitMethod(Scope.java:2314)
+	at org.eclipse.jdt.internal.compiler.ast.MessageSend.resolveType(MessageSend.java:673)
+	at org.eclipse.jdt.internal.compiler.ast.Expression.resolve(Expression.java:1011)
+	at org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration.resolveStatements(AbstractMethodDeclaration.java:620)
+	at org.eclipse.jdt.internal.compiler.ast.MethodDeclaration.resolveStatements(MethodDeclaration.java:303)
+	at org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration.resolve(AbstractMethodDeclaration.java:531)
+	at org.eclipse.jdt.internal.compiler.ast.TypeDeclaration.resolve(TypeDeclaration.java:1209)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2341351</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-12 18:42:04 -0500</bug_when>
+    <thetext>Still happens also in the branch sherrmann/NewTypeInference.
+
+Here&apos;s what I see in the debugger:
+
+LambdaExpression.isCompatibleWith()
+  - creates a copy
+    - does not call copy.resolveType() (due to elided argument types)
+    - calls copy.doesNotCompleteNormally()
+      - this invokes analyseCode
+      - traverses down to a nested lambda
+        - the nested lambda has not been resolved -&gt; boooom
+
+Why is that? During copy.resolveType() the nested lambda bailed out at
+
+	if (!haveDescriptor) {
+		if (argumentsTypeElided) {
+			if (!this.shouldUnelideTypes)
+				return null; // FUBAR, bail out...
+
+Why that? We&apos;re attempting to resolve the outer lambda against the function type &quot;int foo(String,int)&quot;, which pushes the expected type &quot;int&quot; into the inner lambda -&gt; no descriptor found. The problem appears to be that this resolve failure is not properly propagated. One possible location might be if LambdaExpression.returnsExpression(..) would set this.original.hasIgnoredMandatoryErrors when seeing a null resultType. This should then prevent proceeding into analyseCode()...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2341352</commentid>
+    <comment_count>2</comment_count>
+      <attachid>238314</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-12 18:43:34 -0500</bug_when>
+    <thetext>Created attachment 238314
+patch for illustration
+
+This is where I would guess the issue could be fixed.
+
+What do you think, Srikanth?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2341468</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-13 05:38:59 -0500</bug_when>
+    <thetext>I&apos;ll take a look, thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2341876</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-13 23:47:05 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #1)
+&gt; LambdaExpression.isCompatibleWith()
+&gt;   - creates a copy
+&gt;     - does not call copy.resolveType() (due to elided argument types)
+
+This is not correct - we always call copy.resolveType - whether elided or
+not.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2341909</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-14 10:27:02 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #4)
+&gt; (In reply to Stephan Herrmann from comment #1)
+&gt; &gt; LambdaExpression.isCompatibleWith()
+&gt; &gt;   - creates a copy
+&gt; &gt;     - does not call copy.resolveType() (due to elided argument types)
+&gt; 
+&gt; This is not correct - we always call copy.resolveType - whether elided or
+&gt; not.
+
+You&apos;re right. I hope the rest of my analysis still makes sense.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342639</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-17 04:45:31 -0500</bug_when>
+    <thetext>I released a stop gap fix here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=6d26e89371291b0e31c04fda43f7d9e8d5d62845.
+
+This area needs revisiting - The present solution does not handle nesting and
+resolution errors in nested lambdas are not propagated to enclosing lambdas.
+
+There is the tension between concluding shape analysis as early as possible and
+determining when it is absolutely safe to proceed - This is not handled totally
+correctly as of now. I&apos;ll leave this open till I find a comprehensive solution.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2353469</commentid>
+    <comment_count>7</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2014-01-23 07:59:19 -0500</bug_when>
+    <thetext>package packDown;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+
+public class SorterNew {
+	void sort() {
+		Collections.sort(new ArrayList&lt;Person&gt;(),
+				Comparator.comparing((Person p) -&gt; p.getName()));
+	}
+}
+
+class Person {
+	public String getName() {
+		return &quot;p&quot;;
+	}
+}
+----------------------------------------------------------------
+Getting the following exception on editing the above code:
+
+java.lang.NullPointerException
+	at org.eclipse.jdt.internal.compiler.ast.LambdaExpression.analyseCode(LambdaExpression.java:447)
+	at org.eclipse.jdt.internal.compiler.ast.MessageSend.analyseCode(MessageSend.java:167)
+	at org.eclipse.jdt.internal.compiler.ast.MessageSend.analyseCode(MessageSend.java:167)
+	at org.eclipse.jdt.internal.compiler.ast.MethodDeclaration.analyseCode(MethodDeclaration.java:128)
+	at org.eclipse.jdt.internal.compiler.ast.TypeDeclaration.internalAnalyseCode(TypeDeclaration.java:741)
+	at org.eclipse.jdt.internal.compiler.ast.TypeDeclaration.analyseCode(TypeDeclaration.java:265)
+	at org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration.analyseCode(CompilationUnitDeclaration.java:119)
+	at org.eclipse.jdt.internal.compiler.Compiler.resolve(Compiler.java:923)
+	at org.eclipse.jdt.internal.compiler.Compiler.resolve(Compiler.java:965)
+	at org.eclipse.jdt.internal.core.CompilationUnitProblemFinder.process(CompilationUnitProblemFinder.java:204)
+	at org.eclipse.jdt.internal.core.CompilationUnitProblemFinder.process(CompilationUnitProblemFinder.java:270)
+	at org.eclipse.jdt.internal.core.ReconcileWorkingCopyOperation.makeConsistent(ReconcileWorkingCopyOperation.java:190)
+	at org.eclipse.jdt.internal.core.ReconcileWorkingCopyOperation.executeOperation(ReconcileWorkingCopyOperation.java:89)
+	at org.eclipse.jdt.internal.core.JavaModelOperation.run(JavaModelOperation.java:728)
+	at org.eclipse.jdt.internal.core.JavaModelOperation.runOperation(JavaModelOperation.java:788)
+	at org.eclipse.jdt.internal.core.CompilationUnit.reconcile(CompilationUnit.java:1247)
+	at org.eclipse.jdt.internal.ui.text.java.JavaReconcilingStrategy.reconcile(JavaReconcilingStrategy.java:126)
+...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2353480</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-01-23 08:13:53 -0500</bug_when>
+    <thetext>(In reply to Noopur Gupta from comment #7)
+
+&gt; ----------------------------------------------------------------
+&gt; Getting the following exception on editing the above code:
+
+This is a different stack trace and a different problem. I have reopened
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=425152.
+
+Thanks for the report Noopur.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2357429</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-01-31 19:10:27 -0500</bug_when>
+    <thetext>See also https://bugs.eclipse.org/bugs/show_bug.cgi?id=424290#c0</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2357492</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-01 07:19:06 -0500</bug_when>
+    <thetext>Another bug that mentioned enclosingScopesHaveErrors() as causing bogus secondary errors: bug 424205 comment 4 (with further hints in bug 424205 comment 6).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2357585</commentid>
+    <comment_count>11</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-02 00:55:33 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #10)
+&gt; Another bug that mentioned enclosingScopesHaveErrors() as causing bogus
+&gt; secondary errors: bug 424205 comment 4 (with further hints in bug 424205
+&gt; comment 6).
+
+Thanks, For part F, it is known that javac completely ignores value-void
+compatibility. See https://bugs.openjdk.java.net/browse/JDK-8029718
+
+If this also happens to be the case for part G, we may as well just short
+circuit shape analysis for now.
+
+(There are no open bugs in shape analysis at the moment, other than 
+interference from errors in outer scopes or inner scopes. This is not a 
+correctness issue, only that it could lead to imprecise diagnostics.)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2449678</commentid>
+    <comment_count>12</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-10 06:08:15 -0400</bug_when>
+    <thetext>Stephan - FYI. Sasi will implement a new shape analysis from the ground
+up that will not rely on analyzeCode() and so will not have all the attendant
+problems we have been facing. This is likely to be completed in early M3.
+
+The new analysis will analyze block bodied lambdas and gather
+
+    - value/void compatibility information
+    - return expressions,
+    - thrown exception information.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2453465</commentid>
+    <comment_count>13</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-18 01:12:52 -0400</bug_when>
+    <thetext>Per https://bugs.eclipse.org/bugs/show_bug.cgi?id=424290#c3 and
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=424290#c8, this work
+will happen in https://bugs.eclipse.org/bugs/show_bug.cgi?id=424290
+
+*** This bug has been marked as a duplicate of bug 424290 ***</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>238314</attachid>
+            <date>2013-12-12 18:43:00 -0500</date>
+            <delta_ts>2013-12-12 18:43:34 -0500</delta_ts>
+            <desc>patch for illustration</desc>
+            <filename>eclipse.jdt.core.patch</filename>
+            <type>text/plain</type>
+            <size>786</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9hc3QvTGFtYmRhRXhwcmVzc2lvbi5qYXZhIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Fz
+dC9MYW1iZGFFeHByZXNzaW9uLmphdmEKaW5kZXggYjQzNDA2Yy4uYWJlMjI5MiAxMDA2NDQKLS0t
+IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFs
+L2NvbXBpbGVyL2FzdC9MYW1iZGFFeHByZXNzaW9uLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9MYW1i
+ZGFFeHByZXNzaW9uLmphdmEKQEAgLTc0NCw2ICs3NDQsOCBAQAogCQkJCVN5c3RlbS5hcnJheWNv
+cHkocmV0dXJuRXhwcmVzc2lvbnMsIDAsIHJldHVybkV4cHJlc3Npb25zID0gbmV3IEV4cHJlc3Np
+b25bcmVzdWx0c0xlbmd0aCArIDFdLCAwLCByZXN1bHRzTGVuZ3RoKTsKIAkJCQlyZXR1cm5FeHBy
+ZXNzaW9uc1tyZXN1bHRzTGVuZ3RoXSA9IGV4cHJlc3Npb247CiAJCQkJdGhpcy5vcmlnaW5hbC5y
+ZXN1bHRFeHByZXNzaW9ucyA9IHJldHVybkV4cHJlc3Npb25zOworCQkJfSBlbHNlIHsKKwkJCQl0
+aGlzLm9yaWdpbmFsLmhhc0lnbm9yZWRNYW5kYXRvcnlFcnJvcnMgPSB0cnVlOwogCQkJfQogCQl9
+IGVsc2UgewogCQkJdGhpcy5vcmlnaW5hbC5yZXR1cm5zVm9pZCA9IHRydWU7
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,1762 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>383378</bug_id>
+          
+          <creation_ts>2012-06-24 14:19:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler] analyze performance impact of scanner/parser changes</short_desc>
+          <delta_ts>2014-11-27 10:35:06 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>380194</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="52608"
+          type_id="1"
+          status="+"
+          setter="stephan.herrmann"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2128386</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-06-24 14:19:51 -0400</bug_when>
+    <thetext>Bug 380194 introduced same changes to the parser / scanner that affect performance. The design works hard to avoid performance degradation but so far we have no measurements that can guide us in the choice between different strategies.
+
+E.g., I&apos;d like to see if method Parser.parserAtConflictScenario() is worth the effort: is it saving relevant efforts in scanner look-ahead (Scanner.atLambdaParameterList() and atReferenceExpression()) to balance the initial efforts?
+
+In a first naive measurement I ran org.eclipse.jdt.core.tests.compiler.parser.TestAll with slight variations in the code.
+
+To my own surprise I saw that simply turning 1.8 mode on seemed to degrade performance by approx. 9%, but I could not observe any difference related to parserAtConflictScenario() (delta &lt; 0.1%).
+
+At this point the experiment was too naive to yield reliable figures but there seems to be some issue that I&apos;d like to narrow down before finalizing the new parser design.
+
+Can we identify a relevant subset of tests? Is ...parser.TestAll already a good candidate?
+
+What would be a test case for the worst case scenarios mentioned in bug 380194 comment 24?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2128406</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-06-24 20:08:18 -0400</bug_when>
+    <thetext>(In reply to comment #0)
+
+&gt; In a first naive measurement I ran
+&gt; org.eclipse.jdt.core.tests.compiler.parser.TestAll with slight variations in
+&gt; the code.
+
+Could you document these variations here via a patch ? TIA.
+
+&gt; To my own surprise I saw that simply turning 1.8 mode on seemed to degrade
+&gt; performance by approx. 9%, but I could not observe any difference related to
+&gt; parserAtConflictScenario() (delta &lt; 0.1%).
+
+Could you also post the actual numbers, not just %ages ? Also what did you
+mean by &quot;I could not observe ...&quot;
+
+Did you also the get the numbers by short-circuiting the call to parserAtConflictScenario (so it always answers true) and that didn&apos;t help ? 
+Is that what you mean by  &quot;I could not observe ...&quot; ?
+
+&gt; Can we identify a relevant subset of tests? Is ...parser.TestAll already a good
+&gt; candidate?
+
+It is a good candidate as is, though let us not use it as the only candidate.
+I would also include a full build of Eclipse SDK with a specially concocted version that looks ahead at all source levels.
+
+&gt; What would be a test case for the worst case scenarios mentioned in bug 380194
+&gt; comment 24?
+
+Originally a worst case scenario would have been a large method that has
+several checks of the form if (x &lt; y) {}, with no code of form if (x &gt; y))
+but due the introduction of black list, the worst case scenario is mitigated
+already and the look ahead should fail &quot;reasonably early&quot;. So perhaps we
+don&apos;t have to devise a special test case for this.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2128421</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-06-24 22:44:23 -0400</bug_when>
+    <thetext>(In reply to comment #0)
+
+&gt; To my own surprise I saw that simply turning 1.8 mode on seemed to degrade
+&gt; performance by approx. 9%, but I could not observe any difference related to
+&gt; parserAtConflictScenario() (delta &lt; 0.1%).
+
+I think we can recover nearly all of this performance drop for the &quot;common
+scenarios&quot; by -
+
+    - No look ahead at all for source level 1.7- (as it is now)
+    - At source level 1.8, NO look ahead &quot;normally&quot;, NOR will the
+      parser try to investigate whether it is at a potential conflict 
+      site and demand disambiguation.
+    - When the parser encounters the first syntax error at source level 
+      1.8+, it starts over a la mode RESTART_IN_WIDE_MODE.
+
+The reconciler scenario is very important too and that will trigger the
+restart mode fairly frequently - so we need to fine tune this a bit more.
+As a first cut, we can arrange for a restart to happen only if either of
+the tokens -&gt; or :: are seen in the file. I am not sure if there are cases
+where we would give up soon enough to not notice the -&gt;/:: tokens - hence
+my mentioning &quot;the first syntax error&quot;.
+
+&gt; What would be a test case for the worst case scenarios mentioned in bug 380194
+&gt; comment 24?
+
+Any test case where the &quot;distance&quot; between &apos;&lt;&apos; and one of { &apos;{&apos; &apos;}&apos;, &apos;;&apos; &apos;&gt;&apos; }
+would be &quot;high&quot;. As already mentioned, the use of black list already addresses the worst case which is to scan until EOF.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2128959</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-06-25 18:36:16 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; (In reply to comment #0)
+&gt; 
+&gt; &gt; In a first naive measurement I ran
+&gt; &gt; org.eclipse.jdt.core.tests.compiler.parser.TestAll with slight variations in
+&gt; &gt; the code.
+&gt; 
+&gt; Could you document these variations here via a patch ? TIA.
+
+Nothing magic here, just
+(a) forcing Parser.parsingJava8Plus and Scanner.scanningJava8Plus to true
+(b) replacing &quot;parserAtConflictScenario(lastAction, token)&quot; with &quot;true&quot;
+
+ 
+&gt; &gt; To my own surprise I saw that simply turning 1.8 mode on seemed to degrade
+&gt; &gt; performance by approx. 9%,
+
+this was achieved by (a) above.
+
+&gt; &gt; but I could not observe any difference related to
+&gt; &gt; parserAtConflictScenario() (delta &lt; 0.1%).
+
+this being the difference caused by  (b)
+ 
+&gt; Could you also post the actual numbers, not just %ages ?
+
+No valuable data beyond what I extracted. One typical test run was approx. 40sec. in the good case,
+43 sec. in the slower variant (1.8).
+
+All I&apos;m saying is: naive experiments show we need real experiments.
+
+I&apos;d like to learn, where exactly those &quot;9%&quot; are spent (to be replaced with a better supported figure - maybe a real experiment proves this to be a red herring).
+
+&gt; Also what did you mean by &quot;I could not observe ...&quot;
+
+I observed a non-significant difference of less than 0.1%.
+
+&gt; Did you also the get the numbers by short-circuiting the call to
+&gt; parserAtConflictScenario (so it always answers true) and that didn&apos;t help ?
+&gt; Is that what you mean by  &quot;I could not observe ...&quot; ?
+
+Exactly, it neither helped nor hurt.
+
+&gt; &gt; Can we identify a relevant subset of tests? Is ...parser.TestAll already a
+&gt; good
+&gt; &gt; candidate?
+&gt; 
+&gt; It is a good candidate as is, though let us not use it as the only candidate.
+&gt; I would also include a full build of Eclipse SDK with a specially concocted
+&gt; version that looks ahead at all source levels.
+
+Here it would perhaps help to also short-circuit all later compiler phase, so we concentrate on measuring the parser, right?
+ 
+&gt; &gt; What would be a test case for the worst case scenarios mentioned in bug 380194
+&gt; &gt; comment 24?
+&gt; 
+&gt; Originally a worst case scenario would have been a large method that has
+&gt; several checks of the form if (x &lt; y) {}, with no code of form if (x &gt; y))
+&gt; but due the introduction of black list, the worst case scenario is mitigated
+&gt; already and the look ahead should fail &quot;reasonably early&quot;. So perhaps we
+&gt; don&apos;t have to devise a special test case for this.
+
+I&apos;m just challenging the necessity of parserAtConflictScenario(). If we can&apos;t demonstrate that it is needed for performance, I would suggest to remove it (which would make me more comfortable, because I don&apos;t yet understand how exactly that method works :) ).
+If you have a worst case test case this could give a hint about a potential benefit.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2128970</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-06-25 19:59:09 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+ 
+&gt; Here it would perhaps help to also short-circuit all later compiler phase, so
+&gt; we concentrate on measuring the parser, right?
+
+I would say yes if there are material changes to downstream phases that could
+overwhelm or otherwise shift the hot spots, but at the moment, there aren&apos;t any
+material downstream changes to skew/alter/distort the scenario. So measuring
+the overall degradation is better. 
+
+&gt; I&apos;m just challenging the necessity of parserAtConflictScenario(). If we can&apos;t
+&gt; demonstrate that it is needed for performance, I would suggest to remove it
+
+That would be fine.
+
+&gt; (which would make me more comfortable, because I don&apos;t yet understand how
+&gt; exactly that method works :) ).
+
+:) 
+
+It is the same automaton we have gotten accustomed to and have grown to love 
+in Parse.parse(), but is a &quot;rotated&quot; version of it: So some code from its
+tail sits on top of its head. 
+
+Basically it checks if the parser at the configuration it is in, will ever 
+shift the synthetic symbol TokenNameBeginLambda. Since it is an axiom that
+the LALR parser (may reduce, but) will never shift on bad input, it indicates
+whether we are at a point in the parse where a lambda expression may be seen
+==&gt; &apos;(&apos; needs disambiguation (same argument for &apos;&lt;&apos;)
+
+Rather than remove, I&apos;ll leave the code in as is, not use it and point a
+comment to here, if the data shows it is not buying much or worsens.
+I would however implement a precomputed cache for tAction(lastAction, token)
+lookup as the comment calls out there - FWIW.
+
+It was just abhorrent to me to implement look ahead unconditionally, but 
+in real terms I agree this could simply be switching the nature of work :)
+
+&gt; If you have a worst case test case this could give a hint about a potential
+&gt; benefit.
+
+No, other than the already mitigated &quot;&apos;&lt;&apos; operator and not open type arguments 
+with  &apos;&lt;&apos;&quot; case, I can&apos;t think of any.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2128972</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-06-25 20:04:37 -0400</bug_when>
+    <thetext>(In reply to comment #4)
+&gt; (In reply to comment #3)
+
+&gt; Rather than remove, I&apos;ll leave the code in as is, not use it and point a
+&gt; comment to here, if the data shows it is not buying much or worsens.
+&gt; I would however implement a precomputed cache for tAction(lastAction, token)
+&gt; lookup as the comment calls out there - FWIW.
+
+That doesn&apos;t read right - the cache recommendation is for the measurement.
+&quot;Leave it in, don&apos;t use&quot; recommendation is if the measurement shows the conflict
+scenario check is not helping (and not for the cache).
+
+BTW, in https://bugs.eclipse.org/bugs/show_bug.cgi?id=287648, I am
+preparing for a big checkin this week - do you think I should hold it
+till we resolve this issue or we can workaround easily to eliminate
+these latter unconnected changes using some version control magic ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2131373</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-01 01:23:17 -0400</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; (In reply to comment #0)
+&gt; 
+&gt; &gt; To my own surprise I saw that simply turning 1.8 mode on seemed to degrade
+&gt; &gt; performance by approx. 9%, but I could not observe any difference related to
+&gt; &gt; parserAtConflictScenario() (delta &lt; 0.1%).
+&gt; 
+&gt; I think we can recover nearly all of this performance drop for the &quot;common
+&gt; scenarios&quot; by -
+
+Here is some more ways to improve performance: If we extend the LR parser&apos;s
+FIRST and FOLLOW set terminology with a PRECEDES set that contains the set 
+of tokens that could precede a non terminal, then
+
+PRECEDES(Lambda) = { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, (&quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot; }
+
+where &quot;=&quot;, &quot;return&quot;, &quot;-&gt;&quot; signal assignment context,
+&quot;(&quot; from invocation context or parenthesized expression context,
+&quot;)&quot; from casting context and
+&quot;,&quot; from invocation context
+
+So the scanner has to look ahead on a &quot;(&quot; only if it was preceded by
+one of these tokens.  
+
+The case of lookahead on &quot;&lt;&quot; lend itself well to a similar strategy 
+though.
+
+Alternately, we could precompute some data that would allow us to
+do the following from 4.7.1 Canonical LR(1) items, Compilers, techniques
+and tools: Aho, Lam, Sethi, Ulman, page 260:
+
+&quot;By splitting states when necessary, we can arrange to have each state
+of an LR parser indicate exactly which input symbols can follow a handle
+ for which there is a possible reduction to A.&quot;
+
+The only lookahead tokens of interest are BeginLambda and BeginTypeArguments
+so the tables will not be memory intensive: given any state of the parser
+one lookup from an array would answer if we are at a conflict site.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2131374</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-01 01:25:19 -0400</bug_when>
+    <thetext>(In reply to comment #6)
+
+&gt; The case of lookahead on &quot;&lt;&quot; lend itself well to a similar strategy 
+&gt; though.
+
+should read: DOES NOT lend itself well.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2131457</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-01 19:34:21 -0400</bug_when>
+    <thetext>(In reply to comment #6)
+
+&gt; PRECEDES(Lambda) = { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, (&quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot; }
+
+Fixing a typo and adding the tokens from the ternary operator, this 
+should read:
+
+  PRECEDES(Lambda) = { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; }</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2131487</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-02 00:46:06 -0400</bug_when>
+    <thetext>(In reply to comment #8)
+
+&gt;   PRECEDES(Lambda) = { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; }
+
+Stephan, does this set look right and exhaustive ? If so, 
+
+(In reply to comment #7)
+&gt; (In reply to comment #6)
+&gt; 
+&gt; &gt; The case of lookahead on &quot;&lt;&quot; lend itself well to a similar strategy 
+&gt; &gt; though.
+&gt; 
+&gt; should read: DOES NOT lend itself well.
+
+This may not be an issue after all. We should be able to build a straight
+forward and cheap state machine all in the scanner with no help from the 
+parser  that indicates whether look ahead is called for not.
+
+STATE# 0 = START STATE:
+
+    LA(&apos;(&apos;) = false, LA(&apos;&lt;&apos;) = false
+     t  { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; } goto STATE# 1
+
+STATE# 1:
+
+    LA(&apos;(&apos;) = true, LA(&apos;&lt;&apos;) = false
+    On Identifier goto STATE# 2
+     t  { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; } goto STATE# 0
+
+STATE# 2
+
+    LA(&apos;(&apos;) = false, LA(&apos;&lt;&apos;) = true
+    On &apos;.&apos; goto STATE# 3
+     t  { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; } goto STATE# 0
+     t  { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; } goto STATE# 1
+
+STATE# 3
+
+    LA(&apos;(&apos;) = false, LA(&apos;&lt;&apos;) = false
+    On Identifier goto STATE# 2
+     t  { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; } goto STATE# 0
+     t  { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; } goto STATE# 1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2132528</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-04 04:34:16 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+
+&gt; &gt; What would be a test case for the worst case scenarios mentioned in bug 380194
+&gt; &gt; comment 24?
+&gt; 
+&gt; Originally a worst case scenario would have been a large method that has
+&gt; several checks of the form if (x &lt; y) {}, with no code of form if (x &gt; y))
+&gt; but due the introduction of black list, the worst case scenario is mitigated
+&gt; already and the look ahead should fail &quot;reasonably early&quot;. So perhaps we
+&gt; don&apos;t have to devise a special test case for this.
+
+[Posted on the other bug my mistake, updating current topic also for
+posterity]
+
+That is altogether overlooking the all too common scenario of parenthesis
+imbalance: What happens if in a large otherwise syntactically valid file, 
+early on there is a missing &apos;)&apos; ? We would scan all the way to EOF (assuming 
+diet parsing is not in effect.) Of course, the imbalance could be at the
+conflict scenario too :) We may need to build black lists for () also or
+come up with other means of failing early.
+
+I am devising some measurements, stay tuned.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2132710</commentid>
+    <comment_count>11</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-04 09:33:44 -0400</bug_when>
+    <thetext>OK, here is some very interesting data:
+
+Experiment:
+
+Launch Juno on an empty workspace, import all plugins from platform as source
+projects. Disable automatic build after clean. See that a bunch of projects
+have a build errors, while others build cleanly, we don&apos;t care about this.
+
+Using Juno:
+
+    for (i = 0; i &lt; 3; i++) {
+       Clean workspace,
+       Quit &amp; Relaunch
+       Build all project and measure elapsed time
+    }
+    Average = 223 seconds
+
+On a BETA_JAVA8 workspace reset to 7ae9e904164ab9e611ba46366de94e1b02c0e7e7:
+
+    Average = 228 seconds.
+
+On a BETA_JAVA8 workspace reset to c0fbf538c56e049473d6298631299cfef92195c1:
+
+    Average = 230 seconds.
+
+On a BETA_JAVA8 workspace reset to c0fbf538c56e049473d6298631299cfef92195c1:
++ ScanningJava8Plus and ParsingJava8 forced to be true:
+
+    Average = 232 seconds.
+
+On a BETA_JAVA8 workspace reset to c0fbf538c56e049473d6298631299cfef92195c1:
++ ScanningJava8Plus and ParsingJava8 + parserAtConflictScenario forced to be
+true:
+
+    Average = 232 seconds.
+
+Now, in summary the forced/always look ahead may not in and off itself be
+performance issue for welformed programs. For malformed programs with
+imbalanced parenthesis etc, we should still determine the worst case
+complexity since look ahead at the moment will be until EOF. And find
+ways to ameliorate it.
+
+Bottomline: Is parserAtConflictScenario worth it ? NO seems to be the
+clear answer for well formed programs.
+
+I&apos;ll recreate Stephan&apos;s experiments with TestAll shortly.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2132730</commentid>
+    <comment_count>12</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-04 09:46:46 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+
+&gt; &gt; &gt; To my own surprise I saw that simply turning 1.8 mode on seemed to degrade
+&gt; &gt; &gt; performance by approx. 9%,
+
+Didn&apos;t ask earlier: What was the source of surprise ? You expected more or
+less ? :)
+
+&gt; I&apos;d like to learn, where exactly those &quot;9%&quot; are spent (to be replaced with a
+&gt; better supported figure - maybe a real experiment proves this to be a red
+&gt; herring).
+
+As SOP, we should average over multiple runs before determining delta. 
+Also if we are not shutting down and restarting between benchmarks, we 
+should discard the first number - Not sure if this was done already.
+
+&gt; Here it would perhaps help to also short-circuit all later compiler phase, so
+&gt; we concentrate on measuring the parser, right?
+
+Thinking a bit more about it, I don&apos;t think we short circuit anything. What do
+we care if there is a 100% degradation in some component X if X contributes
+say only to 1% of overall execution time ? Since the overall elapsed time is 
+what the users perceive, that should be the focus.
+
+I second your suggestion that we should profile and understand the delta
+between Juno and the snapshots referred to in earlier comments.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2132735</commentid>
+    <comment_count>13</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-04 09:55:22 -0400</bug_when>
+    <thetext>Average across multiple runs, I don&apos;t see a statistically significant
+difference between the numbers for running TestAll with:
+
+    - On a BETA_JAVA8 workspace reset to 
+      c0fbf538c56e049473d6298631299cfef92195c1:
+
+    - On a BETA_JAVA8 workspace reset to 
+      c0fbf538c56e049473d6298631299cfef92195c1:
+      + ScanningJava8Plus and ParsingJava8 forced to be true:
+
+    - On a BETA_JAVA8 workspace reset to 
+      c0fbf538c56e049473d6298631299cfef92195c1:
+      + ScanningJava8Plus and ParsingJava8 + parserAtConflictScenario 
+      forced to be true
+
+They all take about 59 seconds on my machine.
+
+Stephan, when you get the time you may want to recreate the Juno plugins 
+as source projects experiment and we can compare notes and chalk out a
+POA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2132756</commentid>
+    <comment_count>14</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-04 10:14:57 -0400</bug_when>
+    <thetext>(In reply to comment #12)
+
+&gt; As SOP, we should average over multiple runs before determining delta. 
+&gt; Also if we are not shutting down and restarting between benchmarks, we 
+&gt; should discard the first number - Not sure if this was done already.
+
+Actually I see that this is perhaps answered already indirectly in
+comment#0 and comment# 3.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2133008</commentid>
+    <comment_count>15</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-04 23:38:57 -0400</bug_when>
+    <thetext>If any performance tuning is determined to be necessary in the look ahead
+strategy, plausibly to attenuate the worst case scenario, then any fixes
+should also take into account the DiagnoseParser. 
+
+At the moment the diagnose parser always runs the scanner in a &quot;proactively 
+look ahead and disambiguate uses of &apos;&lt;&apos; and &apos;(&apos; at 1.8+ modes&quot; mode. 
+
+There is too much voodoo going on in DiagnoseParser (3 automatons running 
+concurrently marching in lock step, one behind the other, a buffered token
+stream that could be scanned over and over as different recovery strategies
+are tried out etc) that it is a bit challenging to implement the kind of
+tight coupling that is called for in the solution adopted for the general
+parser. See bug# 383046</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2134087</commentid>
+    <comment_count>16</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-09 00:34:21 -0400</bug_when>
+    <thetext>(In reply to comment #11)
+
+&gt; Using Juno:
+
+&gt; On a BETA_JAVA8 workspace reset to 7ae9e904164ab9e611ba46366de94e1b02c0e7e7:
+
+&gt; On a BETA_JAVA8 workspace reset to c0fbf538c56e049473d6298631299cfef92195c1:
+
+&gt; On a BETA_JAVA8 workspace reset to c0fbf538c56e049473d6298631299cfef92195c1:
+
+&gt; On a BETA_JAVA8 workspace reset to c0fbf538c56e049473d6298631299cfef92195c1:
+
+I&apos;ll repost these results as what is documented in comment#11 is not a
+well controlled experiment. The JVM used for running Juno (JRE6) was different
+from all the other ones (JRE7)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2136688</commentid>
+    <comment_count>17</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-13 09:25:58 -0400</bug_when>
+    <thetext>(In reply to comment #9)
+&gt; (In reply to comment #8)
+
+&gt; STATE# 0 = START STATE:
+&gt; 
+&gt;     LA(&apos;(&apos;) = false, LA(&apos;&lt;&apos;) = false
+&gt;      t  { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; } goto STATE# 1
+&gt; 
+&gt; STATE# 1:
+&gt; 
+&gt;     LA(&apos;(&apos;) = true, LA(&apos;&lt;&apos;) = false
+&gt;     On Identifier goto STATE# 2
+&gt;      t  { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; } goto STATE# 0
+&gt; 
+&gt; STATE# 2
+&gt; 
+&gt;     LA(&apos;(&apos;) = false, LA(&apos;&lt;&apos;) = true
+&gt;     On &apos;.&apos; goto STATE# 3
+&gt;      t  { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; } goto STATE# 0
+&gt;      t  { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; } goto STATE# 1
+
+Of course JSR308 has to come in and mess up my nice state machine with
+annotations on nested names :-(
+
+So a reference expression could start with
+
+X. @Blah(value = &quot;Complex&quot;) Y&lt;String&gt;::
+
+It can be reworked to be a bit approximate but conservative.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2136717</commentid>
+    <comment_count>18</comment_count>
+      <attachid>218706</attachid>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-13 10:19:33 -0400</bug_when>
+    <thetext>Created attachment 218706
+Patch under test
+
+Has seen only minimal test, but this captures the basic idea
+for a simple &amp; cheap state machine that serves as an oracle to
+answer the question whether the scanner should look ahead to
+disambiguate.
+
+    - This patch gets rid of the parserAtConflictScenario() method and
+in fact all involvement from the parser.
+    - Simplifies the scanner quite a bit.
+
+Under test.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2136719</commentid>
+    <comment_count>19</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-13 10:23:53 -0400</bug_when>
+    <thetext>(In reply to comment #18)
+&gt; Created attachment 218706 [details]
+&gt; Patch under test
+
+This should automatically fix:
+
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=381358 and some cases
+of https://bugs.eclipse.org/bugs/show_bug.cgi?id=382702
+
+(the former since look ahead is now implemented for all modes under the
+premise that is is very cheap - still needs final validation by benchmarks.)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2136769</commentid>
+    <comment_count>20</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-13 12:03:27 -0400</bug_when>
+    <thetext>(In reply to comment #19)
+
+&gt; Under test.
+
+Passes all tests. Stephan, could you review this one too ? This should be
+the last of the review requests in this round at least for quite a few 
+weeks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2136885</commentid>
+    <comment_count>21</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-13 20:36:05 -0400</bug_when>
+    <thetext>(In reply to comment #18)
+&gt; Created attachment 218706 [details]
+&gt; Patch under test
+
+Basically we will now implement look ahead at all source levels, but on a &apos;(&apos;
+we will never look ahead in:
+
+    - if (), while (), for (), catch(), switch() do while(), 
+      synchronized(), try() ...
+    - Method/constructor headers &amp; invocations including this and 
+      super calls, annotation arguments ...
+
+For &apos;&lt;&apos; we will look ahead at every instance of it following an identifier.
+As mentioned in comment#17, JSR308 annotations make it impossible for a DFA
+to be constructed to serve as an oracle (since counting is required to know
+when annotation tokens end and a DFA cannot count)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2136893</commentid>
+    <comment_count>22</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-13 22:57:28 -0400</bug_when>
+    <thetext>(In reply to comment #18)
+
+&gt; Under test.
+
+Released in BETA_JAVA8 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=4c2900096a422605a0884d5ca39839064ce0c89a.
+
+After quite a bit of agonizing and vacillating, I restored the older
+behavior that look ahead will happen only at source levels 1.8+. Even
+though experiments show the cost of look ahead is minimal, it sounds
+totally lame to be doing at 1.7- in the hope of being able to report
+better messages. Even at 1.8+, the hit/miss ratio is going to be quite
+low, but in this case, it is the inherent cost of doing business. For
+1.7-, improving quality of messages is a separate topic covered by
+bug 381358.
+
+After controlling for identical VM, I don&apos;t see any mentionworthy
+variance/degradation in TestAll case and in the SDK build case. It
+was frustrating though that there were fairly wide swings in the numbers
+(both in base line and candidate being calibrated) though averages 
+tally up.
+
+Some points for future benchmarking exercises:
+
+    - Always do a clean reboot before starting benchmarking.
+    - Control for battery vs wall outlet: It has to be wall uniformly.
+    - Laptop has to be on terra firma, not literally in your lap top.
+  
+Finally, it was amusing to note that, clean sometimes takes more time 
+than to rebuild all. The intrinsic work content in building Java 
+projects is obviously less than scrubbing harddisk :)
+
+I am all set to close this after review, being convinced that the 
+extra work we do is quintessential/intrinsic to the current design and
+any short cut would sacrifice rigor - If there are some cheap ways to 
+minimize look ahead at &apos;&lt;&apos; that I have overlooked, I would still like 
+to look at them despite the numbers not screaming for attention there.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2136894</commentid>
+    <comment_count>23</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-13 23:00:35 -0400</bug_when>
+    <thetext>(In reply to comment #22)
+&gt; (In reply to comment #18)
+&gt; 
+&gt; &gt; Under test.
+&gt; 
+&gt; Released in BETA_JAVA8 via
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=4c2900096a422605a0884d5ca39839064ce0c89a.
+
+Again the scanner changes are easier/better reviewed in one shot
+by comparing them to master rather than to BETA_JAVA8.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2136903</commentid>
+    <comment_count>24</comment_count>
+      <attachid>218724</attachid>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-14 04:46:34 -0400</bug_when>
+    <thetext>Created attachment 218724
+Follow up patch under test
+
+After yet much more agonizing and vacillating, I have decided to reinstate
+the look ahead policy management via Parser.atConflictScenario(). I would
+have been happy to settle for a cheap DFA based approach, but as mentioned
+earlier, 308 ruins the possibility of it and forces us to settle for gross
+approximations - We don&apos;t have heavily generified code to test and the prospect
+of having to look ahead at every &apos;&lt;&apos; that follows an identifier worries me.
+
+At the moment, there is no indication that this method is hurting and given 
+that, I&apos;ll settle for the rigor it provides any day over hacks (the DFA based
+approached would not have been a hack IMO, but for the 308 complications) or
+uncertainties.
+
+Upon some sole searching, I realize that my repeated uses of the word 
+canonical, standard, orthodox etc in https://bugs.eclipse.org/bugs/show_bug.cgi?id=380194 are perhaps due to the concern in the back of my mind that the 
+original implementation could stand a bit more rigor - something the 
+combination of the VanguardParser and atConflictScenario affords us.
+At that point the ultra-urgent order of business was to rule out the worst 
+case scenario of junking the parser infrastructure altogether and so putting
+together something quick &amp; not particularly dirty was the right thing to do.
+But now that that cloud seems to have passed, we should take a critical look
+to strengthen the design &amp; implementation and the present patch is in the 
+right direction.
+
+FWIW, the reinstatement leaves the scanner code cleaner that what it was before
+atConflictScenario was ripped out in the first place.
+
+Stephan,
+
+My tests indicate there is no performance concern to go after, 
+let me know if your experiments indicate otherwise - if they do, I am
+willing to leave the present bug OPEN and revisit it later - At the
+moment the priority is to make progress on the semantic analysis and
+type resolution/inference projects.
+
+That leaves us with your original concern around understandability of
+this method - I am willing to help with that. Why don&apos;t you study it
+and then we can discuss any parts that need to be clarified ? Complexity
+wise this piece of code is orders of magnitude simpler than the voodoo
+that happens in DiagnoseParser and IMO, it it not needless complexity
+we are signing up for.
+
+With this patch in place, the body of work we have so far looks pretty
+good and I expect to sleep better !
+
+The only piece that still needs firming up is (as you called out) the 
+AST abstraction for ReferenceExpression. It is clunky at the moment, I&apos;ll 
+get to it soon.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2136906</commentid>
+    <comment_count>25</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-14 05:24:12 -0400</bug_when>
+    <thetext>All tests pass. Released in JAVA8 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=e0956e75ff6cb3066016adc9dae90f9c1534dda4.
+
+Note: the last round of measurements which didn&apos;t show any degradations
+other than some run to run variations, were actually carried out with
+BETA_JAVA8 top of trunk + the candidate patches i.e they included JSR 308
+related changes too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2137035</commentid>
+    <comment_count>26</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-15 17:58:10 -0400</bug_when>
+    <thetext>(In reply to comment #25)
+
+&gt; Note: the last round of measurements which didn&apos;t show any degradations
+&gt; other than some run to run variations, were actually carried out with
+&gt; BETA_JAVA8 top of trunk + the candidate patches i.e they included JSR 308
+&gt; related changes too.
+
+Here are the up to date numbers:
+
+Notes:
+
+    - All measurements while running on battery.
+    - Each number below is the average over 3 runs rounded up individually
+      and again after averaging.
+    - Benchmark : org.eclipse.jdt.core.tests.compiler.parser.TestAll
+    - Timing : As reported by junit runner.
+
+(1) Reset to commit id 972c7f1c4d5a8249e6cf0bbf33078118344b368a which predates
+ANY grammar change in BETA_JAVA8 branch:
+
+    140 seconds
+
+(2) Reset to commit id fa76c3ec72ce5ca3743ba534e916cc81952bcc4a which is NOW:
+
+    141 seconds.
+
+(3) Same commit as (2) + scanningJava8Plus force initialized to true (Note:
+parsingJava8Plus has no effect on look ahead anymore).
+
+    142 seconds.
+
+(4) Same commit as (2) + scanningJava8Plus force initialized to true +
+Parser.atConflictScenario calls short circuited (presumed to always be true):
+
+    145 seconds.
+
+So it would appear that Parser.atConflictScenario saves us about 2%. No
+big shakes, but given it is only 30 NCLOC, it looks worth it. Note that
+these new measurements are against the new look ahead implementation. It 
+could be that the new look ahead mechanism based on the VanguardParser is
+slightly more expensive than plain looping in scanner and so the gating
+policy yields ~2% savings vs ~0% earlier.
+
+Just for kicks, I instrumented the scanner to gather some stats as it
+ran TestAll (1.3 - 1.8, a total of 13254 test points against the commit
+fa76c3ec72ce5ca3743ba534e916cc81952bcc4a &quot;NOW&quot;):
+
+Total &apos;(&apos; :  115035, at conflict site:  32137 (27.9%)
+Total &apos;&lt;&apos; :   11284, at conflict site:   2340 (20.7%)
+
+With generics heavy code, I would expect the latter to go up a good
+bit, while the former may be representative already.
+
+
+Bottomline: All set to close this, Only pending item is the review
+for http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=e0956e75ff6cb3066016adc9dae90f9c1534dda4.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2137657</commentid>
+    <comment_count>27</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-17 01:07:37 -0400</bug_when>
+    <thetext>(In reply to comment #8)
+
+&gt; Fixing a typo and adding the tokens from the ternary operator, this 
+&gt; should read:
+&gt; 
+&gt;   PRECEDES(Lambda) = { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot; }
+
+It should read:
+
+    PRECEDES(Lambda) = { &quot;=&quot;, &quot;return&quot;, &quot;(&quot;, &quot;)&quot;, &quot;,&quot;, &quot;-&gt;&quot;, &quot;?&quot;, &quot;:&quot;, &quot;{&quot; }
+
+for  I i[] = { ()-&gt; {} } is valid.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2137822</commentid>
+    <comment_count>28</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-17 07:42:11 -0400</bug_when>
+    <thetext>(In reply to comment #21)
+
+&gt; For &apos;&lt;&apos; we will look ahead at every instance of it following an identifier.
+&gt; As mentioned in comment#17, JSR308 annotations make it impossible for a DFA
+&gt; to be constructed to serve as an oracle (since counting is required to know
+&gt; when annotation tokens end and a DFA cannot count)
+
+I&apos;ll surely be accused of, and will certainly be guilty as charged of 
+over-engineering this thing: While it is impossible to construct a DFA
+to answer if look ahead is needed on a &apos;&lt;&apos;, turns out it is a much easier
+question to answer if look ahead is NOT needed. All we need is to do is
+to maintain a two token history buffer and most occurrences of &apos;&lt;&apos; can
+be disqualified as being a part of reference expression trunk.
+
+Primary incentive is that if the cost of lookahead can be brought down
+to near zero, then we can look ahead in all modes and solve bug 381358
+automatically. 
+
+Patch to follow :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2137967</commentid>
+    <comment_count>29</comment_count>
+      <attachid>218808</attachid>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-17 10:40:20 -0400</bug_when>
+    <thetext>Created attachment 218808
+Further tweaks to minimize look ahead.
+
+In this patch, the scanner implements a notion of viable prefixes
+to eliminate look ahead.
+
+Some statistics: (TestAll 1.3 - 1.8 modes):
+
+Total &apos;(&apos; :                115035 (100%)
+After pruning by scanner :   4220  (3.7%)
+After pruning by parser :     986  (0.9%)  &lt;&lt;- Look ahead needed
+
+Total &apos;&lt;&apos; :                  11284 (100%)
+After pruning by scanner:     4380  (39%)
+After pruning by parser        574  (5%)  &lt;&lt;-- Look ahead needed for these</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138222</commentid>
+    <comment_count>30</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-17 16:53:40 -0400</bug_when>
+    <thetext>I made some measurements closer to the worst case scenario to get a better picture of the differences. I identified a test case with high number of tokens look-ahead:
+
+In GenericDietRecoveryTest.test0020() the VanguardScanner consumes max 15 tokens before the parser could reject the input
+
+I used current head from master and added these configuration options:
+
+USE_MAGIC:
+- used in Scanner.getNextToken() en lieu de this.scanningJava8Plus
+
+DETECT_CONFLICT:
+- when true, atConflictScenario() is used, otherwise assume Vanguard
+  is always needed.
+
+The test ran these loops:
+	for (int i=0;i&lt;10000;i++)
+		checkParse(...); // warm-up
+	for (int i=0;i&lt;10;i++) {
+		long start = System.currentTimeMillis();
+		for (int j=0;j&lt;2000;j++)
+			checkParse(...);
+		System.out.println(System.currentTimeMillis()-start);
+	}
+
+Each print-out was in the order of 1000 ms. I discarded some test runs with std. deviation &gt; 10 (1%).
+
+The results are:
+
+(1) USE_MAGIC=false; DETECT_CONFLICT=false;
+ -&gt; average = 1047.6
+
+(2) USE_MAGIC=false; DETECT_CONFLICT=true;
+ -&gt; average = 1045.9
+
+(3) USE_MAGIC=true; DETECT_CONFLICT=false;
+ -&gt; average = 1373.2
+
+(4) USE_MAGIC=true; DETECT_CONFLICT=true;
+ -&gt; average = 1262.8
+
+Interpretation:
+
+(1) is the old setup, used as 100% in comparison.
+
+(2) never use vanguard, but before (not) doing so check for conflict
+    should be marginally more expensive than (1), actually ranked at 99.8%
+
+(3) means always use vanguard, i.e., this is most expensive: 131% time
+
+(4) shows the advantage of using atConflictScenario(): 121% time
+    or: 92% of the time used for (3)
+
+
+Since this is closer to a micro-benchmark than to a real-world experiment, the penalties of 21% or 31% should be taken with a grain of salt. The main message I see is: of all the overhead caused by look-ahead, 1/3 can be reduced using atConflictScenario(), thus clearly answering &quot;yes&quot; to my original question whether this method is worth its price.
+
+Despite the carefully chosen test and the number of runs, one factor is still quite arbitrary: The ratio at which atConflictScenario(), when used, answered true vs. false. I only checked this after the experiment:
+  atConflictScenario() answered true 36 times, false 1133 times per compile
+Maybe this ratio is the major weakness in my experiment. So, for ultimate reliability one *might* want to combine this experiment with the findings from comment 29, but I&apos;m fine with deferring further measurements towards the end of the Java 8 endeavor, to add some end-to-end measurements. At that time I&apos;d like to tune the experiment so that we get a small enough std.dev. so that we can actually see into the 1-2% range.
+
+We&apos;ve seen that in total numbers of realistic application the differences are small, and we&apos;ve seen that the extra smartness is worth its price. Sounds good to me for now.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138255</commentid>
+    <comment_count>31</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-17 18:55:41 -0400</bug_when>
+    <thetext>Thanks Stephan. Could you mark the review flag for completeness ? TIA.
+
+(In reply to comment #29)
+&gt; Created attachment 218808 [details]
+&gt; Further tweaks to minimize look ahead.
+&gt; 
+&gt; In this patch, the scanner implements a notion of viable prefixes
+&gt; to eliminate look ahead.
+
+Released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=39fac05fa8b77fcaf96c0cb04f6cdf322c685cfd</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138261</commentid>
+    <comment_count>32</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-07-17 19:01:54 -0400</bug_when>
+    <thetext>(In reply to comment #31)
+&gt; Thanks Stephan. Could you mark the review flag for completeness ? TIA.
+&gt; 
+&gt; (In reply to comment #29)
+&gt; &gt; Created attachment 218808 [details]
+&gt; &gt; Further tweaks to minimize look ahead.
+&gt; &gt; 
+&gt; &gt; In this patch, the scanner implements a notion of viable prefixes
+&gt; &gt; to eliminate look ahead.
+&gt; 
+&gt; Released via
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=39fac05fa8b77fcaf96c0cb04f6cdf322c685cfd
+
+Hm, I didn&apos;t even see this patch until after my latest experiments. Should I review that, too?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2138262</commentid>
+    <comment_count>33</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-07-17 19:05:30 -0400</bug_when>
+    <thetext>(In reply to comment #32)
+
+&gt; Hm, I didn&apos;t even see this patch until after my latest experiments. Should I
+&gt; review that, too?
+
+By all means. It should be very straightforward. TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2489822</commentid>
+    <comment_count>34</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-27 10:35:06 -0500</bug_when>
+    <thetext>Cleaning stale review flag to +1 :)</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>218706</attachid>
+            <date>2012-07-13 10:19:00 -0400</date>
+            <delta_ts>2012-07-14 04:46:34 -0400</delta_ts>
+            <desc>Patch under test</desc>
+            <filename>lookahead.patch</filename>
+            <type>text/plain</type>
+            <size>12744</size>
+            <attacher name="Srikanth Sankaran">srikanth_sankaran</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvUGFyc2VyLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL1Bh
+cnNlci5qYXZhCmluZGV4IGVhMmM3OWMuLjkwNzU1NjUgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNl
+LmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wYXJz
+ZXIvUGFyc2VyLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2Vj
+bGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3BhcnNlci9QYXJzZXIuamF2YQpAQCAtMTA5MDEs
+ODEgKzEwOTAxLDYgQEAKIAogCXRoaXMuYXN0TGVuZ3RoU3RhY2tbLS10aGlzLmFzdExlbmd0aFB0
+cl0rKzsKIH0KLXByaXZhdGUgYm9vbGVhbiBwYXJzZXJBdENvbmZsaWN0U2NlbmFyaW8oaW50IGxh
+c3RBY3Rpb24sIGludCB0b2tlbikgewotCQotCS8qIEFuc3dlciB0cnVlIGlmIHRoZSBwYXJzZXIg
+aXMgYXQgYSBjb25maWd1cmF0aW9uIHdoZXJlIHRoZSBzY2FubmVyIG11c3QgbG9vayBhaGVhZCBh
+bmQgaGVscCBkaXNhbWJpZ3VhdGUgYmV0d2VlbiAoYSkgJzwnIGFzIGFuIG9wZXJhdG9yIGFuZCAn
+PCcgYXMgdGhlCi0JICAgc3RhcnQgb2YgPHR5cGUgYXJndW1lbnQ+IGFuZCAoYikgdGhlIHVzZSBv
+ZiAnKCcgaW4gJygnIGV4cHJlc3Npb24gJyknIGFuZCAnKCB0eXBlICcpJyBhbmQgJygnIGxhbWJk
+YSBmb3JtYWwgcGFyYW1ldGVycyAnKScuIFdoZW4gcmVxdWVzdGVkIHRodXMsCi0JICAgdGhlIHNj
+YW5uZXIgaGVscHMgYnkgZmFicmljYXRpbmcgc3ludGhldGljIHRva2VucyBhbmQgaW5qZWN0aW5n
+IHRoZW0gaW50byB0aGUgc3RyZWFtIGFoZWFkIG9mIHRoZSB0b2tlbnMgdGhhdCB0cmlnZ2VyIGNv
+bmZsaWN0cyBpbiB0aGUgYWJzZW5jZQotCSAgIG9mIHRoZXNlIGFydGlmaWNpYWwgdG9rZW5zLiBU
+aGVzZSBtYW51ZmFjdHVyZWQgdG9rZW4gaGVscCB0cmFuc2Zvcm0gdGhlIGdyYW1tYXIgaW50byBM
+QUxSKDEpIGJ5IHNwbGl0dGluZyB0aGUgc3RhdGVzIHNvIHRoYXQgdGhleSBoYXZlIHVuYW1iaWdp
+b3VzCi0JICAgcHJlZml4ZXMuCi0JICAgCi0JICAgV2UgZG8gdGhpcyBieSBjbGFpbWluZyB0byB0
+aGUgYXV0b21hdG9uIHRoYXQgdGhlIG5leHQgdG9rZW4gc2VlbiBpcyB0aGUgKHN1aXRhYmxlKSBz
+eW50aGV0aWMgdG9rZW4gYW5kIG9ic2VydmluZyB0aGUgcmVzcG9uc2Ugb2YgdGhlIHN0YXRlIG1h
+Y2hpbmUuIAotCSAgIEVycm9yIHNpZ25hbHMgd2UgYXJlIE5PVCBhdCBhIGNvbmZsaWN0IHNpdGUs
+IHdoaWxlIHNoaWZ0IG9yIHNoaWZ0L3JlZHVjZSBzaWduYWxzIHRoYXQgd2UgYXJlLiBBY2NlcHQg
+aXMgaW1wb3NzaWJsZSwgd2hpbGUgdGhlcmUgbWF5IGJlIGludGVybWVkaWF0ZQotCSAgIHJlZHVj
+dGlvbnMgdGhhdCBhcmUgY2FsbGVkIGZvciAtLSBJdCBpcyBheGlvbWF0aWMgb2YgdGhlIHB1c2gg
+ZG93biBhdXRvbWF0b24gdGhhdCBjb3JyZXNwb25kcyB0byB0aGUgTEFMUiBncmFtbWFyIHRoYXQg
+aXQgd2lsbCBuZXZlciBzaGlmdCBvbiBpbnZhbGlkCi0JICAgaW5wdXQuCi0JICAgCi0JICAgT2J2
+aW91c2x5LCB0aGUgZHJ5IHJ1bnMgc2hvdWxkIG5vdCBhbHRlciB0aGUgcGFyc2VyIHN0YXRlIGlu
+IGFueSB3YXkgb3Igb3RoZXJ3aXNlIGNhdXNlIHNpZGUgZWZmZWN0cy4gUHJvb2YgYnkgYXJndW1l
+bnQgdGhhdCB0aGlzIGlzIHRoZSBjYXNlOgotCSAgIAotCSAgICAgICAtIFRoZSBvbmx5IHBpZWNl
+cyBvZiBzdGF0ZSBuZWVkZWQgdG8gYW5zd2VyIHRoZSBxdWVzdGlvbiBhcmU6IHRoaXMuc3RhY2ss
+IHRoaXMuc3RhdGVTdGFja1RvcCBhbmQgdGhlIGxhc3QgYWN0aW9uIHZhcmlhYmxlIGBhY3RgLiBO
+b25lIG9mIHRoZSB2YXJpb3VzCi0JICAgICAgICAgYW5kIHN1bmRyeSBzdGFja3MgdXNlZCBpbiB0
+aGUgQVNUIGNvbnN0cnVjdGlvbnMgcHJvY2VzcyBhcmUgdG91Y2hlZCBoZXJlLgotCSAgICAgICAt
+IEFzIHdlIHJlZHVjZSwgd2UgRE9OJ1QgY2FsbCB0aGUgc2VtYW50aWMgYWN0aW9uIGZ1bmN0aW9u
+cyBpLmUgdGhlIGNvbnN1bWUqIG1ldGhvZCBjYWxscyBhcmUgc2tpcHBlZC4KLQkgICAgICAgLSBM
+ZXhlciBzdHJlYW0gaXMgbGVmdCB1bnRvdWNoZWQuCi0JICAgICAgIC0gdGhpcy5zdGF0ZVN0YWNr
+VG9wIGFuZCB0aGUgbGFzdCBhY3Rpb24gdmFyaWFibGUgYGFjdGAgb2YgdGhlIGF1dG9tYXRvbiBh
+cmUgcmVhZGlseSBjbG9uZWQsIHRoZXNlIGJlaW5nIHByaW1pdGl2ZXMgYW5kIGNoYW5nZXMgYXJl
+IHRvIHRoZSByZXBsaWNhcy4KLQkgICAgICAgLSBXZSBuZXZlciByZW1vdmUgZWxlbWVudHMgZnJv
+bSB0aGUgc3RhdGUgc3RhY2sgaGVyZSAob3IgZWxzZXdoZXJlIGZvciB0aGF0IG1hdHRlcikuIFBv
+cHMgYXJlIGltcGxlbWVudGVkIGJ5IG1lcmUgYWRqdXN0bWVudHMgb2YgdGhlIHN0YWNrIHBvaW50
+ZXIuCi0JICAgICAgIC0gRHVyaW5nIHRoaXMgYWxnb3JpdGhtLCBlaXRoZXIgdGhlIHN0YWNrIHBv
+aW50ZXIgbW9ub3RvbmljYWxseSBkZWNyZWFzZXMgb3Igc3RheXMgZml4ZWQuIChUaGUgb25seSB3
+YXkgZm9yIHRoZSBzdGFjayBwb2ludGVyIHRvIGluY3JlYXNlIHdvdWxkIGNhbGwKLQkgICAgICAg
+ICBmb3IgYSBzaGlmdCBvciBhIHNoaWZ0L3JlZHVjZSBhdCB3aGljaCBwb2ludCB0aGUgYWxnb3Jp
+dGhtIGlzIHJlYWR5IHRvIHRlcm1pbmF0ZSBhbHJlYWR5LikgVGhpcyBtZWFucyB0aGF0IHdlIGRv
+bid0IGhhdmUgdG8gcmVwbGljYXRlIHRoZSBzdGFjay4gCi0JICAgICAgICAgUHVzaGVzIGNhbiBi
+ZSBtaW1pY2VkIGJ5IHdyaXRpbmcgdG8gYSBsb2NhbCBzdGFja1RvcFN0YXRlIHZhcmlhYmxlLCBs
+ZWF2aW5nIHRoZSBvcmlnaW5hbCBzdGFjayB1bnRvdWNoZWQuCi0JICAgICAgICAgCi0JICAgIFRo
+b3VnaCB0aGlzIGNvZGUgbG9va3MgY29tcGxleCwgd2Ugc2hvdWxkIGV4aXQgZWFybHkgaW4gbW9z
+dCBzaXR1YXRpb25zLiAgICAgCi0JICovCi0KLQlpbnQgc3RhY2tUb3AgPSB0aGlzLnN0YXRlU3Rh
+Y2tUb3A7ICAgICAgICAvLyBsb2NhbCBjb3B5IG9mIHN0YWNrIHBvaW50ZXIKLQlpbnQgc3RhY2tU
+b3BTdGF0ZSA9IHRoaXMuc3RhY2tbc3RhY2tUb3BdOyAvLyBzaW5nbGUgY2VsbCBub24gd3JpdGUg
+dGhyb3VnaCAiYWx0ZXJuYXRlIHN0YWNrIiAtIHRoZSBhdXRvbWF0b24ncyBzdGFjayBwb2ludGVy
+IGVpdGhlciBzdGF5cyBmaXhlZCBkdXJpbmcgdGhpcyBtYW5vZXV2cmUgb3IgbW9ub3RvbmljYWxs
+eSBkZWNyZWFzZXMuCi0JaW50IGhpZ2hXYXRlck1hcmsgPSBzdGFja1RvcDsKLQkKLQl0b2tlbiA9
+IHRva2VuID09IFRva2VuTmFtZUxQQVJFTiA/IFRva2VuTmFtZUJlZ2luTGFtYmRhIDogVG9rZW5O
+YW1lQmVnaW5UeXBlQXJndW1lbnRzOwotCQotCS8vIEEgcm90YXRlZCB2ZXJzaW9uIG9mIHRoZSBh
+dXRvbWF0b24gLSBjZi4gcGFyc2UoKSdzIGZvcig7OykKLQlmb3IgKDs7KSB7ICAKLQkJaWYgKGxh
+c3RBY3Rpb24gPiBFUlJPUl9BQ1RJT04pIHsgIC8qIHNoaWZ0LXJlZHVjZSBvbiBsb29wIGVudHJ5
+IGZyb20gYWJvdmUsIHJlZHVjZSBvbiBsb29wIGJhY2sgKi8KLQkJCWxhc3RBY3Rpb24gLT0gRVJS
+T1JfQUNUSU9OOwotCQkJZG8geyAvKiByZWR1Y2UgKi8KLQkJCQlzdGFja1RvcCAtPSByaHNbbGFz
+dEFjdGlvbl0gLSAxOwotCQkJCWlmIChzdGFja1RvcCA8IGhpZ2hXYXRlck1hcmspIHsKLQkJCQkJ
+c3RhY2tUb3BTdGF0ZSA9IHRoaXMuc3RhY2tbaGlnaFdhdGVyTWFyayA9IHN0YWNrVG9wXTsKLQkJ
+CQl9IC8vIGVsc2Ugc3RhY2tUb3BTdGF0ZSBpcyB1cHRvIGRhdGUgYWxyZWFkeS4KLQkJCQlsYXN0
+QWN0aW9uID0gbnRBY3Rpb24oc3RhY2tUb3BTdGF0ZSwgbGhzW2xhc3RBY3Rpb25dKTsKLQkJCX0g
+d2hpbGUgKGxhc3RBY3Rpb24gPD0gTlVNX1JVTEVTKTsKLQkJfQotCQloaWdoV2F0ZXJNYXJrID0g
+KytzdGFja1RvcDsKLQkJc3RhY2tUb3BTdGF0ZSA9IGxhc3RBY3Rpb247IC8vICJwdXNoIgotCQls
+YXN0QWN0aW9uID0gdEFjdGlvbihsYXN0QWN0aW9uLCB0b2tlbik7IC8vIGNhbiBiZSBsb29rZWQg
+dXAgZnJvbSBhIHByZWNvbXB1dGVkIGNhY2hlLgotCQlpZiAobGFzdEFjdGlvbiA8PSBOVU1fUlVM
+RVMpIHsKLQkJCXN0YWNrVG9wIC0tOyAKLQkJICAgIGxhc3RBY3Rpb24gKz0gRVJST1JfQUNUSU9O
+OwotCQkJY29udGludWU7Ci0JCX0KLQkJLy8gRXJyb3IgPT4gZmFsc2UsIFNoaWZ0LCBTaGlmdC9S
+ZWR1Y2UgPT4gdHJ1ZSwgQWNjZXB0ID0+IGltcG9zc2libGUuIAotCQlyZXR1cm4gbGFzdEFjdGlv
+biAhPSBFUlJPUl9BQ1RJT047Ci0JfQotfQotcHJvdGVjdGVkIGludCBnZXROZXh0VG9rZW4gKGlu
+dCBsYXN0QWN0aW9uKSB0aHJvd3MgSW52YWxpZElucHV0RXhjZXB0aW9uIHsKLQlpbnQgdG9rZW4g
+PSB0aGlzLnNjYW5uZXIuZ2V0TmV4dFRva2VuKCk7Ci0JaWYgKHRoaXMucGFyc2luZ0phdmE4UGx1
+cykgewotCQlpZiAodG9rZW4gPT0gVG9rZW5OYW1lTFBBUkVOIHx8IHRva2VuID09IFRva2VuTmFt
+ZUxFU1MpIHsKLQkJCWlmIChwYXJzZXJBdENvbmZsaWN0U2NlbmFyaW8obGFzdEFjdGlvbiwgdG9r
+ZW4pKSB7IC8vIEFzayB0aGUgbGV4ZXIgdG8gZG91YmxlIGNoZWNrIGlmIHdlIGF0IGEgbGFtYmRh
+IGV4cHJlc3Npb24gb3IgYSBtZXRob2QvY3RvciByZWZlcmVuY2UgZXhwcmVzc2lvbiAuLi4KLQkJ
+CQl0aGlzLnNjYW5uZXIuc2hvdWxkRGlzYW1iaWd1YXRlID0gdHJ1ZTsKLQkJCQl0cnkgewotCQkJ
+CQl0aGlzLnNjYW5uZXIudW5nZXRUb2tlbih0b2tlbik7Ci0JCQkJCXRva2VuID0gdGhpcy5zY2Fu
+bmVyLmdldE5leHRUb2tlbigpOyAvLyBSZXNjYW4KLQkJCQl9IGZpbmFsbHkgewotCQkJCQl0aGlz
+LnNjYW5uZXIuc2hvdWxkRGlzYW1iaWd1YXRlID0gZmFsc2U7Ci0JCQkJfQotCQkJfQotCQl9Ci0J
+fQotCXJldHVybiB0b2tlbjsKLX0KIC8qbWFpbiBsb29wIG9mIHRoZSBhdXRvbWF0CiBXaGVuIGEg
+cnVsZSBpcyByZWR1Y2VkLCB0aGUgbWV0aG9kIGNvbnN1bWVSdWxlKGludCkgaXMgY2FsbGVkIHdp
+dGggdGhlIG51bWJlcgogb2YgdGhlIGNvbnN1bWVkIHJ1bGUuIFdoZW4gYSB0ZXJtaW5hbCBpcyBj
+b25zdW1lZCwgdGhlIG1ldGhvZCBjb25zdW1lVG9rZW4oaW50KSBpcwpAQCAtMTEwNDksNyArMTA5
+NzQsNyBAQAogCQkJCXRoaXMucmVjb3JkU3RyaW5nTGl0ZXJhbHMgPSBvbGRWYWx1ZTsKIAkJCX0K
+IAkJCXRyeSB7Ci0JCQkJdGhpcy5jdXJyZW50VG9rZW4gPSBnZXROZXh0VG9rZW4oYWN0KTsKKwkJ
+CQl0aGlzLmN1cnJlbnRUb2tlbiA9IHRoaXMuc2Nhbm5lci5nZXROZXh0VG9rZW4oKTsKIAkJCX0g
+Y2F0Y2goSW52YWxpZElucHV0RXhjZXB0aW9uIGUpewogCQkJCWlmICghdGhpcy5oYXNSZXBvcnRl
+ZEVycm9yKXsKIAkJCQkJcHJvYmxlbVJlcG9ydGVyKCkuc2Nhbm5lckVycm9yKHRoaXMsIGUuZ2V0
+TWVzc2FnZSgpKTsKQEAgLTExMDc4LDcgKzExMDAzLDcgQEAKIAkJCQkJdGhpcy5yZWNvcmRTdHJp
+bmdMaXRlcmFscyA9IG9sZFZhbHVlOwogCQkJCX0KIAkJCQl0cnl7Ci0JCQkJCXRoaXMuY3VycmVu
+dFRva2VuID0gZ2V0TmV4dFRva2VuKGFjdCk7CisJCQkJCXRoaXMuY3VycmVudFRva2VuID0gdGhp
+cy5zY2FubmVyLmdldE5leHRUb2tlbigpOwogCQkJCX0gY2F0Y2goSW52YWxpZElucHV0RXhjZXB0
+aW9uIGUpewogCQkJCQlpZiAoIXRoaXMuaGFzUmVwb3J0ZWRFcnJvcil7CiAJCQkJCQlwcm9ibGVt
+UmVwb3J0ZXIoKS5zY2FubmVyRXJyb3IodGhpcywgZS5nZXRNZXNzYWdlKCkpOwpkaWZmIC0tZ2l0
+IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFs
+L2NvbXBpbGVyL3BhcnNlci9TY2FubmVyLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21w
+aWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL1NjYW5uZXIuamF2
+YQppbmRleCAzOGQ3OGJiLi5hYTdiNTFlIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL1NjYW5u
+ZXIuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL1NjYW5uZXIuamF2YQpAQCAtMTkwLDEzICsxOTAs
+NDUgQEAKIAkJbmV3RW50cnk2ID0gMDsKIAlwdWJsaWMgYm9vbGVhbiBpbnNpZGVSZWNvdmVyeSA9
+IGZhbHNlOwogCXByaXZhdGUgaW50IG5leHRUb2tlbiA9IFRva2VuTmFtZU5vdEFUb2tlbjsgLy8g
+YWxsb3dzIGZvciBvbmUgdG9rZW4gcHVzaCBiYWNrLCBvbmx5IHRoZSBtb3N0IHJlY2VudCB0b2tl
+biBjYW4gYmUgcmVsaWFibHkgdW5nb3R0ZW4uCi0JcHJpdmF0ZSBmaW5hbCBib29sZWFuIHNjYW5u
+aW5nSmF2YThQbHVzOwotCXB1YmxpYyBib29sZWFuIHNob3VsZERpc2FtYmlndWF0ZTsgICAgICAg
+ICAgLy8gZmVlZGJhY2sgZnJvbSBwYXJzZXIgYWJvdXQgbmVlZCB0byBkaXNhbWJpZ3VhdGUgLS0g
+dG8gbG9va2FoZWFkIG9ubHkgd2hlbiBhYnNvbHV0ZWx5IG5lY2Vzc2FyeS4KLQlwdWJsaWMgYm9v
+bGVhbiBkaXNhbWJpZ3VhdGVkQWxyZWFkeTsKLQlwdWJsaWMgYm9vbGVhbiBzY2FubmluZ0hlYWRP
+ZlJlZmVyZW5jZUV4cHJlc3Npb24gPSBmYWxzZTsKIAlwcml2YXRlIFZhbmd1YXJkU2Nhbm5lciB2
+YW5ndWFyZFNjYW5uZXI7CiAJcHJpdmF0ZSBWYW5ndWFyZFBhcnNlciB2YW5ndWFyZFBhcnNlcjsK
+IAorCXByaXZhdGUgaW50IGxvb2tBaGVhZFN0YXRlID0gU1RBUlRfU1RBVEU7CisJcHJpdmF0ZSBz
+dGF0aWMgaW50W11bXSBsb29rQWhlYWRUYWJsZTsKKwkKKwlwcml2YXRlIHN0YXRpYyBmaW5hbCBp
+bnQgU1RBUlRfU1RBVEUgPSAwOworCXByaXZhdGUgc3RhdGljIGZpbmFsIGludCBQT1NUX0xBTUJE
+QV9QUkVGSVggPSAxOworCXByaXZhdGUgc3RhdGljIGZpbmFsIGludCBQT1NUX0lERU5USUZJRVIg
+PSAyOworCXByaXZhdGUgc3RhdGljIGZpbmFsIGludCBQT1NUX0JFR0lOX1RZUEVfQVJHVU1FTlRT
+ID0gMzsKKwlwcml2YXRlIHN0YXRpYyBmaW5hbCBpbnQgVE9UQUxfTE9PS0FIRUFEX1NUQVRFUyA9
+IDQ7CisKKwlzdGF0aWMgeworCQlpbnQgbWF4VGVybWluYWxzID0gUGFyc2VyQmFzaWNJbmZvcm1h
+dGlvbi5OVU1fVEVSTUlOQUxTOworCQlsb29rQWhlYWRUYWJsZSA9IG5ldyBpbnRbVE9UQUxfTE9P
+S0FIRUFEX1NUQVRFU11bbWF4VGVybWluYWxzXTsKKwkJCisJCWZvciAoaW50IGkgPSAwOyBpIDw9
+IFBPU1RfSURFTlRJRklFUjsgaSsrKSB7CisJCQlmb3IgKGludCBqID0gMDsgaiA8IG1heFRlcm1p
+bmFsczsgaisrKSB7CisJCQkJbG9va0FoZWFkVGFibGVbaV1bal0gPSBTVEFSVF9TVEFURTsKKwkJ
+CX0JCisJCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tlbk5hbWVFUVVBTF0gPSBQT1NUX0xBTUJEQV9Q
+UkVGSVg7CisJCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tlbk5hbWVyZXR1cm5dID0gUE9TVF9MQU1C
+REFfUFJFRklYOworCQkJbG9va0FoZWFkVGFibGVbaV1bVG9rZW5OYW1lTFBBUkVOXSA9IFBPU1Rf
+TEFNQkRBX1BSRUZJWDsKKwkJCWxvb2tBaGVhZFRhYmxlW2ldW1Rva2VuTmFtZVJQQVJFTl0gPSBQ
+T1NUX0xBTUJEQV9QUkVGSVg7CisJCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tlbk5hbWVDT01NQV0g
+PSBQT1NUX0xBTUJEQV9QUkVGSVg7CisJCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tlbk5hbWVBUlJP
+V10gPSBQT1NUX0xBTUJEQV9QUkVGSVg7CisJCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tlbk5hbWVR
+VUVTVElPTl0gPSBQT1NUX0xBTUJEQV9QUkVGSVg7CisJCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tl
+bk5hbWVDT0xPTl0gPSBQT1NUX0xBTUJEQV9QUkVGSVg7CisJCQlsb29rQWhlYWRUYWJsZVtpXVtU
+b2tlbk5hbWVJZGVudGlmaWVyXSA9IFBPU1RfSURFTlRJRklFUjsKKwkJfQorCQkKKwkJbG9va0Fo
+ZWFkVGFibGVbUE9TVF9JREVOVElGSUVSXVtUb2tlbk5hbWVCZWdpblR5cGVBcmd1bWVudHNdID0g
+UE9TVF9CRUdJTl9UWVBFX0FSR1VNRU5UUzsKKworCQlmb3IgKGludCBpID0gMDsgaSA8IG1heFRl
+cm1pbmFsczsgaSsrKSB7CisJCQlsb29rQWhlYWRUYWJsZVtQT1NUX0JFR0lOX1RZUEVfQVJHVU1F
+TlRTXVtpXSA9IFBPU1RfQkVHSU5fVFlQRV9BUkdVTUVOVFM7ICAvLyBiZSBzdHVjayBoZXJlIHVu
+dGlsICI6OiIsIHNvIHdlIGRvbid0IGluamVjdCB0aGUKKwkJfQorCQlsb29rQWhlYWRUYWJsZVtQ
+T1NUX0JFR0lOX1RZUEVfQVJHVU1FTlRTXVtUb2tlbk5hbWVDT0xPTl9DT0xPTl0gPSBTVEFSVF9T
+VEFURTsgLy8gc3ludGhldGljIHRva2VuIGFoZWFkIG9mIHRoZSBzZWNvbmQgJzwnIGluIFg8VD4u
+WTxRPjo6CisJfQorCQogCXB1YmxpYyBzdGF0aWMgZmluYWwgaW50IFJvdW5kQnJhY2tldCA9IDA7
+CiAJcHVibGljIHN0YXRpYyBmaW5hbCBpbnQgU3F1YXJlQnJhY2tldCA9IDE7CiAJcHVibGljIHN0
+YXRpYyBmaW5hbCBpbnQgQ3VybHlCcmFja2V0ID0gMjsKQEAgLTIyNiw4ICsyNTgsOCBAQAogCXRo
+aXMudG9rZW5pemVDb21tZW50cyA9IHRva2VuaXplQ29tbWVudHM7CiAJdGhpcy50b2tlbml6ZVdo
+aXRlU3BhY2UgPSB0b2tlbml6ZVdoaXRlU3BhY2U7CiAJdGhpcy5zb3VyY2VMZXZlbCA9IHNvdXJj
+ZUxldmVsOwotCXRoaXMuc2Nhbm5pbmdKYXZhOFBsdXMgPSBzb3VyY2VMZXZlbCA+PSBDbGFzc0Zp
+bGVDb25zdGFudHMuSkRLMV84OwogCXRoaXMubmV4dFRva2VuID0gVG9rZW5OYW1lTm90QVRva2Vu
+OworCXRoaXMubG9va0FoZWFkU3RhdGUgPSBTVEFSVF9TVEFURTsKIAl0aGlzLmNvbXBsaWFuY2VM
+ZXZlbCA9IGNvbXBsaWFuY2VMZXZlbDsKIAl0aGlzLmNoZWNrTm9uRXh0ZXJuYWxpemVkU3RyaW5n
+TGl0ZXJhbHMgPSBjaGVja05vbkV4dGVybmFsaXplZFN0cmluZ0xpdGVyYWxzOwogCWlmICh0YXNr
+VGFncyAhPSBudWxsKSB7CkBAIC0xMTMxLDYgKzExNjMsMjEgQEAKIAkJcmV0dXJuIFRva2VuTmFt
+ZUVSUk9SOwogCX0KIH0KKworcHJpdmF0ZSBib29sZWFuIG5lZWREaXNhbWJpZ3VhdGlvbihpbnQg
+dG9rZW4pIHsKKwlzd2l0Y2ggKHRoaXMubG9va0FoZWFkU3RhdGUpIHsKKwkJY2FzZSBTVEFSVF9T
+VEFURToKKwkJCXJldHVybiBmYWxzZTsKKwkJY2FzZSBQT1NUX0xBTUJEQV9QUkVGSVg6IAorCQkJ
+cmV0dXJuIHRva2VuID09IFRva2VuTmFtZUxQQVJFTjsKKwkJY2FzZSBQT1NUX0lERU5USUZJRVI6
+CisJCQlyZXR1cm4gdG9rZW4gPT0gVG9rZW5OYW1lTEVTUzsKKwkJY2FzZSBQT1NUX0JFR0lOX1RZ
+UEVfQVJHVU1FTlRTOgorCQkJcmV0dXJuIGZhbHNlOworCQlkZWZhdWx0OgorCQkJdGhyb3cgbmV3
+IFVuc3VwcG9ydGVkT3BlcmF0aW9uRXhjZXB0aW9uKCk7CisJfQorfQogcHVibGljIHZvaWQgdW5n
+ZXRUb2tlbihpbnQgdG9rZW4pIHsKIAlpZiAodGhpcy5uZXh0VG9rZW4gIT0gVG9rZW5OYW1lTm90
+QVRva2VuKSB7CiAJCXRocm93IG5ldyBBcnJheUluZGV4T3V0T2ZCb3VuZHNFeGNlcHRpb24oIlNp
+bmdsZSBjZWxsIGFycmF5IG92ZXJmbG93Iik7IC8vJE5PTi1OTFMtMSQKQEAgLTExMzksMzUgKzEx
+ODYsMjMgQEAKIH0KIAogcHVibGljIGludCBnZXROZXh0VG9rZW4oKSB0aHJvd3MgSW52YWxpZElu
+cHV0RXhjZXB0aW9uIHsKLQlpbnQgdG9rZW47Ci0JaWYgKHRoaXMubmV4dFRva2VuICE9IFRva2Vu
+TmFtZU5vdEFUb2tlbikgewotCQl0b2tlbiA9IHRoaXMubmV4dFRva2VuOwotCQl0aGlzLm5leHRU
+b2tlbiA9IFRva2VuTmFtZU5vdEFUb2tlbjsKLQl9IGVsc2UgewotCQl0b2tlbiA9IGdldE5leHRU
+b2tlbjAoKTsKLQl9Ci0JaWYgKHRva2VuID09IFRva2VuTmFtZUNPTE9OX0NPTE9OKSB7Ci0JCXRo
+aXMuc2Nhbm5pbmdIZWFkT2ZSZWZlcmVuY2VFeHByZXNzaW9uID0gZmFsc2U7Ci0JfQotCWlmICh0
+aGlzLmRpc2FtYmlndWF0ZWRBbHJlYWR5KSB7Ci0JCXRoaXMuZGlzYW1iaWd1YXRlZEFscmVhZHkg
+PSBmYWxzZTsKLQkJcmV0dXJuIHRva2VuOwotCX0KLQlpZiAodGhpcy5zY2FubmluZ0phdmE4UGx1
+cyAmJiB0aGlzLnNob3VsZERpc2FtYmlndWF0ZSkgewotCQlpZiAodG9rZW4gPT0gVG9rZW5OYW1l
+TFBBUkVOKSB7Ci0JCQlpZihhdExhbWJkYVBhcmFtZXRlckxpc3QoKSkgewotCQkJCXRoaXMubmV4
+dFRva2VuID0gdG9rZW47Ci0JCQkJdGhpcy5kaXNhbWJpZ3VhdGVkQWxyZWFkeSA9IHRydWU7Ci0J
+CQkJcmV0dXJuIFRva2VuTmFtZUJlZ2luTGFtYmRhOwotCQkJfQotCQl9IGVsc2UgaWYgKHRva2Vu
+ID09IFRva2VuTmFtZUxFU1MgJiYgIXRoaXMuc2Nhbm5pbmdIZWFkT2ZSZWZlcmVuY2VFeHByZXNz
+aW9uKSB7Ci0JCQlpZiAoYXRSZWZlcmVuY2VFeHByZXNzaW9uKCkpIHsKLQkJCQl0aGlzLm5leHRU
+b2tlbiA9IHRva2VuOwotCQkJCXRoaXMuZGlzYW1iaWd1YXRlZEFscmVhZHkgPSB0cnVlOwotCQkJ
+CXRoaXMuc2Nhbm5pbmdIZWFkT2ZSZWZlcmVuY2VFeHByZXNzaW9uID0gdHJ1ZTsKLQkJCQlyZXR1
+cm4gVG9rZW5OYW1lQmVnaW5UeXBlQXJndW1lbnRzOwotCQkJfQorCQorCWludCB0b2tlbiA9IHRo
+aXMubmV4dFRva2VuICE9IFRva2VuTmFtZU5vdEFUb2tlbiA/IHRoaXMubmV4dFRva2VuIDogZ2V0
+TmV4dFRva2VuMCgpOworCXRoaXMubmV4dFRva2VuID0gVG9rZW5OYW1lTm90QVRva2VuOworCQor
+CWlmICh0b2tlbiA9PSBUb2tlbk5hbWVMUEFSRU4gJiYgbmVlZERpc2FtYmlndWF0aW9uKHRva2Vu
+KSkgeworCQlpZiAoYXRMYW1iZGFQYXJhbWV0ZXJMaXN0KCkpIHsKKwkJCXRoaXMubmV4dFRva2Vu
+ID0gdG9rZW47CisJCQl0b2tlbiA9IFRva2VuTmFtZUJlZ2luTGFtYmRhOwogCQl9CisJfSBlbHNl
+IGlmICh0b2tlbiA9PSBUb2tlbk5hbWVMRVNTICYmIG5lZWREaXNhbWJpZ3VhdGlvbih0b2tlbikp
+IHsKKwkJaWYgKGF0UmVmZXJlbmNlRXhwcmVzc2lvbigpKSB7CisJCQl0aGlzLm5leHRUb2tlbiA9
+IHRva2VuOworCQkJdG9rZW4gPSBUb2tlbk5hbWVCZWdpblR5cGVBcmd1bWVudHM7CisJCX0KKwl9
+CisJaWYgKHRva2VuIDwgUGFyc2VyQmFzaWNJbmZvcm1hdGlvbi5OVU1fVEVSTUlOQUxTKSB7CisJ
+CXRoaXMubG9va0FoZWFkU3RhdGUgPSBsb29rQWhlYWRUYWJsZVt0aGlzLmxvb2tBaGVhZFN0YXRl
+XVt0b2tlbl07CiAJfQogCXJldHVybiB0b2tlbjsKIH0KQEAgLTI3NDgsNiArMjc4Myw3IEBACiAJ
+dGhpcy5jb21tZW50UHRyID0gLTE7IC8vIHJlc2V0IGNvbW1lbnQgc3RhY2sKIAl0aGlzLmZvdW5k
+VGFza0NvdW50ID0gMDsKIAl0aGlzLm5leHRUb2tlbiA9IFRva2VuTmFtZU5vdEFUb2tlbjsKKwl0
+aGlzLmxvb2tBaGVhZFN0YXRlID0gU1RBUlRfU1RBVEU7CiB9CiAKIHByb3RlY3RlZCBmaW5hbCB2
+b2lkIHNjYW5Fc2NhcGVDaGFyYWN0ZXIoKSB0aHJvd3MgSW52YWxpZElucHV0RXhjZXB0aW9uIHsK
+ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvZGlhZ25vc2UvRGlhZ25vc2VQYXJzZXIuamF2YSBi
+L29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9j
+b21waWxlci9wYXJzZXIvZGlhZ25vc2UvRGlhZ25vc2VQYXJzZXIuamF2YQppbmRleCA0OTM1MmFh
+Li5kNmU0YzJhIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcv
+ZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL2RpYWdub3NlL0RpYWdub3NlUGFy
+c2VyLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2Uv
+amR0L2ludGVybmFsL2NvbXBpbGVyL3BhcnNlci9kaWFnbm9zZS9EaWFnbm9zZVBhcnNlci5qYXZh
+CkBAIC0xNSw3ICsxNSw2IEBACiBwYWNrYWdlIG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21w
+aWxlci5wYXJzZXIuZGlhZ25vc2U7CiAKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5jb21w
+aWxlci5DaGFyT3BlcmF0aW9uOwotaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21w
+aWxlci5jbGFzc2ZtdC5DbGFzc0ZpbGVDb25zdGFudHM7CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0
+LmludGVybmFsLmNvbXBpbGVyLmltcGwuQ29tcGlsZXJPcHRpb25zOwogaW1wb3J0IG9yZy5lY2xp
+cHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5wYXJzZXIuUGFyc2VyOwogaW1wb3J0IG9yZy5lY2xp
+cHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5wYXJzZXIuUGFyc2VyQmFzaWNJbmZvcm1hdGlvbjsK
+QEAgLTE5OCw5ICsxOTcsNiBAQAogCQlpZih0aGlzLnJlY292ZXJ5U2Nhbm5lciAhPSBudWxsKSB7
+CiAJCQlvbGRSZWNvcmQgPSB0aGlzLnJlY292ZXJ5U2Nhbm5lci5yZWNvcmQ7CiAJCQl0aGlzLnJl
+Y292ZXJ5U2Nhbm5lci5yZWNvcmQgPSByZWNvcmQ7Ci0JCX0KLQkJaWYgKHRoaXMub3B0aW9ucy5z
+b3VyY2VMZXZlbCA+PSBDbGFzc0ZpbGVDb25zdGFudHMuSkRLMV84KSB7Ci0JCQl0aGlzLnBhcnNl
+ci5zY2FubmVyLnNob3VsZERpc2FtYmlndWF0ZSA9IHRydWU7CiAJCX0KIAkJdHJ5IHsKIAkJCXRo
+aXMubGV4U3RyZWFtLnJlc2V0KCk7CkBAIC00MzAsNyArNDI2LDYgQEAKIAkJCWlmKHRoaXMucmVj
+b3ZlcnlTY2FubmVyICE9IG51bGwpIHsKIAkJCQl0aGlzLnJlY292ZXJ5U2Nhbm5lci5yZWNvcmQg
+PSBvbGRSZWNvcmQ7CiAJCQl9Ci0JCQl0aGlzLnBhcnNlci5zY2FubmVyLnNob3VsZERpc2FtYmln
+dWF0ZSA9IGZhbHNlOwogCQl9CiAJCXJldHVybjsKIAl9
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>218724</attachid>
+            <date>2012-07-14 04:46:00 -0400</date>
+            <delta_ts>2012-07-17 10:40:20 -0400</delta_ts>
+            <desc>Follow up patch under test</desc>
+            <filename>Rework-of-lookahead-strategy.patch</filename>
+            <type>text/plain</type>
+            <size>18115</size>
+            <attacher name="Srikanth Sankaran">srikanth_sankaran</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvQ29uZmxpY3RlZFBhcnNlci5qYXZhIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L3BhcnNlci9Db25mbGljdGVkUGFyc2VyLmphdmEKbmV3IGZpbGUgbW9kZSAxMDA2NDQKaW5kZXgg
+MDAwMDAwMC4uYTc5NWYwNAotLS0gL2Rldi9udWxsCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+L2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvQ29uZmxp
+Y3RlZFBhcnNlci5qYXZhCkBAIC0wLDAgKzEsMjMgQEAKKy8qKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+CisgKiBDb3B5cmlnaHQgKGMpIDIwMDAsIDIwMTIgSUJNIENvcnBvcmF0aW9uIGFuZCBvdGhlcnMu
+CisgKiBBbGwgcmlnaHRzIHJlc2VydmVkLiBUaGlzIHByb2dyYW0gYW5kIHRoZSBhY2NvbXBhbnlp
+bmcgbWF0ZXJpYWxzCisgKiBhcmUgbWFkZSBhdmFpbGFibGUgdW5kZXIgdGhlIHRlcm1zIG9mIHRo
+ZSBFY2xpcHNlIFB1YmxpYyBMaWNlbnNlIHYxLjAKKyAqIHdoaWNoIGFjY29tcGFuaWVzIHRoaXMg
+ZGlzdHJpYnV0aW9uLCBhbmQgaXMgYXZhaWxhYmxlIGF0CisgKiBodHRwOi8vd3d3LmVjbGlwc2Uu
+b3JnL2xlZ2FsL2VwbC12MTAuaHRtbAorICogCisgKiBUaGlzIGlzIGFuIGltcGxlbWVudGF0aW9u
+IG9mIGFuIGVhcmx5LWRyYWZ0IHNwZWNpZmljYXRpb24gZGV2ZWxvcGVkIHVuZGVyIHRoZSBKYXZh
+CisgKiBDb21tdW5pdHkgUHJvY2VzcyAoSkNQKSBhbmQgaXMgbWFkZSBhdmFpbGFibGUgZm9yIHRl
+c3RpbmcgYW5kIGV2YWx1YXRpb24gcHVycG9zZXMKKyAqIG9ubHkuIFRoZSBjb2RlIGlzIG5vdCBj
+b21wYXRpYmxlIHdpdGggYW55IHNwZWNpZmljYXRpb24gb2YgdGhlIEpDUC4KKyAqIAorICogQ29u
+dHJpYnV0b3JzOgorICogICAgIElCTSBDb3Jwb3JhdGlvbiAtIGluaXRpYWwgQVBJIGFuZCBpbXBs
+ZW1lbnRhdGlvbgorICoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKiovCitwYWNrYWdlIG9yZy5lY2xpcHNl
+LmpkdC5pbnRlcm5hbC5jb21waWxlci5wYXJzZXI7CisKK3B1YmxpYyBpbnRlcmZhY2UgQ29uZmxp
+Y3RlZFBhcnNlciB7CisJCisJLyogUmV0dXJuIHRydWUgaWYgYXQgdGhlIGNvbmZpZ3VyYXRpb24g
+dGhlIHBhcnNlciBmaW5kcyBpdHNlbGYgaW4sIHRva2VuIHdvdWxkIG5lZWQgdG8gYmUgZGlzYW1i
+aWd1YXRlZC4KKwkgICBBdCBKYXZhIFNFIDggdGltZSwgd2UgaGF2ZSB0d28gdG9rZW5zIHRoYXQg
+bmVlZCB0byBjbGFyaWZpZWQ6IHRoZSB1c2Ugb2YgJyggYW5kIHRoYXQgb2YgJzwnCisJKi8KKwli
+b29sZWFuIGF0Q29uZmxpY3RTY2VuYXJpbyhpbnQgdG9rZW4pOworfQpkaWZmIC0tZ2l0IGEvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL3BhcnNlci9QYXJzZXIuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29y
+Zy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvUGFyc2VyLmphdmEKaW5kZXgg
+OTA3NTU2NS4uYjQzN2NiZSAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGls
+ZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3BhcnNlci9QYXJzZXIuamF2YQor
+KysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvcGFyc2VyL1BhcnNlci5qYXZhCkBAIC0xNDUsNyArMTQ1LDcgQEAKIGltcG9y
+dCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIudXRpbC5NZXNzYWdlczsKIGltcG9y
+dCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIudXRpbC5VdGlsOwogCi1wdWJsaWMg
+Y2xhc3MgUGFyc2VyIGltcGxlbWVudHMgIFBhcnNlckJhc2ljSW5mb3JtYXRpb24sIFRlcm1pbmFs
+VG9rZW5zLCBPcGVyYXRvcklkcywgVHlwZUlkcyB7CitwdWJsaWMgY2xhc3MgUGFyc2VyIGltcGxl
+bWVudHMgQ29uZmxpY3RlZFBhcnNlciwgUGFyc2VyQmFzaWNJbmZvcm1hdGlvbiwgVGVybWluYWxU
+b2tlbnMsIE9wZXJhdG9ySWRzLCBUeXBlSWRzIHsKIAkKIAlwcm90ZWN0ZWQgc3RhdGljIGZpbmFs
+IGludCBUSElTX0NBTEwgPSBFeHBsaWNpdENvbnN0cnVjdG9yQ2FsbC5UaGlzOwogCXByb3RlY3Rl
+ZCBzdGF0aWMgZmluYWwgaW50IFNVUEVSX0NBTEwgPSBFeHBsaWNpdENvbnN0cnVjdG9yQ2FsbC5T
+dXBlcjsKQEAgLTk5OCw2ICs5OTgsNyBAQAogcHJpdmF0ZSBpbnQgdmFsdWVMYW1iZGFOZXN0RGVw
+dGggPSAtMTsKIHByaXZhdGUgaW50IHN0YXRlU3RhY2tMZW5ndGhTdGFja1tdID0gbmV3IGludFsw
+XTsKIHByaXZhdGUgYm9vbGVhbiBwYXJzaW5nSmF2YThQbHVzOworcHJpdmF0ZSBpbnQgdW5zdGFj
+a2VkQWN0ID0gRVJST1JfQUNUSU9OOwogCiBwdWJsaWMgUGFyc2VyKFByb2JsZW1SZXBvcnRlciBw
+cm9ibGVtUmVwb3J0ZXIsIGJvb2xlYW4gb3B0aW1pemVTdHJpbmdMaXRlcmFscykgewogCkBAIC0x
+MDkwMSw2ICsxMDkwMiw2NyBAQAogCiAJdGhpcy5hc3RMZW5ndGhTdGFja1stLXRoaXMuYXN0TGVu
+Z3RoUHRyXSsrOwogfQorcHVibGljIGJvb2xlYW4gYXRDb25mbGljdFNjZW5hcmlvKGludCB0b2tl
+bikgeworCQorCS8qIEFuc3dlciB0cnVlIGlmIHRoZSBwYXJzZXIgaXMgYXQgYSBjb25maWd1cmF0
+aW9uIHdoZXJlIHRoZSBzY2FubmVyIG11c3QgbG9vayBhaGVhZCBhbmQgaGVscCBkaXNhbWJpZ3Vh
+dGUgYmV0d2VlbiAoYSkgJzwnIGFzIGFuIG9wZXJhdG9yIGFuZCAnPCcgYXMgdGhlCisJICAgc3Rh
+cnQgb2YgPHR5cGUgYXJndW1lbnQ+IGFuZCAoYikgdGhlIHVzZSBvZiAnKCcgaW4gJygnIGV4cHJl
+c3Npb24gJyknIGFuZCAnKCB0eXBlICcpJyBhbmQgJygnIGxhbWJkYSBmb3JtYWwgcGFyYW1ldGVy
+cyAnKScuIFdoZW4gcmVxdWVzdGVkIHRodXMsCisJICAgdGhlIHNjYW5uZXIgaGVscHMgYnkgZmFi
+cmljYXRpbmcgc3ludGhldGljIHRva2VucyBhbmQgaW5qZWN0aW5nIHRoZW0gaW50byB0aGUgc3Ry
+ZWFtIGFoZWFkIG9mIHRoZSB0b2tlbnMgdGhhdCB0cmlnZ2VyIGNvbmZsaWN0cyBpbiB0aGUgYWJz
+ZW5jZQorCSAgIG9mIHRoZXNlIGFydGlmaWNpYWwgdG9rZW5zLiBUaGVzZSBtYW51ZmFjdHVyZWQg
+dG9rZW4gaGVscCB0cmFuc2Zvcm0gdGhlIGdyYW1tYXIgaW50byBMQUxSKDEpIGJ5IHNwbGl0dGlu
+ZyB0aGUgc3RhdGVzIHNvIHRoYXQgdGhleSBoYXZlIHVuYW1iaWdpb3VzCisJICAgcHJlZml4ZXMu
+CisJICAgCisJICAgV2UgZG8gdGhpcyBieSBjbGFpbWluZyB0byB0aGUgYXV0b21hdG9uIHRoYXQg
+dGhlIG5leHQgdG9rZW4gc2VlbiBpcyB0aGUgKHN1aXRhYmxlKSBzeW50aGV0aWMgdG9rZW4gYW5k
+IG9ic2VydmluZyB0aGUgcmVzcG9uc2Ugb2YgdGhlIHN0YXRlIG1hY2hpbmUuIAorCSAgIEVycm9y
+IHNpZ25hbHMgd2UgYXJlIE5PVCBhdCBhIGNvbmZsaWN0IHNpdGUsIHdoaWxlIHNoaWZ0IG9yIHNo
+aWZ0L3JlZHVjZSBzaWduYWxzIHRoYXQgd2UgYXJlLiBBY2NlcHQgaXMgaW1wb3NzaWJsZSwgd2hp
+bGUgdGhlcmUgbWF5IGJlIGludGVybWVkaWF0ZQorCSAgIHJlZHVjdGlvbnMgdGhhdCBhcmUgY2Fs
+bGVkIGZvciAtLSBJdCBpcyBheGlvbWF0aWMgb2YgdGhlIHB1c2ggZG93biBhdXRvbWF0b24gdGhh
+dCBjb3JyZXNwb25kcyB0byB0aGUgTEFMUiBncmFtbWFyIHRoYXQgaXQgd2lsbCBuZXZlciBzaGlm
+dCBvbiBpbnZhbGlkCisJICAgaW5wdXQuCisJICAgCisJICAgT2J2aW91c2x5LCB0aGUgZHJ5IHJ1
+bnMgc2hvdWxkIG5vdCBhbHRlciB0aGUgcGFyc2VyIHN0YXRlIGluIGFueSB3YXkgb3Igb3RoZXJ3
+aXNlIGNhdXNlIHNpZGUgZWZmZWN0cy4gUHJvb2YgYnkgYXJndW1lbnQgdGhhdCB0aGlzIGlzIHRo
+ZSBjYXNlOgorCSAgIAorCSAgICAgICAtIFRoZSBvbmx5IHBpZWNlcyBvZiBzdGF0ZSBuZWVkZWQg
+dG8gYW5zd2VyIHRoZSBxdWVzdGlvbiBhcmU6IHRoaXMuc3RhY2ssIHRoaXMuc3RhdGVTdGFja1Rv
+cCBhbmQgdGhlIGxhc3QgYWN0aW9uIHZhcmlhYmxlIGBhY3RgLiBOb25lIG9mIHRoZSB2YXJpb3Vz
+CisJICAgICAgICAgYW5kIHN1bmRyeSBzdGFja3MgdXNlZCBpbiB0aGUgQVNUIGNvbnN0cnVjdGlv
+bnMgcHJvY2VzcyBhcmUgdG91Y2hlZCBoZXJlLgorCSAgICAgICAtIEFzIHdlIHJlZHVjZSwgd2Ug
+RE9OJ1QgY2FsbCB0aGUgc2VtYW50aWMgYWN0aW9uIGZ1bmN0aW9ucyBpLmUgdGhlIGNvbnN1bWUq
+IG1ldGhvZCBjYWxscyBhcmUgc2tpcHBlZC4KKwkgICAgICAgLSBMZXhlciBzdHJlYW0gaXMgbGVm
+dCB1bnRvdWNoZWQuCisJICAgICAgIC0gdGhpcy5zdGF0ZVN0YWNrVG9wIGFuZCB0aGUgbGFzdCBh
+Y3Rpb24gdmFyaWFibGUgYGFjdGAgb2YgdGhlIGF1dG9tYXRvbiBhcmUgcmVhZGlseSBjbG9uZWQs
+IHRoZXNlIGJlaW5nIHByaW1pdGl2ZXMgYW5kIGNoYW5nZXMgYXJlIHRvIHRoZSByZXBsaWNhcy4K
+KwkgICAgICAgLSBXZSBuZXZlciByZW1vdmUgZWxlbWVudHMgZnJvbSB0aGUgc3RhdGUgc3RhY2sg
+aGVyZSAob3IgZWxzZXdoZXJlIGZvciB0aGF0IG1hdHRlcikuIFBvcHMgYXJlIGltcGxlbWVudGVk
+IGJ5IG1lcmUgYWRqdXN0bWVudHMgb2YgdGhlIHN0YWNrIHBvaW50ZXIuCisJICAgICAgIC0gRHVy
+aW5nIHRoaXMgYWxnb3JpdGhtLCBlaXRoZXIgdGhlIHN0YWNrIHBvaW50ZXIgbW9ub3RvbmljYWxs
+eSBkZWNyZWFzZXMgb3Igc3RheXMgZml4ZWQuIChUaGUgb25seSB3YXkgZm9yIHRoZSBzdGFjayBw
+b2ludGVyIHRvIGluY3JlYXNlIHdvdWxkIGNhbGwKKwkgICAgICAgICBmb3IgYSBzaGlmdCBvciBh
+IHNoaWZ0L3JlZHVjZSBhdCB3aGljaCBwb2ludCB0aGUgYWxnb3JpdGhtIGlzIHJlYWR5IHRvIHRl
+cm1pbmF0ZSBhbHJlYWR5LikgVGhpcyBtZWFucyB0aGF0IHdlIGRvbid0IGhhdmUgdG8gcmVwbGlj
+YXRlIHRoZSBzdGFjay4gCisJICAgICAgICAgUHVzaGVzIGNhbiBiZSBtaW1pY2VkIGJ5IHdyaXRp
+bmcgdG8gYSBsb2NhbCBzdGFja1RvcFN0YXRlIHZhcmlhYmxlLCBsZWF2aW5nIHRoZSBvcmlnaW5h
+bCBzdGFjayB1bnRvdWNoZWQuCisJICAgICAgICAgCisJICAgIFRob3VnaCB0aGlzIGNvZGUgbG9v
+a3MgY29tcGxleCwgd2Ugc2hvdWxkIGV4aXQgZWFybHkgaW4gbW9zdCBzaXR1YXRpb25zLiAgICAg
+CisJICovCisJaW50IGxhc3RBY3Rpb24gPSB0aGlzLnVuc3RhY2tlZEFjdDsKKwlpZiAobGFzdEFj
+dGlvbiA9PSBFUlJPUl9BQ1RJT04pIHsgLy8gYXV0b21hdG9uIGlzIG5vdCBydW5uaW5nLgorCQly
+ZXR1cm4gZmFsc2U7CisJfQorCWludCBzdGFja1RvcCA9IHRoaXMuc3RhdGVTdGFja1RvcDsgICAg
+ICAgIC8vIGxvY2FsIGNvcHkgb2Ygc3RhY2sgcG9pbnRlcgorCWludCBzdGFja1RvcFN0YXRlID0g
+dGhpcy5zdGFja1tzdGFja1RvcF07IC8vIHNpbmdsZSBjZWxsIG5vbiB3cml0ZSB0aHJvdWdoICJh
+bHRlcm5hdGUgc3RhY2siIC0gdGhlIGF1dG9tYXRvbidzIHN0YWNrIHBvaW50ZXIgZWl0aGVyIHN0
+YXlzIGZpeGVkIGR1cmluZyB0aGlzIG1hbm9ldXZyZSBvciBtb25vdG9uaWNhbGx5IGRlY3JlYXNl
+cy4KKwlpbnQgaGlnaFdhdGVyTWFyayA9IHN0YWNrVG9wOworCQorCXRva2VuID0gdG9rZW4gPT0g
+VG9rZW5OYW1lTFBBUkVOID8gVG9rZW5OYW1lQmVnaW5MYW1iZGEgOiBUb2tlbk5hbWVCZWdpblR5
+cGVBcmd1bWVudHM7CisJCisJLy8gQSByb3RhdGVkIHZlcnNpb24gb2YgdGhlIGF1dG9tYXRvbiAt
+IGNmLiBwYXJzZSgpJ3MgZm9yKDs7KQorCWZvciAoOzspIHsgIAorCQlpZiAobGFzdEFjdGlvbiA+
+IEVSUk9SX0FDVElPTikgeyAgLyogc2hpZnQtcmVkdWNlIG9uIGxvb3AgZW50cnkgZnJvbSBhYm92
+ZSwgcmVkdWNlIG9uIGxvb3AgYmFjayAqLworCQkJbGFzdEFjdGlvbiAtPSBFUlJPUl9BQ1RJT047
+CisJCQlkbyB7IC8qIHJlZHVjZSAqLworCQkJCXN0YWNrVG9wIC09IHJoc1tsYXN0QWN0aW9uXSAt
+IDE7CisJCQkJaWYgKHN0YWNrVG9wIDwgaGlnaFdhdGVyTWFyaykgeworCQkJCQlzdGFja1RvcFN0
+YXRlID0gdGhpcy5zdGFja1toaWdoV2F0ZXJNYXJrID0gc3RhY2tUb3BdOworCQkJCX0gLy8gZWxz
+ZSBzdGFja1RvcFN0YXRlIGlzIHVwdG8gZGF0ZSBhbHJlYWR5LgorCQkJCWxhc3RBY3Rpb24gPSBu
+dEFjdGlvbihzdGFja1RvcFN0YXRlLCBsaHNbbGFzdEFjdGlvbl0pOworCQkJfSB3aGlsZSAobGFz
+dEFjdGlvbiA8PSBOVU1fUlVMRVMpOworCQl9CisJCWhpZ2hXYXRlck1hcmsgPSArK3N0YWNrVG9w
+OworCQlzdGFja1RvcFN0YXRlID0gbGFzdEFjdGlvbjsgLy8gInB1c2giCisJCWxhc3RBY3Rpb24g
+PSB0QWN0aW9uKGxhc3RBY3Rpb24sIHRva2VuKTsgLy8gY2FuIGJlIGxvb2tlZCB1cCBmcm9tIGEg
+cHJlY29tcHV0ZWQgY2FjaGUuCisJCWlmIChsYXN0QWN0aW9uIDw9IE5VTV9SVUxFUykgeworCQkJ
+c3RhY2tUb3AgLS07IAorCQkgICAgbGFzdEFjdGlvbiArPSBFUlJPUl9BQ1RJT047CisJCQljb250
+aW51ZTsKKwkJfQorCQkvLyBFcnJvciA9PiBmYWxzZSwgU2hpZnQsIFNoaWZ0L1JlZHVjZSA9PiB0
+cnVlLCBBY2NlcHQgPT4gaW1wb3NzaWJsZS4gCisJCXJldHVybiBsYXN0QWN0aW9uICE9IEVSUk9S
+X0FDVElPTjsKKwl9Cit9CiAvKm1haW4gbG9vcCBvZiB0aGUgYXV0b21hdAogV2hlbiBhIHJ1bGUg
+aXMgcmVkdWNlZCwgdGhlIG1ldGhvZCBjb25zdW1lUnVsZShpbnQpIGlzIGNhbGxlZCB3aXRoIHRo
+ZSBudW1iZXIKIG9mIHRoZSBjb25zdW1lZCBydWxlLiBXaGVuIGEgdGVybWluYWwgaXMgY29uc3Vt
+ZWQsIHRoZSBtZXRob2QgY29uc3VtZVRva2VuKGludCkgaXMKQEAgLTEwOTIyLDYgKzEwOTg0LDkg
+QEAKIAlpbnQgYWN0ID0gU1RBUlRfU1RBVEU7CiAJdGhpcy5zdGF0ZVN0YWNrVG9wID0gLTE7CiAJ
+dGhpcy5jdXJyZW50VG9rZW4gPSBnZXRGaXJzdFRva2VuKCk7CisJCit0cnkgeworCXRoaXMuc2Nh
+bm5lci5zZXRBY3RpdmVQYXJzZXIodGhpcyk7CiAJUHJvY2Vzc1Rlcm1pbmFscyA6IGZvciAoOzsp
+IHsKIAkJaW50IHN0YWNrTGVuZ3RoID0gdGhpcy5zdGFjay5sZW5ndGg7CiAJCWlmICgrK3RoaXMu
+c3RhdGVTdGFja1RvcCA+PSBzdGFja0xlbmd0aCkgewpAQCAtMTA5NzQsNiArMTEwMzksNyBAQAog
+CQkJCXRoaXMucmVjb3JkU3RyaW5nTGl0ZXJhbHMgPSBvbGRWYWx1ZTsKIAkJCX0KIAkJCXRyeSB7
+CisJCQkJdGhpcy51bnN0YWNrZWRBY3QgPSBhY3Q7CiAJCQkJdGhpcy5jdXJyZW50VG9rZW4gPSB0
+aGlzLnNjYW5uZXIuZ2V0TmV4dFRva2VuKCk7CiAJCQl9IGNhdGNoKEludmFsaWRJbnB1dEV4Y2Vw
+dGlvbiBlKXsKIAkJCQlpZiAoIXRoaXMuaGFzUmVwb3J0ZWRFcnJvcil7CkBAIC0xMDk4Myw2ICsx
+MTA0OSw4IEBACiAJCQkJdGhpcy5sYXN0Q2hlY2tQb2ludCA9IHRoaXMuc2Nhbm5lci5jdXJyZW50
+UG9zaXRpb247CiAJCQkJdGhpcy5jdXJyZW50VG9rZW4gPSAwOwogCQkJCXRoaXMucmVzdGFydFJl
+Y292ZXJ5ID0gdHJ1ZTsKKwkJCX0gZmluYWxseSB7CisJCQkJdGhpcy51bnN0YWNrZWRBY3QgPSBF
+UlJPUl9BQ1RJT047CiAJCQl9CiAJCQlpZih0aGlzLnN0YXRlbWVudFJlY292ZXJ5QWN0aXZhdGVk
+KSB7CiAJCQkJanVtcE92ZXJUeXBlKCk7CkBAIC0xMTAwMyw2ICsxMTA3MSw3IEBACiAJCQkJCXRo
+aXMucmVjb3JkU3RyaW5nTGl0ZXJhbHMgPSBvbGRWYWx1ZTsKIAkJCQl9CiAJCQkJdHJ5eworCQkJ
+CQl0aGlzLnVuc3RhY2tlZEFjdCA9IGFjdDsKIAkJCQkJdGhpcy5jdXJyZW50VG9rZW4gPSB0aGlz
+LnNjYW5uZXIuZ2V0TmV4dFRva2VuKCk7CiAJCQkJfSBjYXRjaChJbnZhbGlkSW5wdXRFeGNlcHRp
+b24gZSl7CiAJCQkJCWlmICghdGhpcy5oYXNSZXBvcnRlZEVycm9yKXsKQEAgLTExMDEyLDYgKzEx
+MDgxLDggQEAKIAkJCQkJdGhpcy5sYXN0Q2hlY2tQb2ludCA9IHRoaXMuc2Nhbm5lci5jdXJyZW50
+UG9zaXRpb247CiAJCQkJCXRoaXMuY3VycmVudFRva2VuID0gMDsKIAkJCQkJdGhpcy5yZXN0YXJ0
+UmVjb3ZlcnkgPSB0cnVlOworCQkJCX0gZmluYWxseSB7CisJCQkJCXRoaXMudW5zdGFja2VkQWN0
+ID0gRVJST1JfQUNUSU9OOwogCQkJCX0KIAkJCQlpZih0aGlzLnN0YXRlbWVudFJlY292ZXJ5QWN0
+aXZhdGVkKSB7CiAJCQkJCWp1bXBPdmVyVHlwZSgpOwpAQCAtMTEwNDcsNiArMTExMTgsOSBAQAog
+CQkJU3lzdGVtLm91dC5wcmludGxuKCItLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0t
+LS0tLS0tIik7ICAvLyROT04tTkxTLTEkCiAJCX0KIAl9Cit9IGZpbmFsbHkgeworCXRoaXMuc2Nh
+bm5lci5zZXRBY3RpdmVQYXJzZXIobnVsbCk7Cit9CiAKIAlpZiAoREVCVUdfQVVUT01BVE9OKSB7
+CiAJCVN5c3RlbS5vdXQucHJpbnRsbigiLSBFbmQgLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0t
+LS0tLS0tLSIpOyAgLy8kTk9OLU5MUy0xJApkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNv
+cmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3BhcnNlci9TY2Fu
+bmVyLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQv
+aW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL1NjYW5uZXIuamF2YQppbmRleCBjOTAyYTAzLi40MDA4
+YWNjIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBz
+ZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL1NjYW5uZXIuamF2YQorKysgYi9vcmcuZWNs
+aXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIv
+cGFyc2VyL1NjYW5uZXIuamF2YQpAQCAtMTkzLDQyICsxOTMsNyBAQAogCXByaXZhdGUgZmluYWwg
+Ym9vbGVhbiBzY2FubmluZ0phdmE4UGx1czsKIAlwcml2YXRlIFZhbmd1YXJkU2Nhbm5lciB2YW5n
+dWFyZFNjYW5uZXI7CiAJcHJpdmF0ZSBWYW5ndWFyZFBhcnNlciB2YW5ndWFyZFBhcnNlcjsKLQot
+CXByaXZhdGUgaW50IGxvb2tBaGVhZFN0YXRlID0gU1RBUlRfU1RBVEU7Ci0JcHJpdmF0ZSBzdGF0
+aWMgaW50W11bXSBsb29rQWhlYWRUYWJsZTsKLQkKLQlwcml2YXRlIHN0YXRpYyBmaW5hbCBpbnQg
+U1RBUlRfU1RBVEUgPSAwOwotCXByaXZhdGUgc3RhdGljIGZpbmFsIGludCBQT1NUX0xBTUJEQV9Q
+UkVGSVggPSAxOwotCXByaXZhdGUgc3RhdGljIGZpbmFsIGludCBQT1NUX0lERU5USUZJRVIgPSAy
+OwotCXByaXZhdGUgc3RhdGljIGZpbmFsIGludCBQT1NUX0JFR0lOX1RZUEVfQVJHVU1FTlRTID0g
+MzsKLQlwcml2YXRlIHN0YXRpYyBmaW5hbCBpbnQgVE9UQUxfTE9PS0FIRUFEX1NUQVRFUyA9IDQ7
+Ci0KLQlzdGF0aWMgewotCQlpbnQgbWF4VGVybWluYWxzID0gUGFyc2VyQmFzaWNJbmZvcm1hdGlv
+bi5OVU1fVEVSTUlOQUxTOwotCQlsb29rQWhlYWRUYWJsZSA9IG5ldyBpbnRbVE9UQUxfTE9PS0FI
+RUFEX1NUQVRFU11bbWF4VGVybWluYWxzXTsKLQkJCi0JCWZvciAoaW50IGkgPSAwOyBpIDw9IFBP
+U1RfSURFTlRJRklFUjsgaSsrKSB7Ci0JCQlmb3IgKGludCBqID0gMDsgaiA8IG1heFRlcm1pbmFs
+czsgaisrKSB7Ci0JCQkJbG9va0FoZWFkVGFibGVbaV1bal0gPSBTVEFSVF9TVEFURTsKLQkJCX0J
+Ci0JCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tlbk5hbWVFUVVBTF0gPSBQT1NUX0xBTUJEQV9QUkVG
+SVg7Ci0JCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tlbk5hbWVyZXR1cm5dID0gUE9TVF9MQU1CREFf
+UFJFRklYOwotCQkJbG9va0FoZWFkVGFibGVbaV1bVG9rZW5OYW1lTFBBUkVOXSA9IFBPU1RfTEFN
+QkRBX1BSRUZJWDsKLQkJCWxvb2tBaGVhZFRhYmxlW2ldW1Rva2VuTmFtZVJQQVJFTl0gPSBQT1NU
+X0xBTUJEQV9QUkVGSVg7Ci0JCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tlbk5hbWVDT01NQV0gPSBQ
+T1NUX0xBTUJEQV9QUkVGSVg7Ci0JCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tlbk5hbWVBUlJPV10g
+PSBQT1NUX0xBTUJEQV9QUkVGSVg7Ci0JCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tlbk5hbWVRVUVT
+VElPTl0gPSBQT1NUX0xBTUJEQV9QUkVGSVg7Ci0JCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tlbk5h
+bWVDT0xPTl0gPSBQT1NUX0xBTUJEQV9QUkVGSVg7Ci0JCQlsb29rQWhlYWRUYWJsZVtpXVtUb2tl
+bk5hbWVJZGVudGlmaWVyXSA9IFBPU1RfSURFTlRJRklFUjsKLQkJfQotCQkKLQkJbG9va0FoZWFk
+VGFibGVbUE9TVF9JREVOVElGSUVSXVtUb2tlbk5hbWVCZWdpblR5cGVBcmd1bWVudHNdID0gUE9T
+VF9CRUdJTl9UWVBFX0FSR1VNRU5UUzsKLQotCQlmb3IgKGludCBpID0gMDsgaSA8IG1heFRlcm1p
+bmFsczsgaSsrKSB7Ci0JCQlsb29rQWhlYWRUYWJsZVtQT1NUX0JFR0lOX1RZUEVfQVJHVU1FTlRT
+XVtpXSA9IFBPU1RfQkVHSU5fVFlQRV9BUkdVTUVOVFM7ICAvLyBiZSBzdHVjayBoZXJlIHVudGls
+ICI6OiIsIHNvIHdlIGRvbid0IGluamVjdCB0aGUKLQkJfQotCQlsb29rQWhlYWRUYWJsZVtQT1NU
+X0JFR0lOX1RZUEVfQVJHVU1FTlRTXVtUb2tlbk5hbWVDT0xPTl9DT0xPTl0gPSBTVEFSVF9TVEFU
+RTsgLy8gc3ludGhldGljIHRva2VuIGFoZWFkIG9mIHRoZSBzZWNvbmQgJzwnIGluIFg8VD4uWTxR
+Pjo6Ci0JfQorCXByaXZhdGUgQ29uZmxpY3RlZFBhcnNlciBhY3RpdmVQYXJzZXIgPSBudWxsOwog
+CQogCXB1YmxpYyBzdGF0aWMgZmluYWwgaW50IFJvdW5kQnJhY2tldCA9IDA7CiAJcHVibGljIHN0
+YXRpYyBmaW5hbCBpbnQgU3F1YXJlQnJhY2tldCA9IDE7CkBAIC0yNjEsNyArMjI2LDYgQEAKIAl0
+aGlzLnNvdXJjZUxldmVsID0gc291cmNlTGV2ZWw7CiAJdGhpcy5uZXh0VG9rZW4gPSBUb2tlbk5h
+bWVOb3RBVG9rZW47CiAJdGhpcy5zY2FubmluZ0phdmE4UGx1cyA9IHNvdXJjZUxldmVsID49IENs
+YXNzRmlsZUNvbnN0YW50cy5KREsxXzg7Ci0JdGhpcy5sb29rQWhlYWRTdGF0ZSA9IFNUQVJUX1NU
+QVRFOwogCXRoaXMuY29tcGxpYW5jZUxldmVsID0gY29tcGxpYW5jZUxldmVsOwogCXRoaXMuY2hl
+Y2tOb25FeHRlcm5hbGl6ZWRTdHJpbmdMaXRlcmFscyA9IGNoZWNrTm9uRXh0ZXJuYWxpemVkU3Ry
+aW5nTGl0ZXJhbHM7CiAJaWYgKHRhc2tUYWdzICE9IG51bGwpIHsKQEAgLTExNjUsMzUgKzExMjks
+MzcgQEAKIAkJcmV0dXJuIFRva2VuTmFtZUVSUk9SOwogCX0KIH0KLXB1YmxpYyB2b2lkIHVuZ2V0
+VG9rZW4oaW50IHRva2VuKSB7CitwdWJsaWMgdm9pZCB1bmdldFRva2VuKGludCB1bmFtYmlndW91
+c1Rva2VuKSB7CiAJaWYgKHRoaXMubmV4dFRva2VuICE9IFRva2VuTmFtZU5vdEFUb2tlbikgewog
+CQl0aHJvdyBuZXcgQXJyYXlJbmRleE91dE9mQm91bmRzRXhjZXB0aW9uKCJTaW5nbGUgY2VsbCBh
+cnJheSBvdmVyZmxvdyIpOyAvLyROT04tTkxTLTEkCiAJfQotCXRoaXMubmV4dFRva2VuID0gdG9r
+ZW47CisJdGhpcy5uZXh0VG9rZW4gPSB1bmFtYmlndW91c1Rva2VuOwogfQogCiBwdWJsaWMgaW50
+IGdldE5leHRUb2tlbigpIHRocm93cyBJbnZhbGlkSW5wdXRFeGNlcHRpb24gewogCQotCWludCB0
+b2tlbiA9IHRoaXMubmV4dFRva2VuICE9IFRva2VuTmFtZU5vdEFUb2tlbiA/IHRoaXMubmV4dFRv
+a2VuIDogZ2V0TmV4dFRva2VuMCgpOwotCXRoaXMubmV4dFRva2VuID0gVG9rZW5OYW1lTm90QVRv
+a2VuOworCWludCB0b2tlbjsKKwlpZiAodGhpcy5uZXh0VG9rZW4gIT0gVG9rZW5OYW1lTm90QVRv
+a2VuKSB7CisJCXRva2VuID0gdGhpcy5uZXh0VG9rZW47CisJCXRoaXMubmV4dFRva2VuID0gVG9r
+ZW5OYW1lTm90QVRva2VuOworCQlyZXR1cm4gdG9rZW47IC8vIHByZXN1bWVkIHRvIGJlIHVuYW1i
+aWd1b3VzLgorCX0KIAkKLQlpZiAoIXRoaXMuc2Nhbm5pbmdKYXZhOFBsdXMpIHsKLQkJcmV0dXJu
+IHRva2VuOworCXRva2VuID0gZ2V0TmV4dFRva2VuMCgpOworCWlmICghdGhpcy5zY2FubmluZ0ph
+dmE4UGx1cyB8fCB0aGlzLmFjdGl2ZVBhcnNlciA9PSBudWxsKSB7CisJCXJldHVybiB0b2tlbjsg
+IC8vIG5vIGF1ZGllbmNlLCBubyBtYWdpYy4KIAl9CiAKLQlpZiAodG9rZW4gPT0gVG9rZW5OYW1l
+TFBBUkVOICYmIHRoaXMubG9va0FoZWFkU3RhdGUgPT0gUE9TVF9MQU1CREFfUFJFRklYKSB7CisJ
+aWYgKHRva2VuID09IFRva2VuTmFtZUxQQVJFTiAmJiB0aGlzLmFjdGl2ZVBhcnNlci5hdENvbmZs
+aWN0U2NlbmFyaW8odG9rZW4pKSB7CiAJCWlmIChhdExhbWJkYVBhcmFtZXRlckxpc3QoKSkgewog
+CQkJdGhpcy5uZXh0VG9rZW4gPSB0b2tlbjsKIAkJCXRva2VuID0gVG9rZW5OYW1lQmVnaW5MYW1i
+ZGE7CiAJCX0KLQl9IGVsc2UgaWYgKHRva2VuID09IFRva2VuTmFtZUxFU1MgJiYgdGhpcy5sb29r
+QWhlYWRTdGF0ZSA9PSBQT1NUX0lERU5USUZJRVIpIHsKKwl9IGVsc2UgaWYgKHRva2VuID09IFRv
+a2VuTmFtZUxFU1MgJiYgdGhpcy5hY3RpdmVQYXJzZXIuYXRDb25mbGljdFNjZW5hcmlvKHRva2Vu
+KSkgewogCQlpZiAoYXRSZWZlcmVuY2VFeHByZXNzaW9uKCkpIHsKIAkJCXRoaXMubmV4dFRva2Vu
+ID0gdG9rZW47CiAJCQl0b2tlbiA9IFRva2VuTmFtZUJlZ2luVHlwZUFyZ3VtZW50czsKIAkJfQot
+CX0KLQlpZiAodG9rZW4gPCBQYXJzZXJCYXNpY0luZm9ybWF0aW9uLk5VTV9URVJNSU5BTFMpIHsK
+LQkJdGhpcy5sb29rQWhlYWRTdGF0ZSA9IGxvb2tBaGVhZFRhYmxlW3RoaXMubG9va0FoZWFkU3Rh
+dGVdW3Rva2VuXTsKIAl9CiAJcmV0dXJuIHRva2VuOwogfQpAQCAtMjc3NCw3ICsyNzQwLDYgQEAK
+IAl0aGlzLmNvbW1lbnRQdHIgPSAtMTsgLy8gcmVzZXQgY29tbWVudCBzdGFjawogCXRoaXMuZm91
+bmRUYXNrQ291bnQgPSAwOwogCXRoaXMubmV4dFRva2VuID0gVG9rZW5OYW1lTm90QVRva2VuOwot
+CXRoaXMubG9va0FoZWFkU3RhdGUgPSBTVEFSVF9TVEFURTsKIH0KIAogcHJvdGVjdGVkIGZpbmFs
+IHZvaWQgc2NhbkVzY2FwZUNoYXJhY3RlcigpIHRocm93cyBJbnZhbGlkSW5wdXRFeGNlcHRpb24g
+ewpAQCAtNDMyNiw0ICs0MjkxLDggQEAKIHByaXZhdGUgZmluYWwgYm9vbGVhbiBhdFJlZmVyZW5j
+ZUV4cHJlc3Npb24oKSB7IC8vIERpZCB0aGUgJzwnIHdlIHNhdyBqdXN0IG5vdyBoZXJhbGQgYSBy
+ZWZlcmVuY2UgZXhwcmVzc2lvbiA/CiAJcmV0dXJuIGdldFZhbmd1YXJkUGFyc2VyKCkucGFyc2Uo
+VG9rZW5OYW1lQ09MT05fQ09MT04pOwogfQorCitwdWJsaWMgdm9pZCBzZXRBY3RpdmVQYXJzZXIo
+Q29uZmxpY3RlZFBhcnNlciBwYXJzZXIpIHsKKwl0aGlzLmFjdGl2ZVBhcnNlciAgPSBwYXJzZXI7
+Cit9CiB9CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNs
+aXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL2RpYWdub3NlL0RpYWdub3NlUGFyc2Vy
+LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50
+ZXJuYWwvY29tcGlsZXIvcGFyc2VyL2RpYWdub3NlL0RpYWdub3NlUGFyc2VyLmphdmEKaW5kZXgg
+ZDZlNGMyYS4uOGIxZDllNiAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGls
+ZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3BhcnNlci9kaWFnbm9zZS9EaWFn
+bm9zZVBhcnNlci5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvZGlhZ25vc2UvRGlhZ25vc2VQYXJz
+ZXIuamF2YQpAQCAtMTYsNiArMTYsNyBAQAogCiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUu
+Y29tcGlsZXIuQ2hhck9wZXJhdGlvbjsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwu
+Y29tcGlsZXIuaW1wbC5Db21waWxlck9wdGlvbnM7CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0Lmlu
+dGVybmFsLmNvbXBpbGVyLnBhcnNlci5Db25mbGljdGVkUGFyc2VyOwogaW1wb3J0IG9yZy5lY2xp
+cHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5wYXJzZXIuUGFyc2VyOwogaW1wb3J0IG9yZy5lY2xp
+cHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5wYXJzZXIuUGFyc2VyQmFzaWNJbmZvcm1hdGlvbjsK
+IGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIucGFyc2VyLlJlY292ZXJ5
+U2Nhbm5lcjsKQEAgLTI1LDcgKzI2LDcgQEAKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJu
+YWwuY29tcGlsZXIucHJvYmxlbS5Qcm9ibGVtUmVwb3J0ZXI7CiBpbXBvcnQgb3JnLmVjbGlwc2Uu
+amR0LmludGVybmFsLmNvbXBpbGVyLnV0aWwuVXRpbDsKIAotcHVibGljIGNsYXNzIERpYWdub3Nl
+UGFyc2VyIGltcGxlbWVudHMgUGFyc2VyQmFzaWNJbmZvcm1hdGlvbiwgVGVybWluYWxUb2tlbnMg
+eworcHVibGljIGNsYXNzIERpYWdub3NlUGFyc2VyIGltcGxlbWVudHMgUGFyc2VyQmFzaWNJbmZv
+cm1hdGlvbiwgVGVybWluYWxUb2tlbnMsIENvbmZsaWN0ZWRQYXJzZXIgewogCXByaXZhdGUgc3Rh
+dGljIGZpbmFsIGJvb2xlYW4gREVCVUcgPSBmYWxzZTsKIAlwcml2YXRlIGJvb2xlYW4gREVCVUdf
+UEFSU0VDSEVDSyA9IGZhbHNlOwogCkBAIC0xOTgsNiArMTk5LDcgQEAKIAkJCW9sZFJlY29yZCA9
+IHRoaXMucmVjb3ZlcnlTY2FubmVyLnJlY29yZDsKIAkJCXRoaXMucmVjb3ZlcnlTY2FubmVyLnJl
+Y29yZCA9IHJlY29yZDsKIAkJfQorCQl0aGlzLnBhcnNlci5zY2FubmVyLnNldEFjdGl2ZVBhcnNl
+cih0aGlzKTsKIAkJdHJ5IHsKIAkJCXRoaXMubGV4U3RyZWFtLnJlc2V0KCk7CiAKQEAgLTQyNiw2
+ICs0MjgsNyBAQAogCQkJaWYodGhpcy5yZWNvdmVyeVNjYW5uZXIgIT0gbnVsbCkgewogCQkJCXRo
+aXMucmVjb3ZlcnlTY2FubmVyLnJlY29yZCA9IG9sZFJlY29yZDsKIAkJCX0KKwkJCXRoaXMucGFy
+c2VyLnNjYW5uZXIuc2V0QWN0aXZlUGFyc2VyKG51bGwpOwogCQl9CiAJCXJldHVybjsKIAl9CkBA
+IC0yNTk1LDQgKzI1OTgsMTQgQEAKIAogCQlyZXR1cm4gcmVzLnRvU3RyaW5nKCk7CiAJfQorCisJ
+cHVibGljIGJvb2xlYW4gYXRDb25mbGljdFNjZW5hcmlvKGludCB0b2tlbikgeworCQkvKiBUaGVy
+ZSBpcyB0b28gbXVjaCB2b29kb28gdGhhdCBnb2VzIG9uIGhlcmUgaW4gRGlhZ25vc2VQYXJzZXIg
+KG11bHRpcGxlIG1hY2hpbmVzLCBsZXhlciBzdHJlYW0gcmVzZXQgZXRjLikKKwkJICAgU28gd2Ug
+dGFrZSBhIHNpbXBsZSBtaW5kZWQgdmlldyB0aGF0IHdlIHdpbGwgYWx3YXlzIGFzayBmb3IgZGlz
+YW1iaWd1YXRpb24sIGV4Y2VwdCB0aGVyZSBpcyBvbmUgc2NlbmFyaW8gCisJCSAgIHRoYXQgbmVl
+ZHMgc3BlY2lhbCBoYW5kbGluZywgd2UgbGV0IHRoZSBsZXhlciBzdHJlYW0gZGVhbCB3aXRoIHRo
+YXQ6IEluIFg8U3RyaW5nPi5ZPEludGVnZXI+OjogdGhlIHNlY29uZAorCQkgICAnPCcgc2hvdWxk
+IG5vdCBiZSB0YWdnZWQgZm9yIGRpc2FtYmlndWF0aW9uLiBJZiBhIHN5bnRoZXRpYyB0b2tlbiBn
+ZXRzIGluamVjdGVkIHRoZXJlLCB0aGVyZSB3aWxsIGJlIHN5bnRheAorCQkgICBlcnJvci4gU2Vl
+IHRoYXQgdGhpcyBpcyBub3QgYSBwcm9ibGVtIGZvciB0aGUgcmVndWxhci9ub3JtYWwgcGFyc2Vy
+LgorCQkqLyAKKwkJcmV0dXJuIHRoaXMubGV4U3RyZWFtLmF0Q29uZmxpY3RTY2VuYXJpbyh0b2tl
+bik7CisJfQogfQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3Jn
+L2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3BhcnNlci9kaWFnbm9zZS9MZXhTdHJlYW0u
+amF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRl
+cm5hbC9jb21waWxlci9wYXJzZXIvZGlhZ25vc2UvTGV4U3RyZWFtLmphdmEKaW5kZXggNjQ4NThj
+ZS4uZDkzNWJmZiAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3Jn
+L2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3BhcnNlci9kaWFnbm9zZS9MZXhTdHJlYW0u
+amF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQv
+aW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL2RpYWdub3NlL0xleFN0cmVhbS5qYXZhCkBAIC0xLDkg
+KzEsMTMgQEAKIC8qKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqCi0gKiBDb3B5cmlnaHQgKGMpIDIwMDAs
+IDIwMDkgSUJNIENvcnBvcmF0aW9uIGFuZCBvdGhlcnMuCisgKiBDb3B5cmlnaHQgKGMpIDIwMDAs
+IDIwMTIgSUJNIENvcnBvcmF0aW9uIGFuZCBvdGhlcnMuCiAgKiBBbGwgcmlnaHRzIHJlc2VydmVk
+LiBUaGlzIHByb2dyYW0gYW5kIHRoZSBhY2NvbXBhbnlpbmcgbWF0ZXJpYWxzCiAgKiBhcmUgbWFk
+ZSBhdmFpbGFibGUgdW5kZXIgdGhlIHRlcm1zIG9mIHRoZSBFY2xpcHNlIFB1YmxpYyBMaWNlbnNl
+IHYxLjAKICAqIHdoaWNoIGFjY29tcGFuaWVzIHRoaXMgZGlzdHJpYnV0aW9uLCBhbmQgaXMgYXZh
+aWxhYmxlIGF0CiAgKiBodHRwOi8vd3d3LmVjbGlwc2Uub3JnL2xlZ2FsL2VwbC12MTAuaHRtbAor
+ICoKKyAqIFRoaXMgaXMgYW4gaW1wbGVtZW50YXRpb24gb2YgYW4gZWFybHktZHJhZnQgc3BlY2lm
+aWNhdGlvbiBkZXZlbG9wZWQgdW5kZXIgdGhlIEphdmEKKyAqIENvbW11bml0eSBQcm9jZXNzIChK
+Q1ApIGFuZCBpcyBtYWRlIGF2YWlsYWJsZSBmb3IgdGVzdGluZyBhbmQgZXZhbHVhdGlvbiBwdXJw
+b3NlcworICogb25seS4gVGhlIGNvZGUgaXMgbm90IGNvbXBhdGlibGUgd2l0aCBhbnkgc3BlY2lm
+aWNhdGlvbiBvZiB0aGUgSkNQLgogICoKICAqIENvbnRyaWJ1dG9yczoKICAqICAgICBJQk0gQ29y
+cG9yYXRpb24gLSBpbml0aWFsIEFQSSBhbmQgaW1wbGVtZW50YXRpb24KQEAgLTUwLDYgKzU0LDcg
+QEAKIAogCXByaXZhdGUgaW50IHByZXZpb3VzSW50ZXJ2YWwgPSAtMTsKIAlwcml2YXRlIGludCBj
+dXJyZW50SW50ZXJ2YWwgPSAtMTsKKwlwcml2YXRlIGJvb2xlYW4gYXdhaXRpbmdDb2xvbkNvbG9u
+OwogCiAJcHVibGljIExleFN0cmVhbShpbnQgc2l6ZSwgU2Nhbm5lciBzY2FubmVyLCBpbnRbXSBp
+bnRlcnZhbFN0YXJ0VG9Ta2lwLCBpbnRbXSBpbnRlcnZhbEVuZFRvU2tpcCwgaW50W10gaW50ZXJ2
+YWxGbGFnc1RvU2tpcCwgaW50IGZpcnN0VG9rZW4sIGludCBpbml0LCBpbnQgZW9mKSB7CiAJCXRo
+aXMudG9rZW5DYWNoZSA9IG5ldyBUb2tlbltzaXplXTsKQEAgLTY1LDcgKzcwLDcgQEAKIAkJdGhp
+cy5pbnRlcnZhbFN0YXJ0VG9Ta2lwID0gaW50ZXJ2YWxTdGFydFRvU2tpcDsKIAkJdGhpcy5pbnRl
+cnZhbEVuZFRvU2tpcCA9IGludGVydmFsRW5kVG9Ta2lwOwogCQl0aGlzLmludGVydmFsRmxhZ3NU
+b1NraXAgPSBpbnRlcnZhbEZsYWdzVG9Ta2lwOwotCisJCXRoaXMuYXdhaXRpbmdDb2xvbkNvbG9u
+ID0gZmFsc2U7CiAJCXNjYW5uZXIucmVzZXRUbyhpbml0LCBlb2YpOwogCQl0aGlzLnNjYW5uZXIg
+PSBzY2FubmVyOwogCX0KQEAgLTc3LDYgKzgyLDExIEBACiAJCXdoaWxlKHRva2VuTm90Rm91bmQp
+IHsKIAkJCXRyeSB7CiAJCQkJaW50IHRva2VuS2luZCA9ICB0aGlzLnNjYW5uZXIuZ2V0TmV4dFRv
+a2VuKCk7CisJCQkJaWYgKHRva2VuS2luZCA9PSBUb2tlbk5hbWVCZWdpblR5cGVBcmd1bWVudHMp
+IHsKKwkJCQkJdGhpcy5hd2FpdGluZ0NvbG9uQ29sb24gPSB0cnVlOworCQkJCX0gZWxzZSBpZiAo
+dG9rZW5LaW5kID09IFRva2VuTmFtZUNPTE9OX0NPTE9OKSB7CisJCQkJCXRoaXMuYXdhaXRpbmdD
+b2xvbkNvbG9uID0gZmFsc2U7CisJCQkJfQogCQkJCWlmKHRva2VuS2luZCAhPSBUb2tlbk5hbWVF
+T0YpIHsKIAkJCQkJaW50IHN0YXJ0ID0gdGhpcy5zY2FubmVyLmdldEN1cnJlbnRUb2tlblN0YXJ0
+UG9zaXRpb24oKTsKIAkJCQkJaW50IGVuZCA9IHRoaXMuc2Nhbm5lci5nZXRDdXJyZW50VG9rZW5F
+bmRQb3NpdGlvbigpOwpAQCAtMjg4LDQgKzI5OCw4IEBACiAKIAkJcmV0dXJuIHJlcy50b1N0cmlu
+ZygpOwogCX0KKworCXB1YmxpYyBib29sZWFuIGF0Q29uZmxpY3RTY2VuYXJpbyhpbnQgdG9rZW4p
+IHsKKwkJcmV0dXJuICh0b2tlbiA9PSBUb2tlbk5hbWVMUEFSRU4gfHwgKHRva2VuID09IFRva2Vu
+TmFtZUxFU1MgJiYgIXRoaXMuYXdhaXRpbmdDb2xvbkNvbG9uKSk7CisJfQogfQ==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>218808</attachid>
+            <date>2012-07-17 10:40:00 -0400</date>
+            <delta_ts>2012-07-17 18:07:13 -0400</delta_ts>
+            <desc>Further tweaks to minimize look ahead.</desc>
+            <filename>Further-tweaks-to-minimize-look-ahead.patch</filename>
+            <type>text/plain</type>
+            <size>6658</size>
+            <attacher name="Srikanth Sankaran">srikanth_sankaran</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvUGFyc2VyLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL1Bh
+cnNlci5qYXZhCmluZGV4IDc1OGEwYzMuLmQ0NzMxOTQgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNl
+LmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wYXJz
+ZXIvUGFyc2VyLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2Vj
+bGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3BhcnNlci9QYXJzZXIuamF2YQpAQCAtMTA3Njcs
+NiArMTA3NjcsNyBAQAogCXRoaXMubmV4dElnbm9yZWRUb2tlbiA9IC0xOwogCWRvIHsKIAkJdHJ5
+IHsKKwkJCXRoaXMuc2Nhbm5lci5sb29rQmFja1swXSA9IHRoaXMuc2Nhbm5lci5sb29rQmFja1sx
+XSA9IFRva2VuTmFtZU5vdEFUb2tlbjsgLy8gc3RheSBjbGVhciBvZiB0aGUgdm9vZG9vIGluIHRo
+ZSBwcmVzZW50IG1ldGhvZAogCQkJdGhpcy5uZXh0SWdub3JlZFRva2VuID0gdGhpcy5zY2FubmVy
+LmdldE5leHRUb2tlbigpOwogCQkJaWYodGhpcy5zY2FubmVyLmN1cnJlbnRQb3NpdGlvbiA9PSB0
+aGlzLnNjYW5uZXIuc3RhcnRQb3NpdGlvbil7CiAJCQkJdGhpcy5zY2FubmVyLmN1cnJlbnRQb3Np
+dGlvbisrOyAvLyBvbiBmYWtlIGNvbXBsZXRpb24gaWRlbnRpZmllcgpAQCAtMTA3NzUsNiArMTA3
+NzYsOCBAQAogCiAJCX0gY2F0Y2goSW52YWxpZElucHV0RXhjZXB0aW9uIGUpewogCQkJcG9zID0g
+dGhpcy5zY2FubmVyLmN1cnJlbnRQb3NpdGlvbjsKKwkJfSBmaW5hbGx5IHsKKwkJCXRoaXMuc2Nh
+bm5lci5sb29rQmFja1swXSA9IHRoaXMuc2Nhbm5lci5sb29rQmFja1sxXSA9IFRva2VuTmFtZU5v
+dEFUb2tlbjsgLy8gc3RlZXIgY2xlYXIgb2YgdGhlIHZvb2RvbyBpbiB0aGUgcHJlc2VudCBtZXRo
+b2QKIAkJfQogCX0gd2hpbGUgKHRoaXMubmV4dElnbm9yZWRUb2tlbiA8IDApOwogCmRpZmYgLS1n
+aXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvcGFyc2VyL1NjYW5uZXIuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2Nv
+bXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvU2Nhbm5lci5q
+YXZhCmluZGV4IDQwMDhhY2MuLjAzZWViMzYgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5j
+b3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvU2Nh
+bm5lci5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNl
+L2pkdC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvU2Nhbm5lci5qYXZhCkBAIC0xODksOCArMTg5
+LDggQEAKIAkJbmV3RW50cnk1ID0gMCwKIAkJbmV3RW50cnk2ID0gMDsKIAlwdWJsaWMgYm9vbGVh
+biBpbnNpZGVSZWNvdmVyeSA9IGZhbHNlOworCWludCBsb29rQmFja1tdID0gbmV3IGludFsyXTsg
+Ly8gZmFsbCBiYWNrIHRvIHNwcmluZyBmb3J3YXJkLgogCXByaXZhdGUgaW50IG5leHRUb2tlbiA9
+IFRva2VuTmFtZU5vdEFUb2tlbjsgLy8gYWxsb3dzIGZvciBvbmUgdG9rZW4gcHVzaCBiYWNrLCBv
+bmx5IHRoZSBtb3N0IHJlY2VudCB0b2tlbiBjYW4gYmUgcmVsaWFibHkgdW5nb3R0ZW4uCi0JcHJp
+dmF0ZSBmaW5hbCBib29sZWFuIHNjYW5uaW5nSmF2YThQbHVzOwogCXByaXZhdGUgVmFuZ3VhcmRT
+Y2FubmVyIHZhbmd1YXJkU2Nhbm5lcjsKIAlwcml2YXRlIFZhbmd1YXJkUGFyc2VyIHZhbmd1YXJk
+UGFyc2VyOwogCXByaXZhdGUgQ29uZmxpY3RlZFBhcnNlciBhY3RpdmVQYXJzZXIgPSBudWxsOwpA
+QCAtMjI0LDggKzIyNCw3IEBACiAJdGhpcy50b2tlbml6ZUNvbW1lbnRzID0gdG9rZW5pemVDb21t
+ZW50czsKIAl0aGlzLnRva2VuaXplV2hpdGVTcGFjZSA9IHRva2VuaXplV2hpdGVTcGFjZTsKIAl0
+aGlzLnNvdXJjZUxldmVsID0gc291cmNlTGV2ZWw7Ci0JdGhpcy5uZXh0VG9rZW4gPSBUb2tlbk5h
+bWVOb3RBVG9rZW47Ci0JdGhpcy5zY2FubmluZ0phdmE4UGx1cyA9IHNvdXJjZUxldmVsID49IENs
+YXNzRmlsZUNvbnN0YW50cy5KREsxXzg7CisJdGhpcy5sb29rQmFja1swXSA9IHRoaXMubG9va0Jh
+Y2tbMV0gPSB0aGlzLm5leHRUb2tlbiA9IFRva2VuTmFtZU5vdEFUb2tlbjsKIAl0aGlzLmNvbXBs
+aWFuY2VMZXZlbCA9IGNvbXBsaWFuY2VMZXZlbDsKIAl0aGlzLmNoZWNrTm9uRXh0ZXJuYWxpemVk
+U3RyaW5nTGl0ZXJhbHMgPSBjaGVja05vbkV4dGVybmFsaXplZFN0cmluZ0xpdGVyYWxzOwogCWlm
+ICh0YXNrVGFncyAhPSBudWxsKSB7CkBAIC0xMTQ2LDIxICsxMTQ1LDIwIEBACiAJfQogCQogCXRv
+a2VuID0gZ2V0TmV4dFRva2VuMCgpOwotCWlmICghdGhpcy5zY2FubmluZ0phdmE4UGx1cyB8fCB0
+aGlzLmFjdGl2ZVBhcnNlciA9PSBudWxsKSB7Ci0JCXJldHVybiB0b2tlbjsgIC8vIG5vIGF1ZGll
+bmNlLCBubyBtYWdpYy4KKwlpZiAodGhpcy5hY3RpdmVQYXJzZXIgPT0gbnVsbCkgeyAvLyBhbnli
+b2R5IGludGVyZXN0ZWQgaW4gdGhlIGdyYW1tYXRpY2FsIHN0cnVjdHVyZSBvZiB0aGUgcHJvZ3Jh
+bSBzaG91bGQgaGF2ZSByZWdpc3RlcmVkLgorCQlyZXR1cm4gdG9rZW47CiAJfQogCi0JaWYgKHRv
+a2VuID09IFRva2VuTmFtZUxQQVJFTiAmJiB0aGlzLmFjdGl2ZVBhcnNlci5hdENvbmZsaWN0U2Nl
+bmFyaW8odG9rZW4pKSB7Ci0JCWlmIChhdExhbWJkYVBhcmFtZXRlckxpc3QoKSkgewotCQkJdGhp
+cy5uZXh0VG9rZW4gPSB0b2tlbjsKLQkJCXRva2VuID0gVG9rZW5OYW1lQmVnaW5MYW1iZGE7Ci0J
+CX0KLQl9IGVsc2UgaWYgKHRva2VuID09IFRva2VuTmFtZUxFU1MgJiYgdGhpcy5hY3RpdmVQYXJz
+ZXIuYXRDb25mbGljdFNjZW5hcmlvKHRva2VuKSkgewotCQlpZiAoYXRSZWZlcmVuY2VFeHByZXNz
+aW9uKCkpIHsKLQkJCXRoaXMubmV4dFRva2VuID0gdG9rZW47Ci0JCQl0b2tlbiA9IFRva2VuTmFt
+ZUJlZ2luVHlwZUFyZ3VtZW50czsKLQkJfQorCWlmICh0b2tlbiA9PSBUb2tlbk5hbWVMUEFSRU4g
+JiYgYXRMYW1iZGFQYXJhbWV0ZXJMaXN0KCkpIHsKKwkJdGhpcy5uZXh0VG9rZW4gPSB0b2tlbjsK
+KwkJdG9rZW4gPSBUb2tlbk5hbWVCZWdpbkxhbWJkYTsKKwl9IGVsc2UgaWYgKHRva2VuID09IFRv
+a2VuTmFtZUxFU1MgJiYgYXRSZWZlcmVuY2VFeHByZXNzaW9uKCkpIHsKKwkJdGhpcy5uZXh0VG9r
+ZW4gPSB0b2tlbjsKKwkJdG9rZW4gPSBUb2tlbk5hbWVCZWdpblR5cGVBcmd1bWVudHM7CiAJfQor
+CisJdGhpcy5sb29rQmFja1swXSA9IHRoaXMubG9va0JhY2tbMV07CisJdGhpcy5sb29rQmFja1sx
+XSA9IHRva2VuOwogCXJldHVybiB0b2tlbjsKIH0KIHByb3RlY3RlZCBpbnQgZ2V0TmV4dFRva2Vu
+MCgpIHRocm93cyBJbnZhbGlkSW5wdXRFeGNlcHRpb24gewpAQCAtMjczOSw3ICsyNzM3LDcgQEAK
+IAl9CiAJdGhpcy5jb21tZW50UHRyID0gLTE7IC8vIHJlc2V0IGNvbW1lbnQgc3RhY2sKIAl0aGlz
+LmZvdW5kVGFza0NvdW50ID0gMDsKLQl0aGlzLm5leHRUb2tlbiA9IFRva2VuTmFtZU5vdEFUb2tl
+bjsKKwl0aGlzLmxvb2tCYWNrWzBdID0gdGhpcy5sb29rQmFja1sxXSA9IHRoaXMubmV4dFRva2Vu
+ID0gVG9rZW5OYW1lTm90QVRva2VuOwogfQogCiBwcm90ZWN0ZWQgZmluYWwgdm9pZCBzY2FuRXNj
+YXBlQ2hhcmFjdGVyKCkgdGhyb3dzIEludmFsaWRJbnB1dEV4Y2VwdGlvbiB7CkBAIC00Mjg2LDEz
+ICs0Mjg0LDY2IEBACiAJcmV0dXJuIHRoaXMudmFuZ3VhcmRQYXJzZXI7CiB9CiBwcml2YXRlIGZp
+bmFsIGJvb2xlYW4gYXRMYW1iZGFQYXJhbWV0ZXJMaXN0KCkgeyAvLyBEaWQgdGhlICcoJyB3ZSBz
+YXcganVzdCBub3cgaGVyYWxkIGEgbGFtYmRhIHBhcmFtZXRlciBsaXN0ID8KLQlyZXR1cm4gZ2V0
+VmFuZ3VhcmRQYXJzZXIoKS5wYXJzZShUb2tlbk5hbWVBUlJPVyk7CisKKwlzd2l0Y2ggKHRoaXMu
+bG9va0JhY2tbMV0pIHsKKwkJY2FzZSBUb2tlbk5hbWVFUVVBTCA6IAorCQljYXNlIFRva2VuTmFt
+ZXJldHVybjoKKwkJY2FzZSBUb2tlbk5hbWVMUEFSRU46CisJCWNhc2UgVG9rZW5OYW1lUlBBUkVO
+OgorCQljYXNlIFRva2VuTmFtZUNPTU1BOgorCQljYXNlIFRva2VuTmFtZUFSUk9XOgorCQljYXNl
+IFRva2VuTmFtZVFVRVNUSU9OOgorCQljYXNlIFRva2VuTmFtZUNPTE9OOgorCQljYXNlIFRva2Vu
+TmFtZUxCUkFDRToKKwkJY2FzZSBUb2tlbk5hbWVOb3RBVG9rZW46IC8vIE5vdCBrb3NoZXIsIGRv
+bid0IHRvdWNoLgorCQkJYnJlYWs7CisJCWRlZmF1bHQ6CisJCQlyZXR1cm4gZmFsc2U7IC8vIE5v
+dCBhIHZpYWJsZSBwcmVmaXggZm9yIGxhbWJkYS4KKworCX0KKwlyZXR1cm4gdGhpcy5hY3RpdmVQ
+YXJzZXIuYXRDb25mbGljdFNjZW5hcmlvKFRva2VuTmFtZUxQQVJFTikgJiYgZ2V0VmFuZ3VhcmRQ
+YXJzZXIoKS5wYXJzZShUb2tlbk5hbWVBUlJPVyk7CiB9CiBwcml2YXRlIGZpbmFsIGJvb2xlYW4g
+YXRSZWZlcmVuY2VFeHByZXNzaW9uKCkgeyAvLyBEaWQgdGhlICc8JyB3ZSBzYXcganVzdCBub3cg
+aGVyYWxkIGEgcmVmZXJlbmNlIGV4cHJlc3Npb24gPwotCXJldHVybiBnZXRWYW5ndWFyZFBhcnNl
+cigpLnBhcnNlKFRva2VuTmFtZUNPTE9OX0NPTE9OKTsKKwlzd2l0Y2ggKHRoaXMubG9va0JhY2tb
+MV0pIHsKKwkJY2FzZSBUb2tlbk5hbWVJZGVudGlmaWVyOgorCQkJc3dpdGNoICh0aGlzLmxvb2tC
+YWNrWzBdKSB7CisJCQkJY2FzZSBUb2tlbk5hbWVTRU1JQ09MT046ICAvLyBmb3IgKGludCBpID0g
+MDsgaSA8IDEwOyBpKyspOworCQkJCWNhc2UgVG9rZW5OYW1lUkJSQUNFOiAgICAgLy8gY2xhc3Mg
+WCB7IHZvaWQgZm9vKCkge30gWDxTdHJpbmc+IHggPSBudWxsOyB9CisJCQkJY2FzZSBUb2tlbk5h
+bWVjbGFzczogICAgICAvLyBjbGFzcyBYPFQ+IHt9CisJCQkJY2FzZSBUb2tlbk5hbWVpbnRlcmZh
+Y2U6ICAvLyBpbnRlcmZhY2UgSTxUPiB7fQorCQkJCWNhc2UgVG9rZW5OYW1lZW51bTogICAgICAg
+Ly8gZW51bSBFPFQ+IHt9CisJCQkJY2FzZSBUb2tlbk5hbWVmaW5hbDogICAgICAvLyBmaW5hbCBD
+b2xsZWN0aW9uPFN0cmluZz4KKwkJCQljYXNlIFRva2VuTmFtZUxFU1M6ICAgICAgIC8vIENvbGxl
+Y3Rpb248SVNjYWxhckRhdGE8QWJzdHJhY3REYXRhPj4KKwkJCQljYXNlIFRva2VuTmFtZUdSRUFU
+RVI6ICAgIC8vIHB1YmxpYyA8VD4gTGlzdDxUPiBmb28oKSB7IC8qICovIH0KKwkJCQljYXNlIFRv
+a2VuTmFtZVJJR0hUX1NISUZUOi8vIHN0YXRpYyA8VCBleHRlbmRzIFNlbGZUeXBlPFQ+PiBMaXN0
+PFQ+IG1ha2VTaW5nbGV0b25MaXN0KFQgdCkgeyAvKiAqLyB9CisJCQkJY2FzZSBUb2tlbk5hbWVu
+ZXc6ICAgICAgICAvLyBuZXcgQXJyYXlMaXN0PFN0cmluZz4oKTsKKwkJCQljYXNlIFRva2VuTmFt
+ZXB1YmxpYzogICAgIC8vIHB1YmxpYyBMaXN0PFN0cmluZz4gZm9vKCkge30KKwkJCQljYXNlIFRv
+a2VuTmFtZWFic3RyYWN0OiAgIC8vIGFic3RyYWN0IExpc3Q8U3RyaW5nPiBmb28oKSB7fQorCQkJ
+CWNhc2UgVG9rZW5OYW1lcHJpdmF0ZTogICAgLy8gcHJpdmF0ZSBMaXN0PFN0cmluZz4gZm9vKCkg
+e30KKwkJCQljYXNlIFRva2VuTmFtZXByb3RlY3RlZDogIC8vIHByb3RlY3RlZCBMaXN0PFN0cmlu
+Zz4gZm9vKCkge30KKwkJCQljYXNlIFRva2VuTmFtZXN0YXRpYzogICAgIC8vIHB1YmxpYyBzdGF0
+aWMgTGlzdDxTdHJpbmc+IGZvbygpIHt9CisJCQkJY2FzZSBUb2tlbk5hbWVleHRlbmRzOiAgICAv
+LyA8VCBleHRlbmRzIFk8Wj4+CisJCQkJY2FzZSBUb2tlbk5hbWVzdXBlcjogICAgICAvLyA/IHN1
+cGVyIENvbnRleHQ8Tj4KKwkJCQljYXNlIFRva2VuTmFtZUFORDogICAgICAgIC8vIFQgZXh0ZW5k
+cyBPYmplY3QgJiBDb21wYXJhYmxlPD8gc3VwZXIgVD4KKwkJCQljYXNlIFRva2VuTmFtZWltcGxl
+bWVudHM6IC8vIGNsYXNzIEEgaW1wbGVtZW50cyBJPFo+CisJCQkJY2FzZSBUb2tlbk5hbWV0aHJv
+d3M6ICAgICAvLyB0aHJvd3MgWTxaPgorCQkJCWNhc2UgVG9rZW5OYW1lQVQ6ICAgICAgICAgLy8g
+QERlcHJlY2F0ZWQgPFQ+IHZvaWQgZm9vKCkge30gCisJCQkJY2FzZSBUb2tlbk5hbWVpbnN0YW5j
+ZW9mOiAvLyBpZiAobyBpbnN0YW5jZW9mIExpc3Q8RT5bXSkgIAorCQkJCQlyZXR1cm4gZmFsc2U7
+CisJCQkJZGVmYXVsdDoKKwkJCQkJYnJlYWs7CisJCQl9CisJCQlicmVhazsKKwkJY2FzZSBUb2tl
+bk5hbWVOb3RBVG9rZW46IC8vIE5vdCBrb3NoZXIsIGRvbid0IHRvdWNoLgorCQkJYnJlYWs7CisJ
+CWRlZmF1bHQ6CisJCQlyZXR1cm4gZmFsc2U7CisJfQorCXJldHVybiB0aGlzLmFjdGl2ZVBhcnNl
+ci5hdENvbmZsaWN0U2NlbmFyaW8oVG9rZW5OYW1lTEVTUykgJiYgZ2V0VmFuZ3VhcmRQYXJzZXIo
+KS5wYXJzZShUb2tlbk5hbWVDT0xPTl9DT0xPTik7CiB9CiAKIHB1YmxpYyB2b2lkIHNldEFjdGl2
+ZVBhcnNlcihDb25mbGljdGVkUGFyc2VyIHBhcnNlcikgewogCXRoaXMuYWN0aXZlUGFyc2VyICA9
+IHBhcnNlcjsKKwl0aGlzLmxvb2tCYWNrWzBdID0gdGhpcy5sb29rQmFja1sxXSA9IFRva2VuTmFt
+ZU5vdEFUb2tlbjsgIC8vIG5vIGhhbmQgbWUgZG93bnMgcGxlYXNlLgogfQogfQ==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

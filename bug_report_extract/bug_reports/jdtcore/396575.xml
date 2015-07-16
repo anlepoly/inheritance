@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>396575</bug_id>
+          
+          <creation_ts>2012-12-14 01:03:00 -0500</creation_ts>
+          <short_desc>[compiler][resources] Incorrect Errors/Warnings check for potential resource leak when surrounding with try-catch</short_desc>
+          <delta_ts>2015-04-24 00:54:44 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.2.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/45263</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=0747d5e7c6159c917fde8175fc9c67a8bade55fc</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Leemax Li">leemax.chronicle</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>max.gilead</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2194442</commentid>
+    <comment_count>0</comment_count>
+    <who name="Leemax Li">leemax.chronicle</who>
+    <bug_when>2012-12-14 01:03:53 -0500</bug_when>
+    <thetext>When set:
+1. &quot;Errors/Warnings&quot; --&gt; &quot;potential programming problems&quot; --&gt; &quot;potential resource leak&quot;
+2. &quot;Errors/Warnings&quot; --&gt; &quot;Null analysis&quot; --&gt; &quot;potential null pointer access&quot;
+both to: warning or error.
+
+The following code  always produce 2 warning/error which are incorrect:
+
+snippet (1/3):
+   OutputStream out = null;
+   BufferedWriter bw = null;
+   try {
+       // code...
+       out = new FileOutputStream(myFile);
+       OutputStreamWriter writer = new OutputStreamWriter(out);
+       bw = new BufferedWriter(writer);
+       // more code...
+   } catch (Exception e) {
+       try {
+           bw.close(); // WARN: potential null pointer access
+       } catch (Exception ignored) {}
+       return;  // WARN: resource leak - bw may not be closed
+   }
+
+for the resource leak, seems have been verified fixed in 4.3M3?5? ??? 
+
+but seems the &quot;Potential Null Pointer&quot; is a bug to me since i have wrapped it in a try-catch clause which will capture &quot;Exception&quot; that the null pointer exception should be included.
+
+And there&apos;s a variant for &quot;resource leak&quot;:
+if declare &quot;OutputStream out&quot; inside the try-catch, the warning will show that the &quot;out&quot; is never closed.
+
+//   OutputStream out = null; // not declare the out here
+   BufferedWriter bw = null;
+   try {
+       // code...
+                                                       // declare &quot;out&quot; here inside try-catch as a temp variable
+       OutputStream out = new FileOutputStream(myFile); // WARN: out is never closed.
+       OutputStreamWriter writer = new OutputStreamWriter(out);
+       bw = new BufferedWriter(writer);
+       // more code...
+   } catch (Exception e) {
+       try {
+           bw.close(); // WARN: potential null pointer access
+       } catch (Exception ignored) {}
+       return;  // WARN: resource leak - bw may not be closed
+   }
+
+no matter how code is organized in &quot;catch&quot; clause, the out will always produce a &quot;never closed&quot; resource leak.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2194453</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2012-12-14 02:02:35 -0500</bug_when>
+    <thetext>Stephan, please take a look.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2194766</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-14 13:36:41 -0500</bug_when>
+    <thetext>Observations:
+
+The null pointer warning is correct, saying just that bw can be null at the site of dereference. We never promised that the analysis included the flow of NPEs after they have been thrown. We can&apos;t give such promise because NPE is an uncheck exception. Ergo: catching an NPE after it was thrown does not help to avoid the warning that an NPE may occur.
+
+The code is buggy because in the good case, where no exception is thrown, we never see a call to close(). So the warnings remind you to add a finally block to your code where you call close().
+
+
+The only thing that I think needs fixing is what warning/error we report: saying &quot;... is never closed&quot; is to harsh, the compiler should see that on one (however unlikely) path the resource can be closed, so it should say &quot;... may not be closed&quot;.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501340</commentid>
+    <comment_count>3</comment_count>
+    <who name="Max Gilead">max.gilead</who>
+    <bug_when>2014-12-31 16:48:40 -0500</bug_when>
+    <thetext>Another test case, showing that the warning is *not* issued if the FileOutputStream is constructed with a string argument, which is somewhat surprising in itself.
+
+import java.io.*;
+public class Test {
+    public static void a() throws IOException {
+        final OutputStream out = new FileOutputStream(new File(&quot;bar&quot;));
+        try {
+            throw new RuntimeException(); // Potential resource leak: &apos;out&apos; may not be closed at this location
+        } catch (final RuntimeException e) {
+            throw e; // Potential resource leak: &apos;out&apos; may not be closed at this location
+        } finally {
+            out.close();
+        }
+    }
+    public static void b() throws IOException {
+        final OutputStream out = new FileOutputStream(&quot;bar&quot;);
+        try {
+            throw new RuntimeException();
+        } catch (final RuntimeException e) {
+            throw e;
+        } finally {
+            out.close();
+        }
+    }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501410</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-01 10:05:08 -0500</bug_when>
+    <thetext>(In reply to Leemax Li from comment #0)
+
+At current head I see &quot;never closed&quot; reported against both &apos;out&apos; and &apos;bw&apos;, independent of where &apos;out&apos; is declared.
+
+This particular behavior has changed between 4.5M1 (no warning re &apos;out&apos; if declared ouside the try) and 4.5M2.
+
+(In reply to Max Gilead from comment #3)
+&gt; Another test case, showing that the warning is *not* issued if the
+&gt; FileOutputStream is constructed with a string argument, which is somewhat
+&gt; surprising in itself.
+
+Indeed looks suspicious.
+
+While I&apos;m not sure both issues are one and the same, I hope I&apos;ll be able to fix all within the 4.5 cycle.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2541884</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-02 19:00:10 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; (In reply to Max Gilead from comment #3)
+&gt; &gt; Another test case, showing that the warning is *not* issued if the
+&gt; &gt; FileOutputStream is constructed with a string argument, which is somewhat
+&gt; &gt; surprising in itself.
+&gt; 
+&gt; Indeed looks suspicious.
+
+Fixed by the change for bug 421035.
+
+At 1.7 we now only report:
+
+----------
+1. WARNING in /tmp/Test2.java (at line 4)
+        final OutputStream out = new FileOutputStream(new File(&quot;bar&quot;));
+                           ^^^
+Resource &apos;out&apos; should be managed by try-with-resource
+----------
+2. WARNING in /tmp/Test2.java (at line 14)
+        final OutputStream out = new FileOutputStream(&quot;bar&quot;);
+                           ^^^
+Resource &apos;out&apos; should be managed by try-with-resource
+----------</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2541886</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-02 19:17:28 -0400</bug_when>
+    <thetext>(In reply to Leemax Li from comment #0)
+&gt; When set:
+&gt; 1. &quot;Errors/Warnings&quot; --&gt; &quot;potential programming problems&quot; --&gt; &quot;potential
+&gt; resource leak&quot;
+&gt; 2. &quot;Errors/Warnings&quot; --&gt; &quot;Null analysis&quot; --&gt; &quot;potential null pointer access&quot;
+&gt; both to: warning or error.
+&gt; 
+&gt; The following code  always produce 2 warning/error which are incorrect:
+&gt; 
+&gt; snippet (1/3):
+&gt;    OutputStream out = null;
+&gt;    BufferedWriter bw = null;
+&gt;    try {
+&gt;        // code...
+&gt;        out = new FileOutputStream(myFile);
+&gt;        OutputStreamWriter writer = new OutputStreamWriter(out);
+&gt;        bw = new BufferedWriter(writer);
+&gt;        // more code...
+&gt;    } catch (Exception e) {
+&gt;        try {
+&gt;            bw.close(); // WARN: potential null pointer access
+&gt;        } catch (Exception ignored) {}
+&gt;        return;  // WARN: resource leak - bw may not be closed
+&gt;    }
+
+In HEAD this reports:
+----------
+1. WARNING in /tmp/Bug396575.java (at line 11)
+        bw = new BufferedWriter(writer);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Resource &apos;bw&apos; should be managed by try-with-resource
+----------
+2. WARNING in /tmp/Bug396575.java (at line 11)
+        bw = new BufferedWriter(writer);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Resource leak: &apos;bw&apos; is never closed
+----------
+3. WARNING in /tmp/Bug396575.java (at line 15)
+        bw.close(); // WARN: potential null pointer access
+        ^^
+Potential null pointer access: The variable bw may be null at this location
+----------
+
+All this looks good to me (&quot;never&quot; is true for normal flows, not true for exceptional flows, but I hold that this is acceptable).
+
+ 
+&gt; but seems the &quot;Potential Null Pointer&quot; is a bug to me since i have wrapped
+&gt; it in a try-catch clause which will capture &quot;Exception&quot; that the null
+&gt; pointer exception should be included.
+
+Null pointer analysis has nothing to do with catching NPE, but with preventing it from occurring in the first place.
+ 
+
+&gt; And there&apos;s a variant for &quot;resource leak&quot;:
+&gt; if declare &quot;OutputStream out&quot; inside the try-catch, the warning will show
+&gt; that the &quot;out&quot; is never closed.
+&gt; 
+&gt; //   OutputStream out = null; // not declare the out here
+&gt;    BufferedWriter bw = null;
+&gt;    try {
+&gt;        // code...
+&gt;                                                        // declare &quot;out&quot; here
+&gt; inside try-catch as a temp variable
+&gt;        OutputStream out = new FileOutputStream(myFile); // WARN: out is
+&gt; never closed.
+&gt;        OutputStreamWriter writer = new OutputStreamWriter(out);
+&gt;        bw = new BufferedWriter(writer);
+&gt;        // more code...
+&gt;    } catch (Exception e) {
+&gt;        try {
+&gt;            bw.close(); // WARN: potential null pointer access
+&gt;        } catch (Exception ignored) {}
+&gt;        return;  // WARN: resource leak - bw may not be closed
+&gt;    }
+&gt; 
+&gt; no matter how code is organized in &quot;catch&quot; clause, the out will always
+&gt; produce a &quot;never closed&quot; resource leak.
+
+In HEAD: similar to above, plus one more:
+
+----------
+4. WARNING in /tmp/Bug396575.java (at line 26)
+        OutputStream out = new FileOutputStream(myFile); // WARN: out is never closed.
+                     ^^^
+Resource leak: &apos;out&apos; is never closed
+----------
+
+This one still looks suspicious, because &apos;out&apos; is wrapped in &apos;bw&apos; and hence we don&apos;t want to complain against the inner, only the outer.
+
+I suspect that this is an artifact of how the analysis is implemented scope-based: we need to decide about &apos;out&apos; when analysis comes to the end of the try block, but checks for &apos;bw&apos; are still pending until the end of the method (because &apos;bw&apos; is declared in the toplevel scope of the method).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2542157</commentid>
+    <comment_count>7</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-04-03 17:30:52 -0400</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/45263</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2542162</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-03 17:42:35 -0400</bug_when>
+    <thetext>It turned out the remaining problem could indeed be traced back to the order of analysing resources (in BlockScope.checkUnclosedCloseables()). It still happened that we performed the checks for an inner resource &quot;out&quot; before we had a chance to look at its (transitive) wrapper &quot;bw&quot;. In particular it could happen that we removed &quot;writer&quot; from the set, given it is wrapped by &quot;bw&quot; and then &quot;out&quot; didn&apos;t have a matching wrapper within the set anymore.
+
+Resolved by rewriting the iteration logic into a proper Iterator, recognizing that the previous attempt was growing too complex, which was due to the idea of a single set iteration per request. The new iterator makes priorities in the search explicit as &quot;Stage&quot;s.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2542172</commentid>
+    <comment_count>9</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-04-03 18:45:50 -0400</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/45263 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=0747d5e7c6159c917fde8175fc9c67a8bade55fc</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2542173</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-03 18:46:32 -0400</bug_when>
+    <thetext>.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2551064</commentid>
+    <comment_count>11</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2015-04-24 00:54:44 -0400</bug_when>
+    <thetext>Verified for Eclipse 4.5 Mars M7 Build id: I20150422-1000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

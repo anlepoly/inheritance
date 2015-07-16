@@ -1,0 +1,551 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>455180</bug_id>
+          
+          <creation_ts>2014-12-15 04:04:00 -0500</creation_ts>
+          <short_desc>IllegalStateException in AnnotatableTypeSystem.getRawType</short_desc>
+          <delta_ts>2015-05-08 17:34:04 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/47473</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=5639522d8d54e9045b786862d610c6266638db42</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 RC1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Till Brychcy">register.eclipse</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>saammana</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="64647"
+          type_id="1"
+          status="+"
+          setter="saammana"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2496903</commentid>
+    <comment_count>0</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2014-12-15 04:04:29 -0500</bug_when>
+    <thetext>The problem appears when accessing classes from another project that use Raw Types in a Generics context with the new java8 &quot;TYPE_USE&quot; null annotations.
+
+A) CODE THAT TRIGGERS THE PROBLEM (I will also attach this junit test)
+- Setup a workspace with Java8 and the new null annotation.
+- Create project A with the following classes:
+
+// GenericType.java:
+package projA;
+
+public class GenericType&lt;T&gt; {
+}
+
+// ClassWithRawUsage.java
+package projA;
+
+@org.eclipse.jdt.annotation.NonNullByDefault
+public class ClassWithRawUsage {
+	public java.util.List&lt;GenericType&gt; method() {
+		throw new RuntimeException();
+	}
+}
+
+- Create project B with the following class:
+package projB;
+
+import projA.ClassWithRawUsage;
+import projA.GenericType;
+
+public class ClassThatImports {
+}
+
+B) THE PROBLEM:
+java.lang.IllegalStateException
+        at org.eclipse.jdt.internal.compiler.lookup.AnnotatableTypeSystem.getRawType(AnnotatableTypeSystem.java:139)
+        at org.eclipse.jdt.internal.compiler.lookup.AnnotatableTypeSystem.getRawType(AnnotatableTypeSystem.java:167)
+        at org.eclipse.jdt.internal.compiler.lookup.LookupEnvironment.createRawType(LookupEnvironment.java:997)
+        at org.eclipse.jdt.internal.compiler.lookup.LookupEnvironment.convertUnresolvedBinaryToRawType(LookupEnvironment.java:627)
+        at org.eclipse.jdt.internal.compiler.lookup.ParameterizedTypeBinding.swapUnresolved(ParameterizedTypeBinding.java:1273)
+        at org.eclipse.jdt.internal.compiler.lookup.UnresolvedReferenceBinding.swapUnresolved(UnresolvedReferenceBinding.java:141)
+        at org.eclipse.jdt.internal.compiler.lookup.UnresolvedReferenceBinding.setResolvedType(UnresolvedReferenceBinding.java:129)
+        at org.eclipse.jdt.internal.compiler.lookup.PackageBinding.addType(PackageBinding.java:74)
+        at org.eclipse.jdt.internal.compiler.lookup.LookupEnvironment.createBinaryTypeFrom(LookupEnvironment.java:698)
+        at org.eclipse.jdt.internal.compiler.lookup.LookupEnvironment.createBinaryTypeFrom(LookupEnvironment.java:683)
+        at org.eclipse.jdt.internal.compiler.Compiler.accept(Compiler.java:299)
+        at org.eclipse.jdt.internal.compiler.lookup.LookupEnvironment.askForType(LookupEnvironment.java:144)
+        at org.eclipse.jdt.internal.compiler.lookup.UnresolvedReferenceBinding.resolve(UnresolvedReferenceBinding.java:99)
+        at org.eclipse.jdt.internal.compiler.lookup.BinaryTypeBinding.resolveType(BinaryTypeBinding.java:183)
+        at org.eclipse.jdt.internal.compiler.lookup.PackageBinding.getTypeOrPackage(PackageBinding.java:186)
+        at org.eclipse.jdt.internal.compiler.lookup.CompilationUnitScope.findImport(CompilationUnitScope.java:463)
+        at org.eclipse.jdt.internal.compiler.lookup.CompilationUnitScope.findSingleImport(CompilationUnitScope.java:517)
+        at org.eclipse.jdt.internal.compiler.lookup.CompilationUnitScope.faultInImports(CompilationUnitScope.java:394)
+        at org.eclipse.jdt.internal.compiler.lookup.CompilationUnitScope.faultInTypes(CompilationUnitScope.java:442)
+        at org.eclipse.jdt.internal.compiler.Compiler.process(Compiler.java:763)
+        at org.eclipse.jdt.internal.compiler.ProcessTaskManager.run(ProcessTaskManager.java:137)
+        at java.lang.Thread.run(Thread.java:745)
+
+C) DETAILS AND ANALYSIS:
+The genericType Parameter references a BinaryTypeBinding for &quot;@NonNull GenericType&quot;. enclosingType is null and annotations is an empty array.
+
+The BinaryTypeBinding got its null annotation for resolving &quot;@NonNull GenericType(unresolved)&quot; in  
+&quot;UnresolvedReferenceBinding.swapUnresolved(UnresolvedReferenceBinding, ReferenceBinding, LookupEnvironment) line: 141&quot;
+and it got passed to the wrapper &quot;List&lt;@NonNull GenericType&gt;&quot; in
+&quot;ParameterizedTypeBinding.swapUnresolved(UnresolvedReferenceBinding, ReferenceBinding, LookupEnvironment) line: 1273	&quot;
+which invokes convertUnresolvedBinaryToRawType etc. which eventually triggers the exception.
+
+PROPOSED FIX: 
+As far as I understood the code, I think the check that throws to the IllegalStateException can simply be removed as the usages which lead to the invocation of the getRawType-method should be wrappers which should have their own null-annotation information available and the getRawType method will create a copy of the genericType instance with null-annotation cleared.
+
+(It would have been helpful, if the error message of the  IllegateStateExceptions like these already included some information about the involved types because it is really hard to work around the bugs without this information)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2496906</commentid>
+    <comment_count>1</comment_count>
+      <attachid>249418</attachid>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2014-12-15 04:08:00 -0500</bug_when>
+    <thetext>Created attachment 249418
+junit test as patch for NullTypeAnnotationTest</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2496907</commentid>
+    <comment_count>2</comment_count>
+      <attachid>249419</attachid>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2014-12-15 04:10:50 -0500</bug_when>
+    <thetext>Created attachment 249419
+proposed fix: remove the check (patch for AnnotatableTypeSystem)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2496916</commentid>
+    <comment_count>3</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2014-12-15 04:24:09 -0500</bug_when>
+    <thetext>I forgot to write that the bug is present in 4.4, 4.4.1 and 4.5M4</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500225</commentid>
+    <comment_count>4</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-12-23 06:23:30 -0500</bug_when>
+    <thetext>Hi Till,
+I am reviewing the patch. 
+
+Two questions:
+
+1) I am trying to come with a test case where I can show the problem without 
+using NullAnnotations.
+
+If there exists such a test case what are javac&apos;s warning and error messages.
+
+2) The function ATS#getRawType is very deep inside the call stack.
+Will it be good to guard the check (!(Null Analysis  enabled)).
+
+I am trying to figure out if the check was added just for safety in Bug 417113 Comment 49(7f8c41fdd4e487762406a2cb6aaa3aa1d260201c) or is it something else.
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500258</commentid>
+    <comment_count>5</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2014-12-23 08:45:35 -0500</bug_when>
+    <thetext>(In reply to shankha banerjee from comment #4)
+&gt; 1) I am trying to come with a test case where I can show the problem without 
+&gt; using NullAnnotations.
+
+Here is a test with a generic TYPE_USE targeted annotation
+(NOTE if the annotations based null analysis is enabled in the compiler settings, it crashes - if it is off, it doesnt. therefore, this still belongs into NullTypeAnnotationTest)
+
+public void testBug455180WithOtherAnnotation() {
+	runConformTestWithLibs(
+			new String[] {
+				&quot;proj0/MyAnnotation.java&quot;,
+				&quot;package proj0;\n&quot;+
+				&quot;@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)&quot;+
+				&quot;@java.lang.annotation.Target({ java.lang.annotation.ElementType.TYPE_USE })&quot;+
+				&quot;public @interface MyAnnotation {}&quot;
+			}, null, &quot;&quot;);
+	runNegativeTestWithLibs(
+			new String[] {
+				&quot;projA/GenericType.java&quot;,
+				&quot;package projA;\n&quot;+
+				&quot;public class GenericType&lt;T&gt; {\n&quot; +
+				&quot;}\n&quot;,
+				&quot;projA/ClassWithRawUsage.java&quot;,
+				&quot;package projA;\n&quot;+
+				&quot;public class ClassWithRawUsage {\n&quot;+
+				&quot;   public java.util.List&lt;@proj0.MyAnnotation GenericType&gt; method() {\n&quot;+
+				&quot;      		throw new RuntimeException();\n&quot;+
+				&quot;   }\n&quot;+
+				&quot;}\n&quot;
+			},
+			&quot;----------\n&quot; +
+			&quot;1. WARNING in projA\\ClassWithRawUsage.java (at line 3)\n&quot; +
+			&quot;	public java.util.List&lt;@proj0.MyAnnotation GenericType&gt; method() {\n&quot; +
+			&quot;	                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n&quot; + 
+			&quot;GenericType is a raw type. References to generic type GenericType&lt;T&gt; should be parameterized\n&quot; +
+			&quot;----------\n&quot;);
+	runNegativeTestWithLibs(
+			new String[] {
+				&quot;projB/ClassThatImports.java&quot;,
+				&quot;package projB;\n&quot; +
+				&quot;import projA.ClassWithRawUsage;\n&quot; +
+				&quot;import projA.GenericType;\n&quot; +
+				&quot;public class ClassThatImports {\n&quot; +
+				&quot;}\n&quot;
+			},
+			getCompilerOptions(),
+			&quot;----------\n&quot; + 
+			&quot;1. WARNING in projB\\ClassThatImports.java (at line 2)\n&quot; + 
+			&quot;	import projA.ClassWithRawUsage;\n&quot; + 
+			&quot;	       ^^^^^^^^^^^^^^^^^^^^^^^\n&quot; + 
+			&quot;The import projA.ClassWithRawUsage is never used\n&quot; + 
+			&quot;----------\n&quot; + 
+			&quot;2. WARNING in projB\\ClassThatImports.java (at line 3)\n&quot; + 
+			&quot;	import projA.GenericType;\n&quot; + 
+			&quot;	       ^^^^^^^^^^^^^^^^^\n&quot; + 
+			&quot;The import projA.GenericType is never used\n&quot; + 
+			&quot;----------\n&quot;
+);
+}
+
+&gt; 
+&gt; If there exists such a test case what are javac&apos;s warning and error messages.
+
+javac (from jdk 8u25) doesnt output any errors or warnings during compilation of the classes in this test case.
+
+&gt; 
+&gt; 2) The function ATS#getRawType is very deep inside the call stack.
+&gt; Will it be good to guard the check (!(Null Analysis  enabled)).
+&gt; 
+&gt; I am trying to figure out if the check was added just for safety in Bug
+&gt; 417113 Comment 49(7f8c41fdd4e487762406a2cb6aaa3aa1d260201c) or is it
+&gt; something else.
+
+This is how it looks to me, but I have only spent a few hours with this.
+
+&gt; 
+&gt; Thanks
+Thanks, too</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500262</commentid>
+    <comment_count>6</comment_count>
+      <attachid>249610</attachid>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2014-12-23 08:54:56 -0500</bug_when>
+    <thetext>Created attachment 249610
+another test case that doesn&apos;t use org.eclipse.jdt.annotation.*</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500608</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-25 13:55:48 -0500</bug_when>
+    <thetext>(In reply to shankha banerjee from comment #4)
+&gt; I am trying to figure out if the check was added just for safety in Bug
+&gt; 417113 Comment 49(7f8c41fdd4e487762406a2cb6aaa3aa1d260201c) or is it
+&gt; something else.
+
+Please read the check as an explicit design choice which must always be enforced. Only by an explicit revision of this decision we _might_ conclude that the enforcement is no longer needed; this would require that we exactly understand the motivation for this rule in the first place.
+Most clients seem to play by the rules, so what exactly is the leak letting an annotated type leak into this position? I see hints pointing at erasure() - do we assume erasures to be unannotated?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501001</commentid>
+    <comment_count>8</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-12-30 02:42:54 -0500</bug_when>
+    <thetext>Hi Stephan,
+Thanks for the tip. I did a small experiment:
+https://git.eclipse.org/r/#/c/38829/.
+
+The test case succeed. 
+
+I will continue to investigate.
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2556732</commentid>
+    <comment_count>9</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2015-05-05 05:08:09 -0400</bug_when>
+    <thetext>The Problem still exists in Eclipse 4.5M7.
+
+This is an EXTREMELY annoying bug. 
+
+Can you please do ANYTHING about it? At least include some type information in the IllegalStateException.
+
+The only way to make our code compile is to start eclipse in the debugger to figure out what the involved type is and remove null annotations for it - every time one of my colleagues commits something in our code base that triggers this IllegalStateException.
+
+I can do that, but most eclipse users don&apos;t. All they can do is turn of null annotations completely.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2556893</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-05-05 09:17:52 -0400</bug_when>
+    <thetext>Hi Till,
+
+thanks for the patches, at least the test case is highly valuable.
+(confirming: yes, it still triggers ISE in HEAD).
+
+This bug slipped my attention because it wasn&apos;t assigned to my name. I&apos;m taking it onto my list for RC1.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2560125</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-05-07 13:47:55 -0400</bug_when>
+    <thetext>Here&apos;s how we get into the bad situation:
+
+1. We&apos;re reading binary type binding projA.ClassWithRawUsage
+1.a. We need to apply @NNBD onto the signature of method()
+     At this point projA/GenericType is an UnresolvedReferenceBinding,
+     to which we add the type annotation @NonNull
+     The (un)annotated variants of GenericType are connected via URB.wrappers
+
+2. When resolving &quot;import projA.GenericType&quot; we find the unresolved binding
+   in LE&apos;s caches.
+2.a This type (which is the prototype) needs to be resolved
+2.b The type is found and a BTB is created &amp; initialized
+2.c The resolved BTB is added to its PackageBinding
+2.d We find the previous unresolved type, which needs to be updated (setResolvedType)
+2.e This invokes swapResolved on all recorded wrappers incl. the annotated variant from 1.a.
+2.f Transitive swapResolved on a PTB for List&lt;@NonNull GenericType&gt;
+2.g The type parameter GenericType gets this treatment:
+    - resolve
+    - apply type annotations from the unresolved type
+    - convert to raw
+
+Ergo: when we reach LE.createRawType(..) we have a generic type that already contains type annotations (and in this deeply nested call chain I see no easy way to change the order of annotating vs. rawifying).
+
+A solution must:
+- keep the annotation
+- maintain the invariants of AnnotatedTypeSystem
+
+Patch under test inserts code into LE.createRawType(..) and siblings, which re-arranges how we compose the final type binding: extract existing type annotations, rawify the unannoted type while re-applying type annotations.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2560135</commentid>
+    <comment_count>12</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-05-07 13:57:51 -0400</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/47473</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2560302</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-05-07 17:46:05 -0400</bug_when>
+    <thetext>Sasi, here&apos;s another candidate for RC1.
+
+IllegalStateException against innocent code is bad.
+
+The fix simply intercepts three call paths from LookupEnvironment into AnnotatableTypeSystem, ensuring the correct order of creating a type variant with type annotations from the original. It satisfies both conditions mentioned before:
+- keep the annotation
+- maintain the invariants of AnnotatedTypeSystem</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2560530</commentid>
+    <comment_count>14</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2015-05-08 06:46:56 -0400</bug_when>
+    <thetext>+1 for RC1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2560996</commentid>
+    <comment_count>15</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-05-08 17:33:11 -0400</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/47473 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=5639522d8d54e9045b786862d610c6266638db42</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2560997</commentid>
+    <comment_count>16</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-05-08 17:34:04 -0400</bug_when>
+    <thetext>thanks</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>249418</attachid>
+            <date>2014-12-15 04:08:00 -0500</date>
+            <delta_ts>2014-12-15 04:08:00 -0500</delta_ts>
+            <desc>junit test as patch for NullTypeAnnotationTest</desc>
+            <filename>test-for-bug-455180.patch</filename>
+            <type>text/plain</type>
+            <size>2315</size>
+            <attacher name="Till Brychcy">register.eclipse</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5ub3Rh
+dGlvblRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5u
+b3RhdGlvblRlc3QuamF2YQppbmRleCA1NjRjNmM1Li5lMjM1NjczIDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsVHlwZUFubm90YXRpb25UZXN0LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbFR5cGVBbm5vdGF0aW9uVGVzdC5q
+YXZhCkBAIC03Mjk4LDQgKzcyOTgsNTUgQEAKIAkJIkNvbnRyYWRpY3RvcnkgbnVsbCBhbm5vdGF0
+aW9uczogbWV0aG9kIHdhcyBpbmZlcnJlZCBhcyBcJ0BOb25OdWxsIEBOdWxsYWJsZSBJbnRlZ2Vy
+IGdldChpbnQpXCcsIGJ1dCBvbmx5IG9uZSBvZiBcJ0BOb25OdWxsXCcgYW5kIFwnQE51bGxhYmxl
+XCcgY2FuIGJlIGVmZmVjdGl2ZSBhdCBhbnkgbG9jYXRpb25cbiIgKyAKIAkJIi0tLS0tLS0tLS1c
+biIpOwogfQorCisKKworcHVibGljIHZvaWQgdGVzdEJ1ZzQ1NTE4MCgpIHsKKwlydW5OZWdhdGl2
+ZVRlc3RXaXRoTGlicygKKwkJCW5ldyBTdHJpbmdbXSB7CisJCQkJInByb2pBL0dlbmVyaWNUeXBl
+LmphdmEiLAorCQkJCSJwYWNrYWdlIHByb2pBO1xuIisKKwkJCQkicHVibGljIGNsYXNzIEdlbmVy
+aWNUeXBlPFQ+IHtcbiIgKworCQkJCSJ9XG4iLAorCQkJCSJwcm9qQS9DbGFzc1dpdGhSYXdVc2Fn
+ZS5qYXZhIiwKKwkJCQkicGFja2FnZSBwcm9qQTtcbiIrCisJCQkJIkBvcmcuZWNsaXBzZS5qZHQu
+YW5ub3RhdGlvbi5Ob25OdWxsQnlEZWZhdWx0XG4iKworCQkJCSJwdWJsaWMgY2xhc3MgQ2xhc3NX
+aXRoUmF3VXNhZ2Uge1xuIisKKwkJCQkiICAgcHVibGljIGphdmEudXRpbC5MaXN0PEdlbmVyaWNU
+eXBlPiBtZXRob2QoKSB7XG4iKworCQkJCSIgICAgICAJCXRocm93IG5ldyBSdW50aW1lRXhjZXB0
+aW9uKCk7XG4iKworCQkJCSIgICB9XG4iKworCQkJCSJ9XG4iCisJCQl9LAorCQkJIi0tLS0tLS0t
+LS1cbiIgKworCQkJIjEuIFdBUk5JTkcgaW4gcHJvakFcXENsYXNzV2l0aFJhd1VzYWdlLmphdmEg
+KGF0IGxpbmUgNClcbiIgKworCQkJIglwdWJsaWMgamF2YS51dGlsLkxpc3Q8R2VuZXJpY1R5cGU+
+IG1ldGhvZCgpIHtcbiIgKworCQkJIgkgICAgICAgICAgICAgICAgICAgICAgXl5eXl5eXl5eXl5c
+biIgKworCQkJIkdlbmVyaWNUeXBlIGlzIGEgcmF3IHR5cGUuIFJlZmVyZW5jZXMgdG8gZ2VuZXJp
+YyB0eXBlIEdlbmVyaWNUeXBlPFQ+IHNob3VsZCBiZSBwYXJhbWV0ZXJpemVkXG4iICsKKwkJCSIt
+LS0tLS0tLS0tXG4iKTsKKwlydW5OZWdhdGl2ZVRlc3RXaXRoTGlicygKKwkJCW5ldyBTdHJpbmdb
+XSB7CisJCQkJInByb2pCL0NsYXNzVGhhdEltcG9ydHMuamF2YSIsCisJCQkJInBhY2thZ2UgcHJv
+akI7XG4iICsKKwkJCQkiaW1wb3J0IHByb2pBLkNsYXNzV2l0aFJhd1VzYWdlO1xuIiArCisJCQkJ
+ImltcG9ydCBwcm9qQS5HZW5lcmljVHlwZTtcbiIgKworCQkJCSJwdWJsaWMgY2xhc3MgQ2xhc3NU
+aGF0SW1wb3J0cyB7XG4iICsKKwkJCQkifVxuIgorCQkJfSwKKwkJCWdldENvbXBpbGVyT3B0aW9u
+cygpLAorCQkJIi0tLS0tLS0tLS1cbiIgKyAKKwkJCSIxLiBXQVJOSU5HIGluIHByb2pCXFxDbGFz
+c1RoYXRJbXBvcnRzLmphdmEgKGF0IGxpbmUgMilcbiIgKyAKKwkJCSIJaW1wb3J0IHByb2pBLkNs
+YXNzV2l0aFJhd1VzYWdlO1xuIiArIAorCQkJIgkgICAgICAgXl5eXl5eXl5eXl5eXl5eXl5eXl5e
+Xl5cbiIgKyAKKwkJCSJUaGUgaW1wb3J0IHByb2pBLkNsYXNzV2l0aFJhd1VzYWdlIGlzIG5ldmVy
+IHVzZWRcbiIgKyAKKwkJCSItLS0tLS0tLS0tXG4iICsgCisJCQkiMi4gV0FSTklORyBpbiBwcm9q
+QlxcQ2xhc3NUaGF0SW1wb3J0cy5qYXZhIChhdCBsaW5lIDMpXG4iICsgCisJCQkiCWltcG9ydCBw
+cm9qQS5HZW5lcmljVHlwZTtcbiIgKyAKKwkJCSIJICAgICAgIF5eXl5eXl5eXl5eXl5eXl5eXG4i
+ICsgCisJCQkiVGhlIGltcG9ydCBwcm9qQS5HZW5lcmljVHlwZSBpcyBuZXZlciB1c2VkXG4iICsg
+CisJCQkiLS0tLS0tLS0tLVxuIgorKTsKKworfQorCisKIH0=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>249419</attachid>
+            <date>2014-12-15 04:10:00 -0500</date>
+            <delta_ts>2014-12-15 04:10:50 -0500</delta_ts>
+            <desc>proposed fix: remove the check (patch for AnnotatableTypeSystem)</desc>
+            <filename>fix-for-bug-455180.patch</filename>
+            <type>text/plain</type>
+            <size>857</size>
+            <attacher name="Till Brychcy">register.eclipse</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvQW5ub3RhdGFibGVUeXBlU3lzdGVtLmphdmEgYi9v
+cmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29t
+cGlsZXIvbG9va3VwL0Fubm90YXRhYmxlVHlwZVN5c3RlbS5qYXZhCmluZGV4IDE0NDg5ZGUuLmIy
+NTE5ZjAgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xp
+cHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvQW5ub3RhdGFibGVUeXBlU3lzdGVtLmph
+dmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2lu
+dGVybmFsL2NvbXBpbGVyL2xvb2t1cC9Bbm5vdGF0YWJsZVR5cGVTeXN0ZW0uamF2YQpAQCAtMTM1
+LDkgKzEzNSw2IEBACiAKIAlwdWJsaWMgUmF3VHlwZUJpbmRpbmcgZ2V0UmF3VHlwZShSZWZlcmVu
+Y2VCaW5kaW5nIGdlbmVyaWNUeXBlLCBSZWZlcmVuY2VCaW5kaW5nIGVuY2xvc2luZ1R5cGUsIEFu
+bm90YXRpb25CaW5kaW5nIFtdIGFubm90YXRpb25zKSB7CiAJCQotCQlpZiAoZ2VuZXJpY1R5cGUu
+aGFzVHlwZUFubm90YXRpb25zKCkpCi0JCQl0aHJvdyBuZXcgSWxsZWdhbFN0YXRlRXhjZXB0aW9u
+KCk7Ci0JCQogCQlSYXdUeXBlQmluZGluZyBuYWtlZFR5cGUgPSBudWxsOwogCQlUeXBlQmluZGlu
+Z1tdIGRlcml2ZWRUeXBlcyA9IGdldERlcml2ZWRUeXBlcyhnZW5lcmljVHlwZSk7CiAJCWZvciAo
+aW50IGkgPSAwLCBsZW5ndGggPSBkZXJpdmVkVHlwZXMubGVuZ3RoOyBpIDwgbGVuZ3RoOyBpKysp
+IHs=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>249610</attachid>
+            <date>2014-12-23 08:54:00 -0500</date>
+            <delta_ts>2014-12-23 08:54:56 -0500</delta_ts>
+            <desc>another test case that doesn&apos;t use org.eclipse.jdt.annotation.*</desc>
+            <filename>455180-test-with-other-annotation.patch</filename>
+            <type>text/plain</type>
+            <size>2461</size>
+            <attacher name="Till Brychcy">register.eclipse</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5ub3Rh
+dGlvblRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5u
+b3RhdGlvblRlc3QuamF2YQppbmRleCA4ODRkZTRiLi4zY2IzZjFlIDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsVHlwZUFubm90YXRpb25UZXN0LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbFR5cGVBbm5vdGF0aW9uVGVzdC5q
+YXZhCkBAIC03NDM2LDQgKzc0MzYsNTggQEAKICk7CiAKIH0KKworcHVibGljIHZvaWQgdGVzdEJ1
+ZzQ1NTE4MFdpdGhPdGhlckFubm90YXRpb24oKSB7CisJcnVuQ29uZm9ybVRlc3RXaXRoTGlicygK
+KwkJCW5ldyBTdHJpbmdbXSB7CisJCQkJInByb2owL015QW5ub3RhdGlvbi5qYXZhIiwKKwkJCQki
+cGFja2FnZSBwcm9qMDtcbiIrCisJCQkJIkBqYXZhLmxhbmcuYW5ub3RhdGlvbi5SZXRlbnRpb24o
+amF2YS5sYW5nLmFubm90YXRpb24uUmV0ZW50aW9uUG9saWN5LkNMQVNTKSIrCisJCQkJIkBqYXZh
+LmxhbmcuYW5ub3RhdGlvbi5UYXJnZXQoeyBqYXZhLmxhbmcuYW5ub3RhdGlvbi5FbGVtZW50VHlw
+ZS5UWVBFX1VTRSB9KSIrCisJCQkJInB1YmxpYyBAaW50ZXJmYWNlIE15QW5ub3RhdGlvbiB7fSIK
+KwkJCX0sIG51bGwsICIiKTsKKwlydW5OZWdhdGl2ZVRlc3RXaXRoTGlicygKKwkJCW5ldyBTdHJp
+bmdbXSB7CisJCQkJInByb2pBL0dlbmVyaWNUeXBlLmphdmEiLAorCQkJCSJwYWNrYWdlIHByb2pB
+O1xuIisKKwkJCQkicHVibGljIGNsYXNzIEdlbmVyaWNUeXBlPFQ+IHtcbiIgKworCQkJCSJ9XG4i
+LAorCQkJCSJwcm9qQS9DbGFzc1dpdGhSYXdVc2FnZS5qYXZhIiwKKwkJCQkicGFja2FnZSBwcm9q
+QTtcbiIrCisJCQkJInB1YmxpYyBjbGFzcyBDbGFzc1dpdGhSYXdVc2FnZSB7XG4iKworCQkJCSIg
+ICBwdWJsaWMgamF2YS51dGlsLkxpc3Q8QHByb2owLk15QW5ub3RhdGlvbiBHZW5lcmljVHlwZT4g
+bWV0aG9kKCkge1xuIisKKwkJCQkiICAgICAgCQl0aHJvdyBuZXcgUnVudGltZUV4Y2VwdGlvbigp
+O1xuIisKKwkJCQkiICAgfVxuIisKKwkJCQkifVxuIgorCQkJfSwKKwkJCSItLS0tLS0tLS0tXG4i
+ICsKKwkJCSIxLiBXQVJOSU5HIGluIHByb2pBXFxDbGFzc1dpdGhSYXdVc2FnZS5qYXZhIChhdCBs
+aW5lIDMpXG4iICsKKwkJCSIJcHVibGljIGphdmEudXRpbC5MaXN0PEBwcm9qMC5NeUFubm90YXRp
+b24gR2VuZXJpY1R5cGU+IG1ldGhvZCgpIHtcbiIgKworCQkJIgkgICAgICAgICAgICAgICAgICAg
+ICAgXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXlxuIiArIAorCQkJIkdlbmVyaWNUeXBl
+IGlzIGEgcmF3IHR5cGUuIFJlZmVyZW5jZXMgdG8gZ2VuZXJpYyB0eXBlIEdlbmVyaWNUeXBlPFQ+
+IHNob3VsZCBiZSBwYXJhbWV0ZXJpemVkXG4iICsKKwkJCSItLS0tLS0tLS0tXG4iKTsKKwlydW5O
+ZWdhdGl2ZVRlc3RXaXRoTGlicygKKwkJCW5ldyBTdHJpbmdbXSB7CisJCQkJInByb2pCL0NsYXNz
+VGhhdEltcG9ydHMuamF2YSIsCisJCQkJInBhY2thZ2UgcHJvakI7XG4iICsKKwkJCQkiaW1wb3J0
+IHByb2pBLkNsYXNzV2l0aFJhd1VzYWdlO1xuIiArCisJCQkJImltcG9ydCBwcm9qQS5HZW5lcmlj
+VHlwZTtcbiIgKworCQkJCSJwdWJsaWMgY2xhc3MgQ2xhc3NUaGF0SW1wb3J0cyB7XG4iICsKKwkJ
+CQkifVxuIgorCQkJfSwKKwkJCWdldENvbXBpbGVyT3B0aW9ucygpLAorCQkJIi0tLS0tLS0tLS1c
+biIgKyAKKwkJCSIxLiBXQVJOSU5HIGluIHByb2pCXFxDbGFzc1RoYXRJbXBvcnRzLmphdmEgKGF0
+IGxpbmUgMilcbiIgKyAKKwkJCSIJaW1wb3J0IHByb2pBLkNsYXNzV2l0aFJhd1VzYWdlO1xuIiAr
+IAorCQkJIgkgICAgICAgXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5cbiIgKyAKKwkJCSJUaGUgaW1w
+b3J0IHByb2pBLkNsYXNzV2l0aFJhd1VzYWdlIGlzIG5ldmVyIHVzZWRcbiIgKyAKKwkJCSItLS0t
+LS0tLS0tXG4iICsgCisJCQkiMi4gV0FSTklORyBpbiBwcm9qQlxcQ2xhc3NUaGF0SW1wb3J0cy5q
+YXZhIChhdCBsaW5lIDMpXG4iICsgCisJCQkiCWltcG9ydCBwcm9qQS5HZW5lcmljVHlwZTtcbiIg
+KyAKKwkJCSIJICAgICAgIF5eXl5eXl5eXl5eXl5eXl5eXG4iICsgCisJCQkiVGhlIGltcG9ydCBw
+cm9qQS5HZW5lcmljVHlwZSBpcyBuZXZlciB1c2VkXG4iICsgCisJCQkiLS0tLS0tLS0tLVxuIgor
+KTsKK30KKwogfQ==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

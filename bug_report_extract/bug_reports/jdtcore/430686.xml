@@ -1,0 +1,732 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>430686</bug_id>
+          
+          <creation_ts>2014-03-19 07:01:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler] Generics: erroneously reports &apos;method not applicable for the arguments&apos;</short_desc>
+          <delta_ts>2014-11-01 08:40:32 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3.2</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>4.5 M3</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Peter Wensing">mail1</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>jigarjm</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="63642"
+          type_id="1"
+          status="?"
+          setter="srikanth_sankaran"
+          requestee="stephan.herrmann"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2377494</commentid>
+    <comment_count>0</comment_count>
+    <who name="Peter Wensing">mail1</who>
+    <bug_when>2014-03-19 07:01:43 -0400</bug_when>
+    <thetext>The following snippet does not compile with Java 1.8 using (Java Development Tools) Patch with Java 8 support 1.0.0.v20140317-1956.
+
+It does compile using javac 1.8.0 from Oracle JDK though. (And it also compiles in Eclipse with compatability level 1.7.)
+
+The given error message is added as a comment to the respective line in the code.
+
+public class TestClass
+{
+    private static class Alice&lt;A extends Alice&lt;A, B&gt;, B extends Bob&gt;
+    {
+    }
+
+    public static class Bob
+    {
+    }
+
+    public void callingMethod()
+    {
+        calledMethod(); // error: The method calledMethod() in the type TestClass is not applicable for the arguments ()
+    }
+
+    private &lt;A extends Alice&lt;A, B&gt;, B extends Bob&gt; A calledMethod()
+    {
+        return null;
+    }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2377498</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-03-19 07:30:07 -0400</bug_when>
+    <thetext>Stephan, thanks for taking a look.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2382762</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-31 18:05:10 -0400</bug_when>
+    <thetext>I can reproduce and this is quite an interesting issue.
+
+In essence inference fails to find a solution for
+	Dependency A#0 &lt;: TestClass.Alice&lt;A#0,B#1&gt;
+	Dependency A#0 &lt;: TestClass.Alice&lt;A#0,TestClass.Bob&gt;
+	TypeBound  B#1 = TestClass.Bob
+
+The two dependencies eventually lead to creating two CaptureBinding18.
+The first prints as
+  &lt;Z#0-A#0 extends Alice&lt;Z#0-A#0,B#1&gt;&gt;
+the second as
+  &lt;Z#0-A#0&apos; extends Alice&lt;Z#0-A#0,TestClass.Bob&gt;&gt;
+Despite their similarity, by being fresh captures these are not compatible and create the conflict that lets inference fail.
+
+What&apos;s interesting is how the dependencies from above are created:
+the 2nd dependency is a result of incorporating the 1st dependency together with the TypeBinding for B#1, i.e., basically both dependencies express the same constraint, just at different levels of resolution.
+
+In an experiment I added the following logic:
+
+# if two TypeBounds (incl. dependencies) produce a new constraint, and
+# if one TypeBound has the form A#1 = T
+# then remove the other TypeBound (assumed to be a dependency).
+
+This accounts for the understanding that the new constraint (resulting in a new TypeBound) supersedes one of the TypeBounds, so that one should be *replaced*.
+
+Note, that the spec doesn&apos;t seem to have any mention of *removing* type bounds during incorporation.
+
+Point in favor: my experimental version also aligns our behavior re bug 425031 whith that of javac. Some other test changes still need investigation.
+
+
+Two interpretations:
+- either this experimental amendment just compensates a bug we have elsewhere
+- or this is a spec bug and both compilers (should) do &quot;the right thing&quot; despite of the spec.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2382876</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-01 05:23:38 -0400</bug_when>
+    <thetext>I did find a couple of weaknesses in our implementation:
+
+(1) it was possible for a CaptureBinding18 to report its erasure as the intersection type &apos;Alice &amp; Alice&apos;.
+This clearly doesn&apos;t make sense. I added logic to filter out duplicates during erasure computation.
+
+(2) after that change inference did no longer terminate for the example in this bug, creating an infinite number of new capture bindings for the same type. This could be traced back to inconsistent substitution of inference variables in recursive capture bindings:
+
+  &lt;Z#0-A#0 extends Alice&lt;Z#0-A#0,B#1&gt;&gt;
++ B#1 = Bob
+= &lt;Z#0-A#0&apos; extends Alice&lt;Z#0-A#0,Bob&gt;&gt;
+
+I.e.: the outer CB18 was cloned (marked &quot;&apos;&quot;), whereas the inner was not.
+Not performing substitution on the inner is needed to terminate recursion of substitution, but this inconsistent type then caused the infinite creation of new constraints.
+
+I added logic to consistently replace also the inner Z#0-A#0 with the Z#0-A#0&apos; being created. Which lets us accept the example in this bug.
+
+Unfortunately, the spec has no explanations about such substitutions of &quot;fresh type variables&quot;. Is the resulting type variable (CB18) &quot;the same type&quot; as the original? Is our cloning operation wrong? Should updates modify the CB18 *in-place*? Much of this is left to our interpretation, but the inconsistent result of our current implementation certainly is bad.
+
+Now I only need to investigate the 5 regressions caused by the draft fix.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2382881</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-01 05:45:18 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #3)
+&gt; Now I only need to investigate the 5 regressions caused by the draft fix.
+
+For posterity: creating a CB18 clone up-front and eagerly substituting all occurrences of the current CB18 with its clone wasn&apos;t good, because now we would create new CB18 with no real changes, just due to this cloning. 
+
+The better solution is: wait until we see that a superclass or upperBound has been significantly substituted and only afterwards do an additional substitution regarding the current CB18.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2382896</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-01 06:53:00 -0400</bug_when>
+    <thetext>Test &amp; fix have been released for 4.4 M7 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=7b4ef44b48315814df71e76cacb577adcea439c0
+
+Unfortunately the (desirable) behavior change re bug 425031 does not happen with this fix, but OTOH I didn&apos;t have to code against the spec and cause regressions elsewhere in the suite :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394507</commentid>
+    <comment_count>6</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-04-29 05:01:44 -0400</bug_when>
+    <thetext>Verified for 4.4 M7 using I20140428-2000 build</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2456279</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-25 09:13:15 -0400</bug_when>
+    <thetext>My fix to https://bugs.eclipse.org/bugs/show_bug.cgi?id=442245, breaks this
+test case, I&apos;ll take a look.
+
+Note: 4.5 M2 compiles this code and I expect to reclose well before M3.
+I apologize for the inconvenience.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467273</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-17 10:12:44 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #7)
+&gt; My fix to https://bugs.eclipse.org/bugs/show_bug.cgi?id=442245, breaks this
+&gt; test case, I&apos;ll take a look.
+&gt; 
+&gt; Note: 4.5 M2 compiles this code and I expect to reclose well before M3.
+&gt; I apologize for the inconvenience.
+
+With the proposed patches at https://bugs.eclipse.org/bugs/show_bug.cgi?id=437444, this code compiles fine again.
+
+That is under review - expect to release for M3.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467278</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-17 10:18:39 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #8)
+&gt; (In reply to Srikanth Sankaran from comment #7)
+&gt; &gt; My fix to https://bugs.eclipse.org/bugs/show_bug.cgi?id=442245, breaks this
+&gt; &gt; test case, I&apos;ll take a look.
+&gt; &gt; 
+&gt; &gt; Note: 4.5 M2 compiles this code and I expect to reclose well before M3.
+&gt; &gt; I apologize for the inconvenience.
+&gt; 
+&gt; With the proposed patches at
+&gt; https://bugs.eclipse.org/bugs/show_bug.cgi?id=437444, this code compiles
+&gt; fine again.
+
+Grrr. Spoke too soon - my workspace setting was at 1.7. So this will need
+to be worked on for M3. Will do. Sorry for the noise.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467627</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-18 22:40:49 -0400</bug_when>
+    <thetext>This test fails to compile with javac5,6,7, while Javac8 compiles this fine.
+ECJ 1.5-1.7 compile it while at 1.8 ATM we fail.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467638</commentid>
+    <comment_count>11</comment_count>
+      <attachid>247991</attachid>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-19 00:16:32 -0400</bug_when>
+    <thetext>Created attachment 247991
+Proposed patch
+
+I think this patch provides a clean and elegant fix to the problem and 
+also fixes https://bugs.eclipse.org/bugs/show_bug.cgi?id=446223 and the
+long nagging https://bugs.eclipse.org/bugs/show_bug.cgi?id=425031.
+
+Basically, it is unreasonable to expect downstream abstractions (i.e
+CB18) to cope with multiple upper bounds one with inference variables 
+substituted with instantiations and one with them still lingering on.
+Fix is to simply lower everything into instantiations where such exist.
+In some sense this is the same issue as we ran into in https://bugs.eclipse.org/bugs/show_bug.cgi?id=437444#c64
+
+Two points: 
+
+1. I have left in portions of the original fix in CB18 as is.
+2. I have no idea why the generational incorporation scheme would
+cause the original fix to not work anymore.
+
+
+(In reply to Stephan Herrmann from comment #2)
+
+&gt; The two dependencies eventually lead to creating two CaptureBinding18.
+&gt; The first prints as
+&gt;   &lt;Z#0-A#0 extends Alice&lt;Z#0-A#0,B#1&gt;&gt;
+&gt; the second as
+&gt;   &lt;Z#0-A#0&apos; extends Alice&lt;Z#0-A#0,TestClass.Bob&gt;&gt;
+&gt; Despite their similarity, by being fresh captures these are not compatible
+&gt; and create the conflict that lets inference fail.
+
+I see only one CaptureBinding - I think you perhaps meant two upper bounds.
+
+&gt; What&apos;s interesting is how the dependencies from above are created:
+&gt; the 2nd dependency is a result of incorporating the 1st dependency together
+&gt; with the TypeBinding for B#1, i.e., basically both dependencies express the
+&gt; same constraint, just at different levels of resolution.
+
+Right.
+
+&gt; In an experiment I added the following logic:
+&gt; 
+&gt; # if two TypeBounds (incl. dependencies) produce a new constraint, and
+&gt; # if one TypeBound has the form A#1 = T
+&gt; # then remove the other TypeBound (assumed to be a dependency).
+&gt; 
+&gt; This accounts for the understanding that the new constraint (resulting in a
+&gt; new TypeBound) supersedes one of the TypeBounds, so that one should be
+&gt; *replaced*.
+&gt; 
+&gt; Note, that the spec doesn&apos;t seem to have any mention of *removing* type
+&gt; bounds during incorporation.
+
+I believe the patch here effectively achieves the same &quot;superceding&quot; without
+removing bounds.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467639</commentid>
+    <comment_count>12</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-19 00:18:05 -0400</bug_when>
+    <thetext>Stephan, please take a look - (after https://bugs.eclipse.org/bugs/show_bug.cgi?id=437444).
+
+TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471802</commentid>
+    <comment_count>13</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-25 13:03:26 -0400</bug_when>
+    <thetext>*** Bug 425031 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471811</commentid>
+    <comment_count>14</comment_count>
+      <attachid>248179</attachid>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-25 13:54:53 -0400</bug_when>
+    <thetext>Created attachment 248179
+Same patch as before but with a junit test for bug 446223
+
+Added a test for duplicate bug 446223</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471813</commentid>
+    <comment_count>15</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-25 13:57:35 -0400</bug_when>
+    <thetext>*** Bug 446223 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472006</commentid>
+    <comment_count>16</comment_count>
+      <attachid>248189</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-26 14:59:56 -0400</bug_when>
+    <thetext>Created attachment 248189
+for illustration purposes only
+
+This patch
+
+- acknowledges that one fix in IC18.resolve() is good: substituting lower bounds was a bug.
+
+- fixes one more omission in CB18.substituteInferenceVariable: I forgot to handle firstBound, stumbled upon this when toString() didn&apos;t show the superclass.
+
+- demonstrates that we have an issue with CB18 identity: If at one place in CTypeF.reduceTypeEquality() I replace compatibility check with comparing the toStrings() the test from this bug starts to pass again.  -- HACK, illustration only, not for sale!
+
+Should CB18 participate in interning (when cloned from CB18.substituteInferenceVariable)?
+
+Fixing such obvious bugs by the author of IC18/CB18 would be my preferred solution here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472059</commentid>
+    <comment_count>17</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-26 19:25:47 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #16)
+
+&gt; Fixing such obvious bugs by the author of IC18/CB18 would be my preferred
+&gt; solution here.
+
+I agree that your investigation has exposed additional parts that are also
+best looked into - but don&apos;t you think in resolve lowering everything to 
+instantiation is the right thing to do ? It may not be spelled out explicitly
+in the text, but looks a reasonable thing to do ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472061</commentid>
+    <comment_count>18</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-26 19:27:30 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #17)
+&gt; (In reply to Stephan Herrmann from comment #16)
+&gt; 
+&gt; &gt; Fixing such obvious bugs by the author of IC18/CB18 would be my preferred
+&gt; &gt; solution here.
+&gt; 
+&gt; I agree that your investigation has exposed additional parts that are also
+&gt; best looked into - but don&apos;t you think in resolve lowering everything to 
+&gt; instantiation is the right thing to do ? It may not be spelled out explicitly
+&gt; in the text, but looks a reasonable thing to do ?
+
+If you agree this is harmless and reasonable, I can release the fix and assign
+the bug back to you for completing the other items called out (can happen
+for M4)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472090</commentid>
+    <comment_count>19</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-26 22:28:44 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #18)
+
+&gt; If you agree this is harmless and reasonable, I can release the fix
+
+...
+
+Presuming agreement that the present patch is harmless even if it leaves
+certain problem spots called out in comment#16 unattended and solves the
+problem only by short circuiting the route to those problem spots, I released
+the present fix at http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=c454077fd72f14a026b898d3b50aaf59d2a0517c
+
+and opened https://bugs.eclipse.org/bugs/show_bug.cgi?id=448914 as a follow
+up and assigned it to you targetting Mars M4.
+
+I am fine with the &apos;lower to the instantiation&apos; approach reverted if deemed
+necessary, when final the solution is available. 
+
+I am just concerned about reverting to the &apos;we don&apos;t compile this anymore&apos;
+state after my changes for https://bugs.eclipse.org/bugs/show_bug.cgi?id=442245
+at which point I reopened this - I still don&apos;t know why that fix should have
+caused this to fail - but I don&apos;t have the time at the moment to ask that
+question and given we have a harmless fix, leave that question alone :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472918</commentid>
+    <comment_count>20</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-10-28 10:17:35 -0400</bug_when>
+    <thetext>Verified for 4.5 M3 using  I20141027-2000 build.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2474336</commentid>
+    <comment_count>21</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-30 23:23:16 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #16)
+&gt; Created attachment 248189 [details]
+&gt; for illustration purposes only
+
+&gt; - demonstrates that we have an issue with CB18 identity: If at one place in
+&gt; CTypeF.reduceTypeEquality() I replace compatibility check with comparing the
+&gt; toStrings() the test from this bug starts to pass again.  -- HACK,
+&gt; illustration only, not for sale!
+&gt; 
+&gt; Should CB18 participate in interning (when cloned from
+&gt; CB18.substituteInferenceVariable)?
+
+When cloned it should actually share the id and so it should pass
+TypeBinding.equalsEquals just above the place you demonstrate the
+toString comparison hack as solving the problem.
+
+Problem seems to be that TVB does not chain to its super constructor.
+I&apos;ll fix this.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2474337</commentid>
+    <comment_count>22</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-30 23:31:42 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #21)
+
+&gt; Problem seems to be that TVB does not chain to its super constructor.
+&gt; I&apos;ll fix this.
+
+Or more precisely: The cloned CB18 does not share the id with its prototype
+for as yet undiagnosed reason.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475089</commentid>
+    <comment_count>23</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-01 08:40:32 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #22)
+
+After unfolding some indirections looking for the open bug, I answered on this comment in bug 448793 comment 9</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>247991</attachid>
+            <date>2014-10-19 00:16:00 -0400</date>
+            <delta_ts>2014-10-25 13:54:53 -0400</delta_ts>
+            <desc>Proposed patch</desc>
+            <filename>430686.patch</filename>
+            <type>text/plain</type>
+            <size>3965</size>
+            <attacher name="Srikanth Sankaran">srikanth_sankaran</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0dlbmVyaWNzUmVncmVz
+c2lvblRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0dlbmVyaWNzUmVn
+cmVzc2lvblRlc3QuamF2YQppbmRleCBhYjIzM2JhLi5hNTExYjRiIDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9HZW5lcmljc1JlZ3Jlc3Npb25UZXN0LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vR2VuZXJpY3NSZWdyZXNzaW9uVGVzdC5q
+YXZhCkBAIC0yNTUzLDEyICsyNTUzLDcgQEAKIAkJCSIgICAgSyBleHRlbmRzIEVudGl0eUtleTxJ
+Pj4ge1xuIiArCiAJCQkiICB9XG4iICsKIAkJCSJ9XG4iOwotCWlmICh0aGlzLmNvbXBsaWFuY2VM
+ZXZlbCA8IENsYXNzRmlsZUNvbnN0YW50cy5KREsxXzgpIHsKLQkJdGhpcy5ydW5Db25mb3JtVGVz
+dCgKLQkJCW5ldyBTdHJpbmdbXSB7ICJYLmphdmEiLCBzb3VyY2UgfSwKLQkJCSIiKTsKLQl9IGVs
+c2UgewotCQkvLyBzZWUgaHR0cHM6Ly9idWdzLmVjbGlwc2Uub3JnLzQyNTAzMQorCiAJCXJ1bk5l
+Z2F0aXZlVGVzdCgKIAkJCW5ldyBTdHJpbmdbXSB7ICJYLmphdmEiLCBzb3VyY2UgfSwKIAkJCSIt
+LS0tLS0tLS0tXG4iICsgCkBAIC0yNTY3LDEyICsyNTYyLDExIEBACiAJCQkiCV5eXl5eXl5eXlxu
+IiArIAogCQkJIlguRW50aXR5S2V5IGlzIGEgcmF3IHR5cGUuIFJlZmVyZW5jZXMgdG8gZ2VuZXJp
+YyB0eXBlIFguRW50aXR5S2V5PEk+IHNob3VsZCBiZSBwYXJhbWV0ZXJpemVkXG4iICsgCiAJCQki
+LS0tLS0tLS0tLVxuIiArIAotCQkJIjIuIEVSUk9SIGluIFguamF2YSAoYXQgbGluZSA0KVxuIiAr
+IAorCQkJIjIuIFdBUk5JTkcgaW4gWC5qYXZhIChhdCBsaW5lIDQpXG4iICsgCiAJCQkiCW5ldyBF
+bnRpdHlDb25kZW5zZXIoKS5jb25kZW5zZShlbnRpdHlLZXkpOyAgXG4iICsgCi0JCQkiCSAgICAg
+ICAgICAgICAgICAgICAgICBeXl5eXl5eXlxuIiArIAotCQkJIlRoZSBtZXRob2QgY29uZGVuc2Uo
+SykgaW4gdGhlIHR5cGUgWC5FbnRpdHlDb25kZW5zZXIgaXMgbm90IGFwcGxpY2FibGUgZm9yIHRo
+ZSBhcmd1bWVudHMgKFguRW50aXR5S2V5KVxuIiArIAorCQkJIgleXl5eXl5eXl5eXl5eXl5eXl5e
+Xl5eXl5eXl5eXl5eXl5eXl5eXl5eXlxuIiArIAorCQkJIlR5cGUgc2FmZXR5OiBVbmNoZWNrZWQg
+aW52b2NhdGlvbiBjb25kZW5zZShYLkVudGl0eUtleSkgb2YgdGhlIGdlbmVyaWMgbWV0aG9kIGNv
+bmRlbnNlKEspIG9mIHR5cGUgWC5FbnRpdHlDb25kZW5zZXJcbiIgKyAKIAkJCSItLS0tLS0tLS0t
+XG4iKTsKLQl9CiB9CiAvLyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5j
+Z2k/aWQ9MzQ3NjAwCiBwdWJsaWMgdm9pZCB0ZXN0MzQ3NjAwKCkgewpAQCAtNDYzMiw3ICs0NjI2
+LDcgQEAKIAkJCSItLS0tLS0tLS0tXG4iKTsKIAl9CiB9Ci1wdWJsaWMgdm9pZCBfdGVzdEJ1ZzQz
+MDY4NigpIHsKK3B1YmxpYyB2b2lkIHRlc3RCdWc0MzA2ODYoKSB7CiAJcnVuQ29uZm9ybVRlc3Qo
+CiAJCW5ldyBTdHJpbmdbXSB7CiAJCQkiVGVzdENsYXNzLmphdmEiLApkaWZmIC0tZ2l0IGEvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2xvb2t1cC9JbmZlcmVuY2VDb250ZXh0MTguamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+L2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvSW5mZXJl
+bmNlQ29udGV4dDE4LmphdmEKaW5kZXggZDQwMTVlZC4uNTg1YTllMyAxMDA2NDQKLS0tIGEvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2xvb2t1cC9JbmZlcmVuY2VDb250ZXh0MTguamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL0lu
+ZmVyZW5jZUNvbnRleHQxOC5qYXZhCkBAIC05MTYsNiArOTE2LDcgQEAKIAkJCQkJZmluYWwgQ2Fw
+dHVyZUJpbmRpbmcxOFtdIHpzID0gbmV3IENhcHR1cmVCaW5kaW5nMThbbnVtVmFyc107CiAJCQkJ
+CWZvciAoaW50IGogPSAwOyBqIDwgbnVtVmFyczsgaisrKQogCQkJCQkJenNbal0gPSBmcmVzaENh
+cHR1cmUodmFyaWFibGVzW2pdKTsKKwkJCQkJZmluYWwgQm91bmRTZXQga3VycmVudEJvdW5kU2V0
+ID0gdG1wQm91bmRTZXQ7CiAJCQkJCVN1YnN0aXR1dGlvbiB0aGV0YSA9IG5ldyBTdWJzdGl0dXRp
+b24oKSB7CiAJCQkJCQlwdWJsaWMgTG9va3VwRW52aXJvbm1lbnQgZW52aXJvbm1lbnQoKSB7IAog
+CQkJCQkJCXJldHVybiBJbmZlcmVuY2VDb250ZXh0MTgudGhpcy5lbnZpcm9ubWVudDsKQEAgLTky
+Nyw2ICs5MjgsMTYgQEAKIAkJCQkJCQlmb3IgKGludCBqID0gMDsgaiA8IG51bVZhcnM7IGorKykK
+IAkJCQkJCQkJaWYgKFR5cGVCaW5kaW5nLmVxdWFsc0VxdWFscyh2YXJpYWJsZXNbal0sIHR5cGVW
+YXJpYWJsZSkpCiAJCQkJCQkJCQlyZXR1cm4genNbal07CisJCQkJCQkJLyogSWYgd2UgaGF2ZSBh
+biBpbnN0YW50aWF0aW9uLCBsb3dlciBpdCB0byB0aGUgaW5zdGFudGlhdGlvbi4gV2UgZG9uJ3Qg
+d2FudCBkb3duc3RyZWFtIGFic3RyYWN0aW9ucyB0byBiZSBjb25mdXNlZCBhYm91dCBtdWx0aXBs
+ZSB2ZXJzaW9ucyBvZiBib3VuZHMgd2l0aG91dAorCQkJCQkJCSAgIGFuZCB3aXRoIGluc3RhbnRp
+YXRpb25zIHByb3BhZ2F0ZWQgYnkgaW5jb3Jwb3JhdGlvbi4gU2VlIGh0dHBzOi8vYnVncy5lY2xp
+cHNlLm9yZy9idWdzL3Nob3dfYnVnLmNnaT9pZD00MzA2ODYuIFRoZXJlIGlzIG5vIHZhbHVlIHdo
+YXRzb2V2ZXIgaW4gY29udGludWluZworCQkJCQkJCSAgIHRvIHNwZWFrIGluIHR3byB0b25ndWVz
+LiBBbHNvIGZpeGVzIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy9idWdzL3Nob3dfYnVnLmNnaT9p
+ZD00MjUwMzEuCisJCQkJCQkJKi8KKwkJCQkJCQlpZiAodHlwZVZhcmlhYmxlIGluc3RhbmNlb2Yg
+SW5mZXJlbmNlVmFyaWFibGUpIHsKKwkJCQkJCQkJSW5mZXJlbmNlVmFyaWFibGUgaW5mZXJlbmNl
+VmFyaWFibGUgPSAoSW5mZXJlbmNlVmFyaWFibGUpIHR5cGVWYXJpYWJsZTsKKwkJCQkJCQkJVHlw
+ZUJpbmRpbmcgaW5zdGFudGlhdGlvbiA9IGt1cnJlbnRCb3VuZFNldC5nZXRJbnN0YW50aWF0aW9u
+KGluZmVyZW5jZVZhcmlhYmxlLCBudWxsKTsKKwkJCQkJCQkJaWYgKGluc3RhbnRpYXRpb24gIT0g
+bnVsbCkKKwkJCQkJCQkJCXJldHVybiBpbnN0YW50aWF0aW9uOworCQkJCQkJCX0KIAkJCQkJCQly
+ZXR1cm4gdHlwZVZhcmlhYmxlOwogCQkJCQkJfQogCQkJCQl9OwpAQCAtOTM2LDcgKzk0Nyw2IEBA
+CiAJCQkJCQkvLyBhZGQgbG93ZXIgYm91bmRzOgogCQkJCQkJVHlwZUJpbmRpbmdbXSBsb3dlckJv
+dW5kcyA9IHRtcEJvdW5kU2V0Lmxvd2VyQm91bmRzKHZhcmlhYmxlLCB0cnVlLypvbmx5UHJvcGVy
+Ki8pOwogCQkJCQkJaWYgKGxvd2VyQm91bmRzICE9IEJpbmRpbmcuTk9fVFlQRVMpIHsKLQkJCQkJ
+CQlsb3dlckJvdW5kcyA9IFNjb3BlLnN1YnN0aXR1dGUodGhldGEsIGxvd2VyQm91bmRzKTsKIAkJ
+CQkJCQlUeXBlQmluZGluZyBsdWIgPSB0aGlzLnNjb3BlLmxvd2VyVXBwZXJCb3VuZChsb3dlckJv
+dW5kcyk7CiAJCQkJCQkJaWYgKGx1YiAhPSBUeXBlQmluZGluZy5WT0lEICYmIGx1YiAhPSBudWxs
+KQogCQkJCQkJCQl6c2oubG93ZXJCb3VuZCA9IGx1Yjs=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>248179</attachid>
+            <date>2014-10-25 13:54:00 -0400</date>
+            <delta_ts>2014-10-25 13:54:53 -0400</delta_ts>
+            <desc>Same patch as before but with a junit test for bug 446223</desc>
+            <filename>430686.patch</filename>
+            <type>text/plain</type>
+            <size>5277</size>
+            <attacher name="Srikanth Sankaran">srikanth_sankaran</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0dlbmVyaWNzUmVncmVz
+c2lvblRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0dlbmVyaWNzUmVn
+cmVzc2lvblRlc3QuamF2YQppbmRleCBhYjIzM2JhLi45OTBkYmQwIDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9HZW5lcmljc1JlZ3Jlc3Npb25UZXN0LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vR2VuZXJpY3NSZWdyZXNzaW9uVGVzdC5q
+YXZhCkBAIC0yNTUzLDEyICsyNTUzLDcgQEAKIAkJCSIgICAgSyBleHRlbmRzIEVudGl0eUtleTxJ
+Pj4ge1xuIiArCiAJCQkiICB9XG4iICsKIAkJCSJ9XG4iOwotCWlmICh0aGlzLmNvbXBsaWFuY2VM
+ZXZlbCA8IENsYXNzRmlsZUNvbnN0YW50cy5KREsxXzgpIHsKLQkJdGhpcy5ydW5Db25mb3JtVGVz
+dCgKLQkJCW5ldyBTdHJpbmdbXSB7ICJYLmphdmEiLCBzb3VyY2UgfSwKLQkJCSIiKTsKLQl9IGVs
+c2UgewotCQkvLyBzZWUgaHR0cHM6Ly9idWdzLmVjbGlwc2Uub3JnLzQyNTAzMQorCiAJCXJ1bk5l
+Z2F0aXZlVGVzdCgKIAkJCW5ldyBTdHJpbmdbXSB7ICJYLmphdmEiLCBzb3VyY2UgfSwKIAkJCSIt
+LS0tLS0tLS0tXG4iICsgCkBAIC0yNTY3LDEyICsyNTYyLDExIEBACiAJCQkiCV5eXl5eXl5eXlxu
+IiArIAogCQkJIlguRW50aXR5S2V5IGlzIGEgcmF3IHR5cGUuIFJlZmVyZW5jZXMgdG8gZ2VuZXJp
+YyB0eXBlIFguRW50aXR5S2V5PEk+IHNob3VsZCBiZSBwYXJhbWV0ZXJpemVkXG4iICsgCiAJCQki
+LS0tLS0tLS0tLVxuIiArIAotCQkJIjIuIEVSUk9SIGluIFguamF2YSAoYXQgbGluZSA0KVxuIiAr
+IAorCQkJIjIuIFdBUk5JTkcgaW4gWC5qYXZhIChhdCBsaW5lIDQpXG4iICsgCiAJCQkiCW5ldyBF
+bnRpdHlDb25kZW5zZXIoKS5jb25kZW5zZShlbnRpdHlLZXkpOyAgXG4iICsgCi0JCQkiCSAgICAg
+ICAgICAgICAgICAgICAgICBeXl5eXl5eXlxuIiArIAotCQkJIlRoZSBtZXRob2QgY29uZGVuc2Uo
+SykgaW4gdGhlIHR5cGUgWC5FbnRpdHlDb25kZW5zZXIgaXMgbm90IGFwcGxpY2FibGUgZm9yIHRo
+ZSBhcmd1bWVudHMgKFguRW50aXR5S2V5KVxuIiArIAorCQkJIgleXl5eXl5eXl5eXl5eXl5eXl5e
+Xl5eXl5eXl5eXl5eXl5eXl5eXl5eXlxuIiArIAorCQkJIlR5cGUgc2FmZXR5OiBVbmNoZWNrZWQg
+aW52b2NhdGlvbiBjb25kZW5zZShYLkVudGl0eUtleSkgb2YgdGhlIGdlbmVyaWMgbWV0aG9kIGNv
+bmRlbnNlKEspIG9mIHR5cGUgWC5FbnRpdHlDb25kZW5zZXJcbiIgKyAKIAkJCSItLS0tLS0tLS0t
+XG4iKTsKLQl9CiB9CiAvLyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5j
+Z2k/aWQ9MzQ3NjAwCiBwdWJsaWMgdm9pZCB0ZXN0MzQ3NjAwKCkgewpAQCAtNDYzMiw3ICs0NjI2
+LDcgQEAKIAkJCSItLS0tLS0tLS0tXG4iKTsKIAl9CiB9Ci1wdWJsaWMgdm9pZCBfdGVzdEJ1ZzQz
+MDY4NigpIHsKK3B1YmxpYyB2b2lkIHRlc3RCdWc0MzA2ODYoKSB7CiAJcnVuQ29uZm9ybVRlc3Qo
+CiAJCW5ldyBTdHJpbmdbXSB7CiAJCQkiVGVzdENsYXNzLmphdmEiLApAQCAtNTUwOSw1ICs1NTAz
+LDM4IEBACiAJCQkiVHlwZSBzYWZldHk6IFBvdGVudGlhbCBoZWFwIHBvbGx1dGlvbiB2aWEgdmFy
+YXJncyBwYXJhbWV0ZXIgYXJnXG4iICsgCiAJCQkiLS0tLS0tLS0tLVxuIik7CiB9CisvLyBodHRw
+czovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9NDQ2MjIzLCBbMS44XVtj
+b21waWxlcl0gSmF2YTggZ2VuZXJpY3MgZWNsaXBzZSBkb2Vzbid0IGNvbXBpbGUgIAorcHVibGlj
+IHZvaWQgdGVzdDQ0NjIyMygpIHsKKwkJdGhpcy5ydW5OZWdhdGl2ZVRlc3QoCisJCSAgIG5ldyBT
+dHJpbmdbXSB7CisJCQkgICAiWC5qYXZhIiwKKwkJCSAgICJwdWJsaWMgY2xhc3MgWCB7XG4iICsK
+KwkJCSAgICIJcHVibGljIHN0YXRpYyB2b2lkIG1haW4oU3RyaW5nIGFyW10pIHtcbiIgKworCQkJ
+ICAgIgkJU3lzdGVtLm91dC5wcmludGxuKFwiaGlcIik7XG4iICsKKwkJCSAgICIJCURvTm90aGlu
+ZygpO1xuIiArCisJCQkgICAiCX1cbiIgKworCQkJICAgIglwdWJsaWMgaW50ZXJmYWNlIEludGVy
+ZmFjZTEge1xuIiArCisJCQkgICAiCQlwdWJsaWMgdm9pZCBnbygpO1xuIiArCisJCQkgICAiCX1c
+biIgKworCQkJICAgIglwdWJsaWMgaW50ZXJmYWNlIEludGVyZmFjZTI8WD4ge1xuIiArCisJCQkg
+ICAiCQlwdWJsaWMgWCBnbzIoKTtcbiIgKworCQkJICAgIgl9XG4iICsKKwkJCSAgICIJcHJpdmF0
+ZSBzdGF0aWMgPFgsIFQgZXh0ZW5kcyBJbnRlcmZhY2UyPFg+ICYgSW50ZXJmYWNlMT4gdm9pZCBE
+b05vdGhpbmcoKSB7XG4iICsKKwkJCSAgICIJCXJldHVybjtcbiIgKworCQkJICAgIgl9XG4iICsK
+KwkJCSAgICJ9XG4iLAorCQkgICB9LAorCQkgICAiLS0tLS0tLS0tLVxuIiArIAorCQkJIjEuIFdB
+Uk5JTkcgaW4gWC5qYXZhIChhdCBsaW5lIDkpXG4iICsgCisJCQkiCXB1YmxpYyBpbnRlcmZhY2Ug
+SW50ZXJmYWNlMjxYPiB7XG4iICsgCisJCQkiCSAgICAgICAgICAgICAgICAgICAgICAgICAgICBe
+XG4iICsgCisJCQkiVGhlIHR5cGUgcGFyYW1ldGVyIFggaXMgaGlkaW5nIHRoZSB0eXBlIFhcbiIg
+KyAKKwkJCSItLS0tLS0tLS0tXG4iICsgCisJCQkiMi4gV0FSTklORyBpbiBYLmphdmEgKGF0IGxp
+bmUgMTIpXG4iICsgCisJCQkiCXByaXZhdGUgc3RhdGljIDxYLCBUIGV4dGVuZHMgSW50ZXJmYWNl
+MjxYPiAmIEludGVyZmFjZTE+IHZvaWQgRG9Ob3RoaW5nKCkge1xuIiArIAorCQkJIgkgICAgICAg
+ICAgICAgICAgXlxuIiArIAorCQkJIlRoZSB0eXBlIHBhcmFtZXRlciBYIGlzIGhpZGluZyB0aGUg
+dHlwZSBYXG4iICsgCisJCQkiLS0tLS0tLS0tLVxuIik7Cit9CiB9CiAKZGlmZiAtLWdpdCBhL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21w
+aWxlci9sb29rdXAvSW5mZXJlbmNlQ29udGV4dDE4LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL0luZmVy
+ZW5jZUNvbnRleHQxOC5qYXZhCmluZGV4IGQwMzNiYTEuLjdjMDY5OTcgMTAwNjQ0Ci0tLSBhL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21w
+aWxlci9sb29rdXAvSW5mZXJlbmNlQ29udGV4dDE4LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9J
+bmZlcmVuY2VDb250ZXh0MTguamF2YQpAQCAtOTIyLDYgKzkyMiw3IEBACiAJCQkJCWZpbmFsIENh
+cHR1cmVCaW5kaW5nMThbXSB6cyA9IG5ldyBDYXB0dXJlQmluZGluZzE4W251bVZhcnNdOwogCQkJ
+CQlmb3IgKGludCBqID0gMDsgaiA8IG51bVZhcnM7IGorKykKIAkJCQkJCXpzW2pdID0gZnJlc2hD
+YXB0dXJlKHZhcmlhYmxlc1tqXSk7CisJCQkJCWZpbmFsIEJvdW5kU2V0IGt1cnJlbnRCb3VuZFNl
+dCA9IHRtcEJvdW5kU2V0OwogCQkJCQlTdWJzdGl0dXRpb24gdGhldGEgPSBuZXcgU3Vic3RpdHV0
+aW9uKCkgewogCQkJCQkJcHVibGljIExvb2t1cEVudmlyb25tZW50IGVudmlyb25tZW50KCkgeyAK
+IAkJCQkJCQlyZXR1cm4gSW5mZXJlbmNlQ29udGV4dDE4LnRoaXMuZW52aXJvbm1lbnQ7CkBAIC05
+MzMsNiArOTM0LDE2IEBACiAJCQkJCQkJZm9yIChpbnQgaiA9IDA7IGogPCBudW1WYXJzOyBqKysp
+CiAJCQkJCQkJCWlmIChUeXBlQmluZGluZy5lcXVhbHNFcXVhbHModmFyaWFibGVzW2pdLCB0eXBl
+VmFyaWFibGUpKQogCQkJCQkJCQkJcmV0dXJuIHpzW2pdOworCQkJCQkJCS8qIElmIHdlIGhhdmUg
+YW4gaW5zdGFudGlhdGlvbiwgbG93ZXIgaXQgdG8gdGhlIGluc3RhbnRpYXRpb24uIFdlIGRvbid0
+IHdhbnQgZG93bnN0cmVhbSBhYnN0cmFjdGlvbnMgdG8gYmUgY29uZnVzZWQgYWJvdXQgbXVsdGlw
+bGUgdmVyc2lvbnMgb2YgYm91bmRzIHdpdGhvdXQKKwkJCQkJCQkgICBhbmQgd2l0aCBpbnN0YW50
+aWF0aW9ucyBwcm9wYWdhdGVkIGJ5IGluY29ycG9yYXRpb24uIFNlZSBodHRwczovL2J1Z3MuZWNs
+aXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9NDMwNjg2LiBUaGVyZSBpcyBubyB2YWx1ZSB3
+aGF0c29ldmVyIGluIGNvbnRpbnVpbmcKKwkJCQkJCQkgICB0byBzcGVhayBpbiB0d28gdG9uZ3Vl
+cy4gQWxzbyBmaXhlcyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/
+aWQ9NDI1MDMxLgorCQkJCQkJCSovCisJCQkJCQkJaWYgKHR5cGVWYXJpYWJsZSBpbnN0YW5jZW9m
+IEluZmVyZW5jZVZhcmlhYmxlKSB7CisJCQkJCQkJCUluZmVyZW5jZVZhcmlhYmxlIGluZmVyZW5j
+ZVZhcmlhYmxlID0gKEluZmVyZW5jZVZhcmlhYmxlKSB0eXBlVmFyaWFibGU7CisJCQkJCQkJCVR5
+cGVCaW5kaW5nIGluc3RhbnRpYXRpb24gPSBrdXJyZW50Qm91bmRTZXQuZ2V0SW5zdGFudGlhdGlv
+bihpbmZlcmVuY2VWYXJpYWJsZSwgbnVsbCk7CisJCQkJCQkJCWlmIChpbnN0YW50aWF0aW9uICE9
+IG51bGwpCisJCQkJCQkJCQlyZXR1cm4gaW5zdGFudGlhdGlvbjsKKwkJCQkJCQl9CiAJCQkJCQkJ
+cmV0dXJuIHR5cGVWYXJpYWJsZTsKIAkJCQkJCX0KIAkJCQkJfTsKQEAgLTk0Miw3ICs5NTMsNiBA
+QAogCQkJCQkJLy8gYWRkIGxvd2VyIGJvdW5kczoKIAkJCQkJCVR5cGVCaW5kaW5nW10gbG93ZXJC
+b3VuZHMgPSB0bXBCb3VuZFNldC5sb3dlckJvdW5kcyh2YXJpYWJsZSwgdHJ1ZS8qb25seVByb3Bl
+ciovKTsKIAkJCQkJCWlmIChsb3dlckJvdW5kcyAhPSBCaW5kaW5nLk5PX1RZUEVTKSB7Ci0JCQkJ
+CQkJbG93ZXJCb3VuZHMgPSBTY29wZS5zdWJzdGl0dXRlKHRoZXRhLCBsb3dlckJvdW5kcyk7CiAJ
+CQkJCQkJVHlwZUJpbmRpbmcgbHViID0gdGhpcy5zY29wZS5sb3dlclVwcGVyQm91bmQobG93ZXJC
+b3VuZHMpOwogCQkJCQkJCWlmIChsdWIgIT0gVHlwZUJpbmRpbmcuVk9JRCAmJiBsdWIgIT0gbnVs
+bCkKIAkJCQkJCQkJenNqLmxvd2VyQm91bmQgPSBsdWI7
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>248189</attachid>
+            <date>2014-10-26 14:59:00 -0400</date>
+            <delta_ts>2014-10-26 14:59:56 -0400</delta_ts>
+            <desc>for illustration purposes only</desc>
+            <filename>bug430686.patch</filename>
+            <type>text/plain</type>
+            <size>2982</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvQ2FwdHVyZUJpbmRpbmcxOC5qYXZhIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L2xvb2t1cC9DYXB0dXJlQmluZGluZzE4LmphdmEKaW5kZXggYjc0Mzk0Mi4uOGFkZWY1MSAxMDA2
+NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2lu
+dGVybmFsL2NvbXBpbGVyL2xvb2t1cC9DYXB0dXJlQmluZGluZzE4LmphdmEKKysrIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L2xvb2t1cC9DYXB0dXJlQmluZGluZzE4LmphdmEKQEAgLTIwNCw2ICsyMDQsMTEgQEAKIAkJCQkJ
+fQogCQkJCX0KIAkJCX0KKwkJCVR5cGVCaW5kaW5nIGN1cnJlbnRGaXJzdEJvdW5kID0gbnVsbDsK
+KwkJCWlmICh0aGlzLmZpcnN0Qm91bmQgIT0gbnVsbCkgeworCQkJCWN1cnJlbnRGaXJzdEJvdW5k
+ID0gdGhpcy5maXJzdEJvdW5kLnN1YnN0aXR1dGVJbmZlcmVuY2VWYXJpYWJsZSh2YXIsIHN1YnN0
+aXR1dGVUeXBlKTsKKwkJCQloYXZlU3Vic3RpdHV0aW9uIHw9IFR5cGVCaW5kaW5nLm5vdEVxdWFs
+cyh0aGlzLmZpcnN0Qm91bmQsIGN1cnJlbnRGaXJzdEJvdW5kKTsKKwkJCX0KIAkJCWlmIChoYXZl
+U3Vic3RpdHV0aW9uKSB7CiAJCQkJZmluYWwgQ2FwdHVyZUJpbmRpbmcxOCBuZXdDYXB0dXJlID0g
+KENhcHR1cmVCaW5kaW5nMTgpIGNsb25lKGVuY2xvc2luZ1R5cGUoKSk7CiAJCQkJbmV3Q2FwdHVy
+ZS50YWdCaXRzID0gdGhpcy50YWdCaXRzOwpAQCAtMjIxLDYgKzIyNiw4IEBACiAJCQkJCQlyZXR1
+cm4gQ2FwdHVyZUJpbmRpbmcxOC50aGlzLmVudmlyb25tZW50OwogCQkJCQl9CiAJCQkJfTsKKwkJ
+CQlpZiAoY3VycmVudEZpcnN0Qm91bmQgIT0gbnVsbCkKKwkJCQkJbmV3Q2FwdHVyZS5maXJzdEJv
+dW5kID0gU2NvcGUuc3Vic3RpdHV0ZShzdWJzdGl0dXRpb24sIGN1cnJlbnRGaXJzdEJvdW5kKTsK
+IAkJCQluZXdDYXB0dXJlLnN1cGVyY2xhc3MgPSAoUmVmZXJlbmNlQmluZGluZykgU2NvcGUuc3Vi
+c3RpdHV0ZShzdWJzdGl0dXRpb24sIGN1cnJlbnRTdXBlcmNsYXNzKTsKIAkJCQluZXdDYXB0dXJl
+LnN1cGVySW50ZXJmYWNlcyA9IFNjb3BlLnN1YnN0aXR1dGUoc3Vic3RpdHV0aW9uLCBjdXJyZW50
+U3VwZXJJbnRlcmZhY2VzKTsKIAkJCQluZXdDYXB0dXJlLnVwcGVyQm91bmRzID0gU2NvcGUuc3Vi
+c3RpdHV0ZShzdWJzdGl0dXRpb24sIGN1cnJlbnRVcHBlckJvdW5kcyk7CmRpZmYgLS1naXQgYS9v
+cmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29t
+cGlsZXIvbG9va3VwL0NvbnN0cmFpbnRUeXBlRm9ybXVsYS5qYXZhIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9D
+b25zdHJhaW50VHlwZUZvcm11bGEuamF2YQppbmRleCAyMGJhOTVlLi43NjhhMjcxIDEwMDY0NAot
+LS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvbG9va3VwL0NvbnN0cmFpbnRUeXBlRm9ybXVsYS5qYXZhCisrKyBiL29yZy5l
+Y2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxl
+ci9sb29rdXAvQ29uc3RyYWludFR5cGVGb3JtdWxhLmphdmEKQEAgLTE2OSw2ICsxNjksMTAgQEAK
+IAkJCQlpZiAodGhpcy5sZWZ0LmlzUHJvcGVyVHlwZSh0cnVlKSAmJiB0aGlzLnJpZ2h0LmlzUHJv
+cGVyVHlwZSh0cnVlKSkgewogCQkJCQlpZiAoVHlwZUJpbmRpbmcuZXF1YWxzRXF1YWxzKHRoaXMu
+bGVmdCwgdGhpcy5yaWdodCkpCiAJCQkJCQlyZXR1cm4gVFJVRTsKKy8vIEhBQ0shCisJCQkJCWlm
+ICh0aGlzLmxlZnQudG9TdHJpbmcoKS5lcXVhbHModGhpcy5yaWdodC50b1N0cmluZygpKSkKKwkJ
+CQkJCXJldHVybiBUUlVFOworLy8KIAkJCQkJcmV0dXJuIEZBTFNFOwogCQkJCX0KIAkJCQlpZiAo
+dGhpcy5sZWZ0IGluc3RhbmNlb2YgSW5mZXJlbmNlVmFyaWFibGUpIHsKZGlmZiAtLWdpdCBhL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21w
+aWxlci9sb29rdXAvSW5mZXJlbmNlQ29udGV4dDE4LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL0luZmVy
+ZW5jZUNvbnRleHQxOC5qYXZhCmluZGV4IGQwMzNiYTEuLjczODIwYTggMTAwNjQ0Ci0tLSBhL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21w
+aWxlci9sb29rdXAvSW5mZXJlbmNlQ29udGV4dDE4LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9J
+bmZlcmVuY2VDb250ZXh0MTguamF2YQpAQCAtOTQyLDcgKzk0Miw2IEBACiAJCQkJCQkvLyBhZGQg
+bG93ZXIgYm91bmRzOgogCQkJCQkJVHlwZUJpbmRpbmdbXSBsb3dlckJvdW5kcyA9IHRtcEJvdW5k
+U2V0Lmxvd2VyQm91bmRzKHZhcmlhYmxlLCB0cnVlLypvbmx5UHJvcGVyKi8pOwogCQkJCQkJaWYg
+KGxvd2VyQm91bmRzICE9IEJpbmRpbmcuTk9fVFlQRVMpIHsKLQkJCQkJCQlsb3dlckJvdW5kcyA9
+IFNjb3BlLnN1YnN0aXR1dGUodGhldGEsIGxvd2VyQm91bmRzKTsKIAkJCQkJCQlUeXBlQmluZGlu
+ZyBsdWIgPSB0aGlzLnNjb3BlLmxvd2VyVXBwZXJCb3VuZChsb3dlckJvdW5kcyk7CiAJCQkJCQkJ
+aWYgKGx1YiAhPSBUeXBlQmluZGluZy5WT0lEICYmIGx1YiAhPSBudWxsKQogCQkJCQkJCQl6c2ou
+bG93ZXJCb3VuZCA9IGx1YjsK
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

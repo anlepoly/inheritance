@@ -1,0 +1,656 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>401456</bug_id>
+          
+          <creation_ts>2013-02-21 13:53:00 -0500</creation_ts>
+          <short_desc>Code compiles from javac/intellij, but fails from eclipse</short_desc>
+          <delta_ts>2013-03-12 03:51:54 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.2.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M6</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Leon Finker">leonfin</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2220421</commentid>
+    <comment_count>0</comment_count>
+      <attachid>227415</attachid>
+    <who name="Leon Finker">leonfin</who>
+    <bug_when>2013-02-21 13:53:46 -0500</bug_when>
+    <thetext>Created attachment 227415
+Project that shows the error
+
+Error is:
+The method addListener(App.Command_1&lt;Object&gt;) in the type App.ObservableEventWithArg.Monitor is not applicable for the arguments (new App.Command_1&lt;String&gt;(){})
+
+I&apos;ve narrowed down the code to simple repro, see attached project. The source is:
+
+import java.util.List;
+
+public class App {
+    
+    public interface Command_1&lt;T&gt; {
+        public void execute(T o);
+    }
+    public static class ObservableEventWithArg&lt;T&gt; {
+        public class Monitor {
+            public Object addListener(final Command_1&lt;T&gt; l) {
+                return null;
+            }
+        }
+    }    
+    public static class Context&lt;T&gt; {
+          public ObservableEventWithArg&lt;String&gt;.Monitor getSubmissionErrorEventMonitor() {
+              return null;
+          }
+  }
+
+    
+	public static void main(String[] args) {
+		compileError(new Context&lt;List&lt;String&gt;&gt;());
+	}
+
+	private static void compileError(Context context) {
+		context.getSubmissionErrorEventMonitor().addListener(new Command_1&lt;String&gt;() {
+            @Override
+            public void execute(String o) {
+            }
+        });
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2220510</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-21 16:18:31 -0500</bug_when>
+    <thetext>Thanks for the concise repro!
+
+Investigating.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2220568</commentid>
+    <comment_count>2</comment_count>
+      <attachid>227429</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-21 18:00:12 -0500</bug_when>
+    <thetext>Created attachment 227429
+tentative fix</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2220573</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-21 18:21:01 -0500</bug_when>
+    <thetext>Here&apos;s what I see:
+
+A PMB for getSubmissionErrorEventMonitor() is created using Context#RAW as the substitution context.
+Since substitution.isRawSubstitution() answers true, the return type ObservableEventWithArg&lt;java.lang.String&gt;.Monitor will be substituted to become ObservableEventWithArg#RAW.Monitor.
+Using this as the receiver type for addListener() the method parameter is substituted to Command_1&lt;Object&gt;, which doesn&apos;t accept the actual argument of type Command_1&lt;String&gt;.
+
+The patch in comment 2 cheats by trying to make the substitution raw only at the inner level of nesting.
+This breaks a number of tests:
+- org.eclipse.jdt.core.tests.compiler.regression.GenericTypeTest.test0939()
+- org.eclipse.jdt.core.tests.compiler.regression.GenericTypeTest.test0956()
+plus different type printout in 
+- org.eclipse.jdt.core.tests.compiler.regression.GenericsRegressionTest_1_7.test001h_1()
+
+I will see if I find a simple and &quot;more correct&quot; patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2220579</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-21 18:42:51 -0500</bug_when>
+    <thetext>At a closer look I fail to see how the rawness of Context should ever affect the interpretation of ObservableEventWithArg&lt;java.lang.String&gt;.Monitor.
+
+Thus the whole concept of Substitution.isRawSubstituation() looks bogus to me. The commit 3af20c8fa9116cf8e52dcf498c1b4eea06f21754 introducing this concept mentions bug 81721  and bug 82590, but I don&apos;t see any raw types in those bugs :(</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2220582</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-21 18:59:03 -0500</bug_when>
+    <thetext>Hm, so, when substituting a type via a raw type, all enclosing types are made raw.
+I have no clue why that is so.
+
+I&apos;m backing out for now, sorry.
+
+Ah, here&apos;s another find: if I remove this rawification, among the many tests changing their outcome I see
+org.eclipse.jdt.core.tests.compiler.regression.GenericTypeTest.test1132() which has the following comment:
+  // Type Mismatch error - Since
+  // myThing is unbounded, return
+  // type List&lt;Integer&gt;
+  // incorrectly becomes unbounded
+Is this saying we want the compiler to produce an incorrect result?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2220583</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-21 19:23:08 -0500</bug_when>
+    <thetext>Final note for today:
+
+Looking at GenericTypeTest.test1132() I see
+
+- javac reports the same error, of which the comment explains that it is wrong
+
+- the test was introduced in commit 671203b650cf0c5ccde429cd68a99e555968a741 assumably on behalf of bug 175409 (inferred from looking at the build note changes in that commit), which takes us further away from understanding the situation, because that bug is about a DOM issue, not compilation proper.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2220612</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-02-22 00:17:29 -0500</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; Hm, so, when substituting a type via a raw type, all enclosing types are
+&gt; made raw.
+&gt; I have no clue why that is so.
+
+Because 
+
+class X&lt;T&gt; {
+	class Y&lt;P&gt; {}
+	X&lt;String&gt;.Y y = null;
+}
+
+is a compile error ? The inner type cannot be raw when outer type is
+parameterized.
+
+&gt; 
+&gt; I&apos;m backing out for now, sorry.
+
+For that reason, we should double check this plan.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2220760</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-22 08:15:11 -0500</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; Because 
+&gt; 
+&gt; class X&lt;T&gt; {
+&gt; 	class Y&lt;P&gt; {}
+&gt; 	X&lt;String&gt;.Y y = null;
+&gt; }
+&gt; 
+&gt; is a compile error ? The inner type cannot be raw when outer type is
+&gt; parameterized.
+ 
+Thanks, I didn&apos;t know. Alright, JLS7 sect 4.8 has this:
+  &quot;It is a compile-time error to attempt to use a type member of a
+   parameterized type as a raw type. &quot;
+I must have been sleeping already when I searched last night :)
+
+
+So, on the one hand we have the rule that mixed Parameterized.Raw types are
+actually illegal, on the other hand type inference makes some types raw on
+its way, in order to find a match. With a naive fix lots of tests relating
+to type inference fail.
+
+
+Coming back to the example in this bug:
+Resolving this expression:
+
+  context.getSubmissionErrorEventMonitor()
+
+we currently make the return type raw, because context has a raw type.
+This would be correct if the return type would depend on the value of
+context (i.e., an inner class), but it&apos;s not correct for an independent
+parameterized type. The actual return type
+  ObservableEventWithArg&lt;java.lang.String&gt;.Monitor
+should be perfectly legal, no?
+
+I&apos;ve experimented with an additional check inside Scope.substitute:
+- only make types raw when originalType in some way &apos;dependsOn&apos; the raw
+  type (substitution). Dependency could be:
+  - _ is an inner of _
+  - _ uses a type variable declared in the original of the raw type _
+
+This fixes the immediate issue but still causes regressions in GenericTypeTests.
+
+Srikanth, what priority would you give to this issue?
+I guess that fixing would involve looking at approx. 30 individual tests,
+re-check expectations, compare with javac, improve the patch to better
+distinguish whether or not to rawify.
+
+Much seems to depend on this piece of code, but if my conclusions are right
+we&apos;re indeed rejecting legal code.
+
+OTOH, an obvious workaround exists: avoid the raw type &quot;Context&quot;!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2220894</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-22 11:30:33 -0500</bug_when>
+    <thetext>We can split the issue into two questions:
+
+(A) Should the return type of a method, that is accessed via a raw receiver,
+    be converted to raw?
+
+(B) Is it legal to assign that value to a non-raw variable?
+
+Ad (A):
+-------
+Looking at GenericTypeTest.test0523() we see both compilers agree that
+the return type is indeed raw:
+
+import java.util.*;
+public class X {
+   public X() {
+       M m = new M();
+       List&lt;String&gt; ls = m.list(); // rawified even though wasn&apos;t using T parameter
+   }
+   Zork z;
+   static class M&lt;T&gt; {
+       List&lt;String&gt; list() {
+           return null;
+       }
+   }
+}
+
+It seems the author of the test was puzzled himself. 
+Frankly, I don&apos;t see this motivated by anything in the JLS,
+but since everybody seems to agree, not much we can/should change here.
+
+Ad (B):
+-------
+Here the answer is obviously: yes, assigning raw to parameterized is legal.
+
+Looking just at this part of the problem, ecj has a pretty simple bug:
+While computing the raw type of ObservableEventWithArg&lt;String&gt;.Monitor
+we construct a bogus type ObservableEventWithArg&lt;Object&gt;.Monitor#RAW.
+
+I have a simple patch under test which addresses just this bogus conversion.
+All GenericTypeTests plus the test for this bug are green.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2220902</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-22 11:45:05 -0500</bug_when>
+    <thetext>(In reply to comment #9)
+&gt; (A) Should the return type of a method, that is accessed via a raw receiver,
+&gt;     be converted to raw?
+&gt; 
+&gt; [...]
+&gt; It seems the author of the test was puzzled himself. 
+&gt; Frankly, I don&apos;t see this motivated by anything in the JLS,
+&gt; but since everybody seems to agree, not much we can/should change here.
+
+I&apos;m withdrawing my critique, seeing that JLS7 Sect. 4.8 indeed says:
+
+&quot;The type of a constructor (8.8), instance method (8.4, 9.4), or non-static field (8.3) M of a raw type C that is not inherited from its superclasses or superinterfaces is the raw type that corresponds to the erasure of its type in the generic declaration corresponding to C.&quot;
+
+So the answer to (A) is clearly: yes.
+
+I will document this insight in the corresponding tests (see also comment 5).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2221069</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-02-22 18:38:05 -0500</bug_when>
+    <thetext>(In reply to comment #9)
+&gt; (B) Is it legal to assign that value to a non-raw variable?
+&gt; -------
+&gt; Here the answer is obviously: yes, assigning raw to parameterized is legal.
+&gt; 
+&gt; Looking just at this part of the problem, ecj has a pretty simple bug:
+&gt; While computing the raw type of ObservableEventWithArg&lt;String&gt;.Monitor
+&gt; we construct a bogus type ObservableEventWithArg&lt;Object&gt;.Monitor#RAW.
+&gt; 
+&gt; I have a simple patch under test which addresses just this bogus conversion.
+&gt; All GenericTypeTests plus the test for this bug are green.
+
+After all back-and-forth (sorry about that), I found this simple patch to succeed in fixing the bug without causing regressions elsewhere.
+Fix is well localized so no particularly high risk involved.
+
+Released for 4.3 M6 via commit 8200b6cfd64a575249a0f66c65d0e9c9e4a95b92</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2229320</commentid>
+    <comment_count>12</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-12 03:51:54 -0400</bug_when>
+    <thetext>Verified for 4.3 M3 using Build id: I20130310-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>227415</attachid>
+            <date>2013-02-21 13:53:00 -0500</date>
+            <delta_ts>2013-02-21 13:53:46 -0500</delta_ts>
+            <desc>Project that shows the error</desc>
+            <filename>Test.zip</filename>
+            <type>application/x-sdlc</type>
+            <size>2951</size>
+            <attacher name="Leon Finker">leonfin</attacher>
+            
+              <data encoding="base64">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
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>227429</attachid>
+            <date>2013-02-21 18:00:00 -0500</date>
+            <delta_ts>2013-02-21 18:34:00 -0500</delta_ts>
+            <desc>tentative fix</desc>
+            <filename>clipboard.txt</filename>
+            <type>text/plain</type>
+            <size>12290</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0dlbmVyaWNzUmVncmVz
+c2lvblRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0dlbmVyaWNzUmVn
+cmVzc2lvblRlc3QuamF2YQppbmRleCA4NzIxMDQ2Li5hZWRmOTllIDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9HZW5lcmljc1JlZ3Jlc3Npb25UZXN0LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vR2VuZXJpY3NSZWdyZXNzaW9uVGVzdC5q
+YXZhCkBAIC0zMCw3ICszMCw3IEBACiAJLy8gU3RhdGljIGluaXRpYWxpemVyIHRvIHNwZWNpZnkg
+dGVzdHMgc3Vic2V0IHVzaW5nIFRFU1RTXyogc3RhdGljIHZhcmlhYmxlcwogCS8vIEFsbCBzcGVj
+aWZpZWQgdGVzdHMgd2hpY2ggZG9lcyBub3QgYmVsb25nIHRvIHRoZSBjbGFzcyBhcmUgc2tpcHBl
+ZC4uLgogCXN0YXRpYyB7Ci0vLwkJVEVTVFNfTkFNRVMgPSBuZXcgU3RyaW5nW10geyAidGVzdEJ1
+ZzM5NTAwMl9jb21iaW5lZCIgfTsKKwkJVEVTVFNfTkFNRVMgPSBuZXcgU3RyaW5nW10geyAidGVz
+dDQwMTQ1NiIgfTsKIC8vCQlURVNUU19OQU1FUyA9IG5ldyBTdHJpbmdbXSB7ICJ0ZXN0MTQ2NCIg
+fTsKIC8vCQlURVNUU19OVU1CRVJTID0gbmV3IGludFtdIHsgMTQ2NSB9OwogLy8JCVRFU1RTX1JB
+TkdFID0gbmV3IGludFtdIHsgMTA5NywgLTEgfTsKQEAgLTI4MTcsNCArMjgxNyw0MyBAQAogCQki
+LS0tLS0tLS0tLVxuIiwKIAkJbnVsbCwgdHJ1ZSwgY3VzdG9tT3B0aW9ucyk7CiB9CisvLyBCdWcg
+NDAxNDU2IC0gQ29kZSBjb21waWxlcyBmcm9tIGphdmFjL2ludGVsbGlqLCBidXQgZmFpbHMgZnJv
+bSBlY2xpcHNlCitwdWJsaWMgdm9pZCB0ZXN0NDAxNDU2KCkgeworCXJ1bkNvbmZvcm1UZXN0KAor
+CQluZXcgU3RyaW5nW10geworCQkJIkFwcC5qYXZhIiwKKwkJCSJpbXBvcnQgamF2YS51dGlsLkxp
+c3Q7XG4iICsgCisJCQkiXG4iICsgCisJCQkicHVibGljIGNsYXNzIEFwcCB7XG4iICsgCisJCQki
+XG4iICsgCisJCQkiICAgIHB1YmxpYyBpbnRlcmZhY2UgQ29tbWFuZF8xPFQ+IHtcbiIgKyAKKwkJ
+CSIgICAgICAgIHB1YmxpYyB2b2lkIGV4ZWN1dGUoVCBvKTtcbiIgKyAKKwkJCSIgICAgfVxuIiAr
+IAorCQkJIiAgICBwdWJsaWMgc3RhdGljIGNsYXNzIE9ic2VydmFibGVFdmVudFdpdGhBcmc8VD4g
+e1xuIiArIAorCQkJIiAgICAgICAgcHVibGljIGNsYXNzIE1vbml0b3Ige1xuIiArIAorCQkJIiAg
+ICAgICAgICAgIHB1YmxpYyBPYmplY3QgYWRkTGlzdGVuZXIoZmluYWwgQ29tbWFuZF8xPFQ+IGwp
+IHtcbiIgKyAKKwkJCSIgICAgICAgICAgICAgICAgcmV0dXJuIG51bGw7XG4iICsgCisJCQkiICAg
+ICAgICAgICAgfVxuIiArIAorCQkJIiAgICAgICAgfVxuIiArIAorCQkJIiAgICB9ICAgIFxuIiAr
+IAorCQkJIiAgICBwdWJsaWMgc3RhdGljIGNsYXNzIENvbnRleHQ8VD4ge1xuIiArIAorCQkJIiAg
+ICAgICAgICBwdWJsaWMgT2JzZXJ2YWJsZUV2ZW50V2l0aEFyZzxTdHJpbmc+Lk1vbml0b3IgZ2V0
+U3VibWlzc2lvbkVycm9yRXZlbnRNb25pdG9yKCkge1xuIiArIAorCQkJIiAgICAgICAgICAgICAg
+cmV0dXJuIG5ldyBPYnNlcnZhYmxlRXZlbnRXaXRoQXJnPFN0cmluZz4oKS5uZXcgTW9uaXRvcigp
+O1xuIiArIAorCQkJIiAgICAgICAgfVxuIiArIAorCQkJIiAgICB9XG4iICsgCisJCQkiXG4iICsg
+CisJCQkiICAgIHB1YmxpYyBzdGF0aWMgdm9pZCBtYWluKFN0cmluZ1tdIGFyZ3MpIHtcbiIgKyAK
+KwkJCSIgICAgICAgIGNvbXBpbGVFcnJvcihuZXcgQ29udGV4dDxMaXN0PFN0cmluZz4+KCkpO1xu
+IiArIAorCQkJIiAgICB9XG4iICsgCisJCQkiXG4iICsgCisJCQkiICAgIHByaXZhdGUgc3RhdGlj
+IHZvaWQgY29tcGlsZUVycm9yKENvbnRleHQgY29udGV4dCkge1xuIiArIAorCQkJIiAgICAgICAg
+Y29udGV4dC5nZXRTdWJtaXNzaW9uRXJyb3JFdmVudE1vbml0b3IoKS5hZGRMaXN0ZW5lcihcbiIg
+KyAvLyBoZXJlIHRoZSBpbm5lciBtZXNzYWdlIHNlbmQgYm9ndXNseSByZXNvbHZlZCB0byBPYnNl
+cnZhYmxlRXZlbnRXaXRoQXJnI1JBVy5Nb25pdG9yCisJCQkiICAgICAgICAgICAgbmV3IENvbW1h
+bmRfMTxTdHJpbmc+KCkge1xuIiArIAorCQkJIiAgICAgICAgICAgICAgICBwdWJsaWMgdm9pZCBl
+eGVjdXRlKFN0cmluZyBvKSB7XG4iICsgCisJCQkiICAgICAgICAgICAgICAgIH1cbiIgKyAKKwkJ
+CSIgICAgICAgICAgICB9KTtcbiIgKyAKKwkJCSIgICAgfVxuIiArIAorCQkJIn0iCisJCX0pOwor
+fQogfQpcIE5vIG5ld2xpbmUgYXQgZW5kIG9mIGZpbGUKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNl
+LmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29r
+dXAvUGFyYW1ldGVyaXplZEdlbmVyaWNNZXRob2RCaW5kaW5nLmphdmEgYi9vcmcuZWNsaXBzZS5q
+ZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3Vw
+L1BhcmFtZXRlcml6ZWRHZW5lcmljTWV0aG9kQmluZGluZy5qYXZhCmluZGV4IDljYTk0ZjQuLjI4
+YjlkZGYgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xp
+cHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvUGFyYW1ldGVyaXplZEdlbmVyaWNNZXRo
+b2RCaW5kaW5nLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2Vj
+bGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9QYXJhbWV0ZXJpemVkR2VuZXJpY01l
+dGhvZEJpbmRpbmcuamF2YQpAQCAtNTM3LDE2ICs1MzcsMjAgQEAKIAkJCXJldHVybiB0aGlzLnNj
+b3BlLmVudmlyb25tZW50KCk7CiAJCX0KIAotCQlwdWJsaWMgYm9vbGVhbiBpc1Jhd1N1YnN0aXR1
+dGlvbigpIHsKKwkJcHVibGljIGJvb2xlYW4gaXNSYXdTdWJzdGl0dXRpb24oaW50IGxldmVsKSB7
+CiAJCQlyZXR1cm4gZmFsc2U7CiAJCX0KIAl9CiAKIAkvKioKLQkgKiBAc2VlIG9yZy5lY2xpcHNl
+LmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuU3Vic3RpdHV0aW9uI2lzUmF3U3Vic3RpdHV0
+aW9uKCkKKwkgKiBAc2VlIG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAu
+U3Vic3RpdHV0aW9uI2lzUmF3U3Vic3RpdHV0aW9uKGludCkKIAkgKi8KLQlwdWJsaWMgYm9vbGVh
+biBpc1Jhd1N1YnN0aXR1dGlvbigpIHsKLQkJcmV0dXJuIHRoaXMuaXNSYXc7CisJcHVibGljIGJv
+b2xlYW4gaXNSYXdTdWJzdGl0dXRpb24oaW50IGxldmVsKSB7CisJCWlmIChsZXZlbCA9PSAwKQor
+CQkJcmV0dXJuIHRoaXMuaXNSYXc7CisJCWlmICh0aGlzLmRlY2xhcmluZ0NsYXNzIGluc3RhbmNl
+b2YgUGFyYW1ldGVyaXplZFR5cGVCaW5kaW5nKQorCQkJcmV0dXJuICgoUGFyYW1ldGVyaXplZFR5
+cGVCaW5kaW5nKXRoaXMuZGVjbGFyaW5nQ2xhc3MpLmlzUmF3U3Vic3RpdHV0aW9uKGxldmVsLTEp
+OworCQlyZXR1cm4gdGhpcy5kZWNsYXJpbmdDbGFzcy5pc1Jhd1R5cGUoKTsKIAl9CiAKIAkvKioK
+ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvUGFyYW1ldGVyaXplZE1ldGhvZEJpbmRpbmcuamF2
+YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5h
+bC9jb21waWxlci9sb29rdXAvUGFyYW1ldGVyaXplZE1ldGhvZEJpbmRpbmcuamF2YQppbmRleCBj
+N2Y4YWQzLi5hMTA2NGY4IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxl
+ci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1BhcmFtZXRlcml6ZWRN
+ZXRob2RCaW5kaW5nLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3Jn
+L2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9QYXJhbWV0ZXJpemVkTWV0aG9k
+QmluZGluZy5qYXZhCkBAIC02Miw4ICs2Miw4IEBACiAJCQkJcHVibGljIExvb2t1cEVudmlyb25t
+ZW50IGVudmlyb25tZW50KCkgewogCQkJCQlyZXR1cm4gcGFyYW1ldGVyaXplZERlY2xhcmluZ0Ns
+YXNzLmVudmlyb25tZW50OwogCQkJCX0KLQkJCQlwdWJsaWMgYm9vbGVhbiBpc1Jhd1N1YnN0aXR1
+dGlvbigpIHsKLQkJCQkJcmV0dXJuICFpc1N0YXRpYyAmJiBwYXJhbWV0ZXJpemVkRGVjbGFyaW5n
+Q2xhc3MuaXNSYXdTdWJzdGl0dXRpb24oKTsKKwkJCQlwdWJsaWMgYm9vbGVhbiBpc1Jhd1N1YnN0
+aXR1dGlvbihpbnQgbGV2ZWwpIHsKKwkJCQkJcmV0dXJuICFpc1N0YXRpYyAmJiBwYXJhbWV0ZXJp
+emVkRGVjbGFyaW5nQ2xhc3MuaXNSYXdTdWJzdGl0dXRpb24obGV2ZWwtMSk7CiAJCQkJfQogCQkJ
+CXB1YmxpYyBUeXBlQmluZGluZyBzdWJzdGl0dXRlKFR5cGVWYXJpYWJsZUJpbmRpbmcgdHlwZVZh
+cmlhYmxlKSB7CiAJCQkJCS8vIGNoZWNrIHRoaXMgdmFyaWFibGUgY2FuIGJlIHN1YnN0aXR1dGVk
+IGdpdmVuIGNvcGllZCB2YXJpYWJsZXMKQEAgLTE3OSw3ICsxNzksNyBAQAogCQkJCXB1YmxpYyBM
+b29rdXBFbnZpcm9ubWVudCBlbnZpcm9ubWVudCgpIHsKIAkJCQkJcmV0dXJuIGVudmlyb25tZW50
+OwogCQkJCX0KLQkJCQlwdWJsaWMgYm9vbGVhbiBpc1Jhd1N1YnN0aXR1dGlvbigpIHsKKwkJCQlw
+dWJsaWMgYm9vbGVhbiBpc1Jhd1N1YnN0aXR1dGlvbihpbnQgbGV2ZWwpIHsKIAkJCQkJcmV0dXJu
+IGZhbHNlOwogCQkJCX0KIAkJCQlwdWJsaWMgVHlwZUJpbmRpbmcgc3Vic3RpdHV0ZShUeXBlVmFy
+aWFibGVCaW5kaW5nIHR5cGVWYXJpYWJsZSkgewpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9Q
+YXJhbWV0ZXJpemVkVHlwZUJpbmRpbmcuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBp
+bGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvUGFyYW1ldGVyaXpl
+ZFR5cGVCaW5kaW5nLmphdmEKaW5kZXggZDg4N2Q2ZC4uN2UwNmUzZCAxMDA2NDQKLS0tIGEvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2xvb2t1cC9QYXJhbWV0ZXJpemVkVHlwZUJpbmRpbmcuamF2YQorKysgYi9vcmcuZWNsaXBz
+ZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9v
+a3VwL1BhcmFtZXRlcml6ZWRUeXBlQmluZGluZy5qYXZhCkBAIC0xLDUgKzEsNSBAQAogLyoqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioKLSAqIENvcHlyaWdodCAoYykgMjAwNSwgMjAxMiBJQk0gQ29ycG9y
+YXRpb24gYW5kIG90aGVycy4KKyAqIENvcHlyaWdodCAoYykgMjAwNSwgMjAxMyBJQk0gQ29ycG9y
+YXRpb24gYW5kIG90aGVycy4KICAqIEFsbCByaWdodHMgcmVzZXJ2ZWQuIFRoaXMgcHJvZ3JhbSBh
+bmQgdGhlIGFjY29tcGFueWluZyBtYXRlcmlhbHMKICAqIGFyZSBtYWRlIGF2YWlsYWJsZSB1bmRl
+ciB0aGUgdGVybXMgb2YgdGhlIEVjbGlwc2UgUHVibGljIExpY2Vuc2UgdjEuMAogICogd2hpY2gg
+YWNjb21wYW5pZXMgdGhpcyBkaXN0cmlidXRpb24sIGFuZCBpcyBhdmFpbGFibGUgYXQKQEAgLTc1
+OCwxMCArNzU4LDE2IEBACiAJfQogCiAJLyoqCi0JICogQHNlZSBvcmcuZWNsaXBzZS5qZHQuaW50
+ZXJuYWwuY29tcGlsZXIubG9va3VwLlN1YnN0aXR1dGlvbiNpc1Jhd1N1YnN0aXR1dGlvbigpCisJ
+ICogQHNlZSBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwLlN1YnN0aXR1
+dGlvbiNpc1Jhd1N1YnN0aXR1dGlvbihpbnQpCiAJICovCi0JcHVibGljIGJvb2xlYW4gaXNSYXdT
+dWJzdGl0dXRpb24oKSB7Ci0JCXJldHVybiBpc1Jhd1R5cGUoKTsKKwlwdWJsaWMgYm9vbGVhbiBp
+c1Jhd1N1YnN0aXR1dGlvbihpbnQgbGV2ZWwpIHsKKwkJUmVmZXJlbmNlQmluZGluZyBjdXJyZW50
+VHlwZSA9IHRoaXM7CisJCXdoaWxlIChsZXZlbC0tID4gMCkgeworCQkJY3VycmVudFR5cGUgPSBj
+dXJyZW50VHlwZS5lbmNsb3NpbmdUeXBlKCk7CisJCQlpZiAoY3VycmVudFR5cGUgPT0gbnVsbCkK
+KwkJCQlyZXR1cm4gZmFsc2U7IC8vIHNob3VsZG4ndCBoYXBwZW4KKwkJfQorCQlyZXR1cm4gY3Vy
+cmVudFR5cGUuaXNSYXdUeXBlKCk7CiAJfQogCiAJcHVibGljIGludCBraW5kKCkgewpkaWZmIC0t
+Z2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVy
+bmFsL2NvbXBpbGVyL2xvb2t1cC9TY29wZS5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29t
+cGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9TY29wZS5qYXZh
+CmluZGV4IGU0ZDNhZGEuLjEzZWRiNmEgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+L2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvU2NvcGUu
+amF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQv
+aW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1Njb3BlLmphdmEKQEAgLTEsNSArMSw1IEBACiAvKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKgotICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDEyIElCTSBDb3Jw
+b3JhdGlvbiBhbmQgb3RoZXJzLgorICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDEzIElCTSBDb3Jw
+b3JhdGlvbiBhbmQgb3RoZXJzLgogICogQWxsIHJpZ2h0cyByZXNlcnZlZC4gVGhpcyBwcm9ncmFt
+IGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVyaWFscwogICogYXJlIG1hZGUgYXZhaWxhYmxlIHVu
+ZGVyIHRoZSB0ZXJtcyBvZiB0aGUgRWNsaXBzZSBQdWJsaWMgTGljZW5zZSB2MS4wCiAgKiB3aGlj
+aCBhY2NvbXBhbmllcyB0aGlzIGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2YWlsYWJsZSBhdApAQCAt
+MzYyLDYgKzM2Miw5IEBACiAJICoKIAkgKi8KIAlwdWJsaWMgc3RhdGljIFR5cGVCaW5kaW5nIHN1
+YnN0aXR1dGUoU3Vic3RpdHV0aW9uIHN1YnN0aXR1dGlvbiwgVHlwZUJpbmRpbmcgb3JpZ2luYWxU
+eXBlKSB7CisJCXJldHVybiBzdWJzdGl0dXRlKHN1YnN0aXR1dGlvbiwgb3JpZ2luYWxUeXBlLCAw
+KTsKKwl9CisJcHVibGljIHN0YXRpYyBUeXBlQmluZGluZyBzdWJzdGl0dXRlKFN1YnN0aXR1dGlv
+biBzdWJzdGl0dXRpb24sIFR5cGVCaW5kaW5nIG9yaWdpbmFsVHlwZSwgaW50IGxldmVsKSB7CiAJ
+CWlmIChvcmlnaW5hbFR5cGUgPT0gbnVsbCkgcmV0dXJuIG51bGw7CiAJCXN3aXRjaCAob3JpZ2lu
+YWxUeXBlLmtpbmQoKSkgewogCkBAIC0zNzMsMTIgKzM3NiwxMiBAQAogCQkJCVJlZmVyZW5jZUJp
+bmRpbmcgb3JpZ2luYWxFbmNsb3NpbmcgPSBvcmlnaW5hbFR5cGUuZW5jbG9zaW5nVHlwZSgpOwog
+CQkJCVJlZmVyZW5jZUJpbmRpbmcgc3Vic3RpdHV0ZWRFbmNsb3NpbmcgPSBvcmlnaW5hbEVuY2xv
+c2luZzsKIAkJCQlpZiAob3JpZ2luYWxFbmNsb3NpbmcgIT0gbnVsbCkgewotCQkJCQlzdWJzdGl0
+dXRlZEVuY2xvc2luZyA9IChSZWZlcmVuY2VCaW5kaW5nKSBzdWJzdGl0dXRlKHN1YnN0aXR1dGlv
+biwgb3JpZ2luYWxFbmNsb3NpbmcpOworCQkJCQlzdWJzdGl0dXRlZEVuY2xvc2luZyA9IChSZWZl
+cmVuY2VCaW5kaW5nKSBzdWJzdGl0dXRlKHN1YnN0aXR1dGlvbiwgb3JpZ2luYWxFbmNsb3Npbmcs
+IGxldmVsKzEpOwogCQkJCX0KIAkJCQlUeXBlQmluZGluZ1tdIG9yaWdpbmFsQXJndW1lbnRzID0g
+b3JpZ2luYWxQYXJhbWV0ZXJpemVkVHlwZS5hcmd1bWVudHM7CiAJCQkJVHlwZUJpbmRpbmdbXSBz
+dWJzdGl0dXRlZEFyZ3VtZW50cyA9IG9yaWdpbmFsQXJndW1lbnRzOwogCQkJCWlmIChvcmlnaW5h
+bEFyZ3VtZW50cyAhPSBudWxsKSB7Ci0JCQkJCWlmIChzdWJzdGl0dXRpb24uaXNSYXdTdWJzdGl0
+dXRpb24oKSkgeworCQkJCQlpZiAoc3Vic3RpdHV0aW9uLmlzUmF3U3Vic3RpdHV0aW9uKGxldmVs
+KSkgewogCQkJCQkJcmV0dXJuIG9yaWdpbmFsUGFyYW1ldGVyaXplZFR5cGUuZW52aXJvbm1lbnQu
+Y3JlYXRlUmF3VHlwZShvcmlnaW5hbFBhcmFtZXRlcml6ZWRUeXBlLmdlbmVyaWNUeXBlKCksIHN1
+YnN0aXR1dGVkRW5jbG9zaW5nKTsKIAkJCQkJfQogCQkJCQlzdWJzdGl0dXRlZEFyZ3VtZW50cyA9
+IHN1YnN0aXR1dGUoc3Vic3RpdHV0aW9uLCBvcmlnaW5hbEFyZ3VtZW50cyk7CkBAIC0zOTIsNyAr
+Mzk1LDcgQEAKIAkJCWNhc2UgQmluZGluZy5BUlJBWV9UWVBFOgogCQkJCUFycmF5QmluZGluZyBv
+cmlnaW5hbEFycmF5VHlwZSA9IChBcnJheUJpbmRpbmcpIG9yaWdpbmFsVHlwZTsKIAkJCQlUeXBl
+QmluZGluZyBvcmlnaW5hbExlYWZDb21wb25lbnRUeXBlID0gb3JpZ2luYWxBcnJheVR5cGUubGVh
+ZkNvbXBvbmVudFR5cGU7Ci0JCQkJVHlwZUJpbmRpbmcgc3Vic3RpdHV0ZSA9IHN1YnN0aXR1dGUo
+c3Vic3RpdHV0aW9uLCBvcmlnaW5hbExlYWZDb21wb25lbnRUeXBlKTsgLy8gc3Vic3RpdHV0ZSBj
+b3VsZCBpdHNlbGYgYmUgYXJyYXkgdHlwZQorCQkJCVR5cGVCaW5kaW5nIHN1YnN0aXR1dGUgPSBz
+dWJzdGl0dXRlKHN1YnN0aXR1dGlvbiwgb3JpZ2luYWxMZWFmQ29tcG9uZW50VHlwZSwgbGV2ZWwp
+OyAvLyBzdWJzdGl0dXRlIGNvdWxkIGl0c2VsZiBiZSBhcnJheSB0eXBlCiAJCQkJaWYgKHN1YnN0
+aXR1dGUgIT0gb3JpZ2luYWxMZWFmQ29tcG9uZW50VHlwZSkgewogCQkJCQlyZXR1cm4gb3JpZ2lu
+YWxBcnJheVR5cGUuZW52aXJvbm1lbnQuY3JlYXRlQXJyYXlUeXBlKHN1YnN0aXR1dGUubGVhZkNv
+bXBvbmVudFR5cGUoKSwgc3Vic3RpdHV0ZS5kaW1lbnNpb25zKCkgKyBvcmlnaW5hbFR5cGUuZGlt
+ZW5zaW9ucygpKTsKIAkJCQl9CkBAIC00MDMsNyArNDA2LDcgQEAKIAkJICAgICAgICBXaWxkY2Fy
+ZEJpbmRpbmcgd2lsZGNhcmQgPSAoV2lsZGNhcmRCaW5kaW5nKSBvcmlnaW5hbFR5cGU7CiAJCSAg
+ICAgICAgaWYgKHdpbGRjYXJkLmJvdW5kS2luZCAhPSBXaWxkY2FyZC5VTkJPVU5EKSB7CiAJCQkg
+ICAgICAgIFR5cGVCaW5kaW5nIG9yaWdpbmFsQm91bmQgPSB3aWxkY2FyZC5ib3VuZDsKLQkJCSAg
+ICAgICAgVHlwZUJpbmRpbmcgc3Vic3RpdHV0ZWRCb3VuZCA9IHN1YnN0aXR1dGUoc3Vic3RpdHV0
+aW9uLCBvcmlnaW5hbEJvdW5kKTsKKwkJCSAgICAgICAgVHlwZUJpbmRpbmcgc3Vic3RpdHV0ZWRC
+b3VuZCA9IHN1YnN0aXR1dGUoc3Vic3RpdHV0aW9uLCBvcmlnaW5hbEJvdW5kLCBsZXZlbCk7CiAJ
+CQkgICAgICAgIFR5cGVCaW5kaW5nW10gb3JpZ2luYWxPdGhlckJvdW5kcyA9IHdpbGRjYXJkLm90
+aGVyQm91bmRzOwogCQkJICAgICAgICBUeXBlQmluZGluZ1tdIHN1YnN0aXR1dGVkT3RoZXJCb3Vu
+ZHMgPSBzdWJzdGl0dXRlKHN1YnN0aXR1dGlvbiwgb3JpZ2luYWxPdGhlckJvdW5kcyk7CiAJCQkg
+ICAgICAgIGlmIChzdWJzdGl0dXRlZEJvdW5kICE9IG9yaWdpbmFsQm91bmQgfHwgb3JpZ2luYWxP
+dGhlckJvdW5kcyAhPSBzdWJzdGl0dXRlZE90aGVyQm91bmRzKSB7CkBAIC00MzYsMTIgKzQzOSwx
+MiBAQAogCQkJCW9yaWdpbmFsRW5jbG9zaW5nID0gb3JpZ2luYWxUeXBlLmVuY2xvc2luZ1R5cGUo
+KTsKIAkJCQlzdWJzdGl0dXRlZEVuY2xvc2luZyA9IG9yaWdpbmFsRW5jbG9zaW5nOwogCQkJCWlm
+IChvcmlnaW5hbEVuY2xvc2luZyAhPSBudWxsKSB7Ci0JCQkJCXN1YnN0aXR1dGVkRW5jbG9zaW5n
+ID0gKFJlZmVyZW5jZUJpbmRpbmcpIHN1YnN0aXR1dGUoc3Vic3RpdHV0aW9uLCBvcmlnaW5hbEVu
+Y2xvc2luZyk7CisJCQkJCXN1YnN0aXR1dGVkRW5jbG9zaW5nID0gKFJlZmVyZW5jZUJpbmRpbmcp
+IHN1YnN0aXR1dGUoc3Vic3RpdHV0aW9uLCBvcmlnaW5hbEVuY2xvc2luZywgbGV2ZWwrMSk7CiAJ
+CQkJfQogCiAJCQkgICAgLy8gdHJlYXQgYXMgaWYgcGFyYW1ldGVyaXplZCB3aXRoIGl0cyB0eXBl
+IHZhcmlhYmxlcyAobm9uIGdlbmVyaWMgdHlwZSBnZXRzICdudWxsJyBhcmd1bWVudHMpCiAJCQkJ
+aWYgKHN1YnN0aXR1dGVkRW5jbG9zaW5nICE9IG9yaWdpbmFsRW5jbG9zaW5nKSB7Ci0JCQkJCXJl
+dHVybiBzdWJzdGl0dXRpb24uaXNSYXdTdWJzdGl0dXRpb24oKQorCQkJCQlyZXR1cm4gc3Vic3Rp
+dHV0aW9uLmlzUmF3U3Vic3RpdHV0aW9uKGxldmVsKQogCQkJCQkJPyBzdWJzdGl0dXRpb24uZW52
+aXJvbm1lbnQoKS5jcmVhdGVSYXdUeXBlKG9yaWdpbmFsUmVmZXJlbmNlVHlwZSwgc3Vic3RpdHV0
+ZWRFbmNsb3NpbmcpCiAJCQkJCQk6ICBzdWJzdGl0dXRpb24uZW52aXJvbm1lbnQoKS5jcmVhdGVQ
+YXJhbWV0ZXJpemVkVHlwZShvcmlnaW5hbFJlZmVyZW5jZVR5cGUsIG51bGwsIHN1YnN0aXR1dGVk
+RW5jbG9zaW5nKTsKIAkJCQl9CkBAIC00NTEsMTAgKzQ1NCwxMCBAQAogCQkJCW9yaWdpbmFsRW5j
+bG9zaW5nID0gb3JpZ2luYWxUeXBlLmVuY2xvc2luZ1R5cGUoKTsKIAkJCQlzdWJzdGl0dXRlZEVu
+Y2xvc2luZyA9IG9yaWdpbmFsRW5jbG9zaW5nOwogCQkJCWlmIChvcmlnaW5hbEVuY2xvc2luZyAh
+PSBudWxsKSB7Ci0JCQkJCXN1YnN0aXR1dGVkRW5jbG9zaW5nID0gKFJlZmVyZW5jZUJpbmRpbmcp
+IHN1YnN0aXR1dGUoc3Vic3RpdHV0aW9uLCBvcmlnaW5hbEVuY2xvc2luZyk7CisJCQkJCXN1YnN0
+aXR1dGVkRW5jbG9zaW5nID0gKFJlZmVyZW5jZUJpbmRpbmcpIHN1YnN0aXR1dGUoc3Vic3RpdHV0
+aW9uLCBvcmlnaW5hbEVuY2xvc2luZywgbGV2ZWwrMSk7CiAJCQkJfQogCi0JCQkJaWYgKHN1YnN0
+aXR1dGlvbi5pc1Jhd1N1YnN0aXR1dGlvbigpKSB7CisJCQkJaWYgKHN1YnN0aXR1dGlvbi5pc1Jh
+d1N1YnN0aXR1dGlvbihsZXZlbCkpIHsKIAkJCQkJcmV0dXJuIHN1YnN0aXR1dGlvbi5lbnZpcm9u
+bWVudCgpLmNyZWF0ZVJhd1R5cGUob3JpZ2luYWxSZWZlcmVuY2VUeXBlLCBzdWJzdGl0dXRlZEVu
+Y2xvc2luZyk7CiAJCQkJfQogCQkJICAgIC8vIHRyZWF0IGFzIGlmIHBhcmFtZXRlcml6ZWQgd2l0
+aCBpdHMgdHlwZSB2YXJpYWJsZXMgKG5vbiBnZW5lcmljIHR5cGUgZ2V0cyAnbnVsbCcgYXJndW1l
+bnRzKQpAQCAtNDI3MCw3ICs0MjczLDcgQEAKIAkJCQkJcHVibGljIExvb2t1cEVudmlyb25tZW50
+IGVudmlyb25tZW50KCkgewogCQkJCQkJcmV0dXJuIHNjb3BlLmVudmlyb25tZW50KCk7CiAJCQkJ
+CX0KLQkJCQkJcHVibGljIGJvb2xlYW4gaXNSYXdTdWJzdGl0dXRpb24oKSB7CisJCQkJCXB1Ymxp
+YyBib29sZWFuIGlzUmF3U3Vic3RpdHV0aW9uKGludCBsZXZlbCkgewogCQkJCQkJcmV0dXJuIGZh
+bHNlOwogCQkJCQl9CiAJCQkJCXB1YmxpYyBUeXBlQmluZGluZyBzdWJzdGl0dXRlKFR5cGVWYXJp
+YWJsZUJpbmRpbmcgdHlwZVZhcmlhYmxlKSB7CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1N1
+YnN0aXR1dGlvbi5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlw
+c2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9TdWJzdGl0dXRpb24uamF2YQppbmRleCBi
+ZGQ3Y2I5Li5iMjM4MTZlIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxl
+ci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1N1YnN0aXR1dGlvbi5q
+YXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9p
+bnRlcm5hbC9jb21waWxlci9sb29rdXAvU3Vic3RpdHV0aW9uLmphdmEKQEAgLTI4LDYgKzI4LDcg
+QEAKIAogCS8qKgogCSAqIFJldHVybnMgdHJ1ZSBmb3IgcmF3IHN1YnN0aXR1dGlvbgorCSAqIEBw
+YXJhbSBsZXZlbCAwIG1lYW5zIHRvIGNoZWNrIHRoZSBjdXJyZW50IGVsZW1lbnQsIDEgaXRzIGVu
+Y2xvc2luZyBldGMuCiAJICovCi0JYm9vbGVhbiBpc1Jhd1N1YnN0aXR1dGlvbigpOworCWJvb2xl
+YW4gaXNSYXdTdWJzdGl0dXRpb24oaW50IGxldmVsKTsKIH0=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

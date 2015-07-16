@@ -1,0 +1,416 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>424728</bug_id>
+          
+          <creation_ts>2013-12-29 08:33:00 -0500</creation_ts>
+          <short_desc>[1.8][null] Unexpected error: The nullness annotation &apos;XXXX&apos; is not applicable at this location</short_desc>
+          <delta_ts>2014-03-07 07:23:20 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Frits Jalvingh">jal</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>chris</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2345118</commentid>
+    <comment_count>0</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2013-12-29 08:33:50 -0500</bug_when>
+    <thetext>Using the JAVA8 preview to compile a large code base. Preview version is 1.0.0v20131229-0103_BETA_JAVA8.
+
+The compiler reports errors like: &quot;The nullness annotation &apos;Nullable&apos; is not applicable at this location&quot; for parameter definitions that have a type specified as a qualified path (not a SimpleName). For instance, the error is reported on:
+
+public QualificationLookupInput(@Nullable Qualification qualificationProperty, @Nullable java.util.Date checkDate) {
+(second parameter). Removing the java.util resolves the problem.
+
+Other examples:
+public void renderNodeContent(@Nonnull NodeBase component, @Nonnull NodeContainer node, final @Nullable OldHelpManager.Entry object, @Nullable Object parameters) throws Exception {
+(third parameter, with Entry being an inner class)
+
+@Nonnull
+public java.security.cert.Certificate[] getCertificateChain() {
+(return value)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2345385</commentid>
+    <comment_count>1</comment_count>
+    <who name="Chris Hubick">chris</who>
+    <bug_when>2014-01-02 03:10:49 -0500</bug_when>
+    <thetext>I am also experiencing this bug, though mainly via any inner-class references qualified with a period.
+
+This makes the JAVA8 preview largely useless on my code :(</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2345394</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-02 06:35:55 -0500</bug_when>
+    <thetext>Thanks for trying the Java8 preview.
+
+I apologize for not having a migration guide ready; what you are seeing is a consequence of changing null annotations from declaration annotations (SE5) to type annotations (SE8, see JSR 308).
+
+Now that these annotations can be applied to more program nodes, the syntax has changed in a few cases to avoid ambiguities.
+
+Instead of
+  @Nullable java.util.Date checkDate
+  final @Nullable OldHelpManager.Entry object
+please write
+  java.util.@Nullable Date checkDate
+  final OldHelpManager.@Nullable Entry object
+
+The second example shows: syntactically the @Nullable annotation could apply to either OldHelpManager or to Entry. Since the outer instance is always non-null (for non-static inner classes), adding a null annotation at this location is meaningless at best.
+
+The other change concerns arrays; an array of non-null strings was previously written as:
+  @NonNull String[] args
+with JSR 308 please say:
+  String @NonNull[] args
+
+Which changes this:
+  @Nonnull public java.security.cert.Certificate[] getCertificateChain()
+into this:
+  public java.security.cert.Certificate @Nonnull[] getCertificateChain()</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2345400</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-02 06:51:08 -0500</bug_when>
+    <thetext>See also bug 424802.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2345537</commentid>
+    <comment_count>4</comment_count>
+    <who name="Chris Hubick">chris</who>
+    <bug_when>2014-01-02 18:06:22 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #2)
+&gt; Now that these annotations can be applied to more program nodes, the syntax
+&gt; has changed in a few cases to avoid ambiguities.
+
+That was most helpful, thank you!
+
+I now get &quot;Annotation types that do not specify explicit target element types cannot be applied here&quot; using javax.annotation.Nullable (com.google.code.findbugs:jsr305:2.0.3), as it doesn&apos;t specify @Target({ FIELD, METHOD, PARAMETER, LOCAL_VARIABLE }) like org.eclipse.jdt.annotation.Nullable does.
+
+Barring FindBugs adding @Target to jsr305.jar, adding IDE-specific annotations is pretty much a non-starter for me (even if show-stopper bug 366298 were fixed), as I believe tying code/analysis to a specific environment is Just Wrong, and would also be akin to starting an &quot;Officially Supported IDE&quot; war on our dev team (and then we&apos;d probably all end up having to annotate all code using *both* Eclipse and IntelliJ annotations on every parameter lol).
+
+Has Oracle still not revived JSR-305 and just considers all of this out of scope?  Is there somewhere I can look for advice here?  Eclipse just considers this out of scope as well?
+
+At this point, being that we&apos;re talking compile-time only, I&apos;m half tempted to just try using com.sun.istack.internal.Nullable and friends (if only I could put something in my pom.xml to have M2E shut off the warnings).
+
+Thanks :(</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2345540</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-02 18:46:36 -0500</bug_when>
+    <thetext>(In reply to Chris Hubick from comment #4)
+&gt; I now get &quot;Annotation types that do not specify explicit target element
+&gt; types cannot be applied here&quot; using javax.annotation.Nullable
+&gt; (com.google.code.findbugs:jsr305:2.0.3), as it doesn&apos;t specify @Target({
+&gt; FIELD, METHOD, PARAMETER, LOCAL_VARIABLE }) like
+&gt; org.eclipse.jdt.annotation.Nullable does.
+
+I&apos;m sorry to hear this, I didn&apos;t know those annotations are *so* poorly defined.
+
+&gt; Barring FindBugs adding @Target to jsr305.jar, adding IDE-specific
+&gt; annotations is pretty much a non-starter for me (even if show-stopper bug
+&gt; 366298 were fixed),
+
+Bug 366298 is actually on my agenda for fixing soonish.
+
+Note, that nothing except the name space is IDE specific in org.eclipse.jdt.annotation.
+
+For an overview of existing null annotations see http://types.cs.washington.edu/checker-framework/current/checkers-manual.html#nullness-related-work
+ 
+&gt; Has Oracle still not revived JSR-305 and just considers all of this out of
+&gt; scope?  Is there somewhere I can look for advice here?
+
+JSR-305 is dormant, as in: dead. I haven&apos;t met anybody who is willing to put some years of his lifetime into reviving and finishing JSR 305.
+
+&gt; Eclipse just considers this out of scope as well?
+
+Eclipse is not a standardization organization. What do you want us to do?
+
+If maven integration is the blocker, please stay tuned on bug 366298 and all should be well, eventually.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2345548</commentid>
+    <comment_count>6</comment_count>
+    <who name="Chris Hubick">chris</who>
+    <bug_when>2014-01-02 20:01:29 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #5)
+&gt; I&apos;m sorry to hear this, I didn&apos;t know those annotations are *so* poorly
+&gt; defined.
+
+I have filed a bug here: http://code.google.com/p/jsr-305/issues/detail?id=25
+
+Maybe I can appeal to someone&apos;s pragmatic side :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2345559</commentid>
+    <comment_count>7</comment_count>
+    <who name="Chris Hubick">chris</who>
+    <bug_when>2014-01-03 00:09:33 -0500</bug_when>
+    <thetext>(In reply to Chris Hubick from comment #4)
+&gt; I now get &quot;Annotation types that do not specify explicit target element
+&gt; types cannot be applied here&quot; using javax.annotation.Nullable
+&gt; (com.google.code.findbugs:jsr305:2.0.3), as it doesn&apos;t specify @Target({
+&gt; FIELD, METHOD, PARAMETER, LOCAL_VARIABLE }) like
+&gt; org.eclipse.jdt.annotation.Nullable does.
+
+I just tried to actually use the Sun com.sun.istack.internal.Nullable annotation on the Luna M4+Java8 preview release I&apos;m using, but it gave me &quot;The annotation @Nullable is disallowed for this location&quot;.
+
+That Sun annotation has the same @Target value I thought the JDT used (as quoted above), but I had grabbed that value from http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/tree/org.eclipse.jdt.annotation/src/org/eclipse/jdt/annotation/Nullable.java (naively thinking &apos;master&apos; was showing me the latest), but on my preview build it actually has the value @Target({ TYPE_USE }), which is apparently what&apos;s actually required for a null annotation to work without errors in this case.
+
+So, that knocks out the possibility of using Sun&apos;s annotation, and since TYPE_USE is new in 1.8, that means the JSR-305 request I filed won&apos;t be something they can easily add in there either :(</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2365941</commentid>
+    <comment_count>8</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-02-20 06:36:16 -0500</bug_when>
+    <thetext>I looked with some horror at the Java 8 specs for these annotations, and I understand at least that the code needs to change for Java 8.
+
+But I also have errors like this when I use the beta compiler (feb 1 refresh) in 1.7 mode. That is: the compiler in 1.7 mode is not compatible with the Kepler compiler in 1.7 mode. This makes migrating to Luna difficult since we have to patch the entire code base to get it to compile with Luna. We had a similar problem with Kepler, where the field nullity annotations started to work without an option to disable them. We&apos;re still fixing all that (and because of this we still use Juno 8-/).
+
+Specifically, I get the error:
+The nullness annotation &apos;Nonnull&apos; is not applicable at this location
+
+for things like
+public ComplaintPortalMappingHelper(@Nonnull DecisionTree.Node node, @Nullable NpoComplaintMapping mapping) {
+
+and
+@Nonnull
+final java.security.cert.Certificate[] m_certificateChain;
+
+It would be great if the Luna compiler in 1.7 mode would behave as the Kepler one in this respect? Or at least if a switch/parameter was possible to enable that? Or to give a warning instead of an error on this usage in 1.7 mode?
+
+As for the lack of accepting/fixing JSR305 - I am, for years now, amazed at the utter lack of any modernization of Java anyway...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2365956</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-20 07:05:43 -0500</bug_when>
+    <thetext>(In reply to Frits Jalvingh from comment #8)
+&gt; It would be great if the Luna compiler in 1.7 mode would behave as the
+&gt; Kepler one in this respect? Or at least if a switch/parameter was possible
+&gt; to enable that? Or to give a warning instead of an error on this usage in
+&gt; 1.7 mode?
+
+
+This should work but requires that you carefully configure your project to use org.eclipse.jdt.annotation_1.1.x for 1.5 annotations. It&apos;s the annotation library that decides whether you use declaration annotations (1.7-) or type annotations (1.8+).
+
+We&apos;re currently working on improving the handling of the annotation bundle for projects with different compliance levels. There&apos;s a specific problem with the installation process that causes failure to install one version of the annotation bundle (should install 1.1.x *and* 2.0.0).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2365980</commentid>
+    <comment_count>10</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-02-20 08:02:46 -0500</bug_when>
+    <thetext>I&apos;m not using the Eclipse annotations but the JSR305 ones, and have them configured as a project inside the workspace - so it&apos;s not a jar.
+Considering that it is syntactically impossible to &quot;fix&quot; the annotations for 1.7 I am wondering whether that approach of letting the &quot;annotations library&quot; decide on 1.8 or 1.7 mode is a proper one?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366039</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-20 09:08:45 -0500</bug_when>
+    <thetext>(In reply to Frits Jalvingh from comment #10)
+&gt; I&apos;m not using the Eclipse annotations but the JSR305 ones, and have them
+&gt; configured as a project inside the workspace - so it&apos;s not a jar.
+&gt; Considering that it is syntactically impossible to &quot;fix&quot; the annotations for
+&gt; 1.7 I am wondering whether that approach of letting the &quot;annotations
+&gt; library&quot; decide on 1.8 or 1.7 mode is a proper one?
+
+It&apos;s the only approach :)
+
+The annotations declare their Target, if it lists FIELD,METHOD,PARAMETER,LOCAL_VARIABLE, then it&apos;s a declaration annotation, if it lists TYPE_USE,TYPE_PARAMETER then it&apos;s a type annotation.
+
+Considering you&apos;re using the findbugs annotations (which claim to be specified by a JSR, which, however, never delivered) and considering the rumours that these annotations don&apos;t specify their Target, could you please try using those from org.eclipse.jdt.annotation_1.1.0? 
+If the problem persists, then we have a bug in the compiler. 
+Otherwise the bug is in the annotations you use, and we could only consider adding some extra safety for handling underspecified annotations.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366099</commentid>
+    <comment_count>12</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-02-20 10:29:28 -0500</bug_when>
+    <thetext>Well, the &quot;only&quot; way? The compiler knows it runs in -source 1.7, so it should be able to adapt it&apos;s behavior regardless of how the annotations are defined. It can raise that error in -source 1.8 mode but should not raise it in 1.7 mode.
+
+Indeed jsr305 is not accepted, nor are any other proposals for these kinds of annotations - neither Eclipse&apos;s ones, nor Intellij Idea&apos;s ones. So any project needs to &quot;pick&quot; a solution and configure the IDE/Compiler/checker to use that. So whether jsr305 was accepted or not seems moot?
+
+The JSR305 ones are defined without target indeed: they read:
+
+@Documented
+@TypeQualifier
+@Retention(RetentionPolicy.RUNTIME)
+public @interface Nonnull {
+    When when() default When.ALWAYS;
+
+    static class Checker implements TypeQualifierValidator&lt;Nonnull&gt; {
+
+        public When forConstantValue(Nonnull qualifierqualifierArgument,
+                Object value) {
+            if (value == null)
+                return When.NEVER;
+            return When.ALWAYS;
+        }
+    }
+}
+
+I included the Eclipse jar you mentioned (./plugins/org.eclipse.jdt.annotation_1.1.0.v20140129-1625.jar). This jar defines the NonNull annotation as:
+
+@Documented
+@Retention(RetentionPolicy.CLASS)
+@Target({ FIELD, METHOD, PARAMETER, LOCAL_VARIABLE })
+public @interface NonNull {
+	// marker annotation with no members
+}
+
+but using that @NonNull annotation instead of the jsr305 annotation causes the same error message for the examples given.
+
+By itself, if I can &quot;fix&quot; those JSR305 annotations by including a proper 1.5 target as you described and have it work correctly that is a workaround I can live with.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366196</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-20 12:20:36 -0500</bug_when>
+    <thetext>I can see now, that our compiler applies one specific 1.8-related check also for declaration annotations. I thought the configuration of 1.7 project and o.e.j.annotation_1.1.0 didn&apos;t show this behavior, but it does. 
+
+This is a bug to be fixed immediately :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366209</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-20 12:44:51 -0500</bug_when>
+    <thetext>I have a (trivial) fix, tests are running, so I have the time for some explanations.
+
+First: thanks for insisting, I was lazily sticking to my initial understanding without own testing.
+
+
+(In reply to Frits Jalvingh from comment #12)
+&gt; Well, the &quot;only&quot; way? The compiler knows it runs in -source 1.7, so it
+&gt; should be able to adapt it&apos;s behavior regardless of how the annotations are
+&gt; defined. It can raise that error in -source 1.8 mode but should not raise it
+&gt; in 1.7 mode.
+
+The primary distinction is not the compiler mode, the distinction must be made according to the kind of annotation. Type annotations have different rules than declaration annotations. Annotations without a @Target don&apos;t even tell you by which rules they should be handled. 
+Even at -source 1.8 should we be able to handle declaration annotations (we&apos;re not quite done with such mixed scenarii, though). 
+OTOH, type annotations are illegal in 1.7 to begin with.
+ 
+&gt; Indeed jsr305 is not accepted, nor are any other proposals for these kinds
+&gt; of annotations - neither Eclipse&apos;s ones, nor Intellij Idea&apos;s ones. So any
+&gt; project needs to &quot;pick&quot; a solution and configure the IDE/Compiler/checker to
+&gt; use that. So whether jsr305 was accepted or not seems moot?
+
+My major concern is not about which was accepted by which committee but about the name. &quot;JSR 305&quot; (and the namespace javax.annotation) assumes authority, that has simply never been established. That&apos;s why I rather say &quot;findbugs anntations&quot; and ask everybody else to follow this example.
+I could continue ranting about the bogus semantics of findbugs&apos; distinction between @Nullable and @CheckForNull, but let me not get carried away :)
+ 
+&gt; but using that @NonNull annotation instead of the jsr305 annotation causes
+&gt; the same error message for the examples given.
+
+that&apos;s the problem I &apos;refused&apos; to see, previously. Patch is ready to go as we speak (though, it&apos;s too late for tomorrows RC).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366229</commentid>
+    <comment_count>15</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-02-20 13:12:39 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #14)
+&gt; First: thanks for insisting, I was lazily sticking to my initial
+&gt; understanding without own testing.
+Thank you for making Eclipse so much better ;-) and my insistence is caused by us really using what you created!
+
+Feel free to skip the following remarks to your explanation if you want ;-)
+
+&gt; The primary distinction is not the compiler mode, the distinction must be
+&gt; made according to the kind of annotation. Type annotations have different
+&gt; rules than declaration annotations. 
+Yes, I understand (that type annotations have different rules). But -source &lt; 1.8 does not have type annotations at all- so in that case the simpler &quot;declarations&quot; annotations are the only ones possible. So the /distinction/ between the two types of annotations only applies to code compiled with -source 1.8?
+
+&gt; Annotations without a @Target don&apos;t even tell you by which rules they should
+&gt; be handled.
+True, but the Kepler compiler accepts those as valid for all targets, and does not produce errors. Of course that might be questionable too (although target is a restriction, not a permission); but changing that behavior means that large code bases that &quot;do it wrong&quot; that way suddenly no longer compile - and that is my problem here ;-)
+
+&gt; My major concern is not about which was accepted by which committee but
+&gt; about the name. &quot;JSR 305&quot;
+Point taken...
+
+&gt; Patch is ready to go as we speak (though, it&apos;s too late for tomorrows RC).
+Well, I will just wait till I can get my hands on the fix somehow ;)
+
+Thanks again for fixing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367216</commentid>
+    <comment_count>16</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-22 10:54:15 -0500</bug_when>
+    <thetext>Test &amp; fix have been released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=1b64b56ccf1417b4beca7bed7d97dae59a8cc803</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372952</commentid>
+    <comment_count>17</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-03-07 06:29:34 -0500</bug_when>
+    <thetext>Test Case Picked Up from commit:
+
+import org.eclipse.jdt.annotation.NonNull;
+
+public class X {
+  public @NonNull java.lang.String test(@NonNull java.lang.String arg) {
+	@NonNull java.lang.String local = arg;
+	return local;
+  }
+}
+
+Errors shown using compliance level 1.8 and org.eclipse.jdt.annotation_2.0.0.v20140213-0613.jar
+
+Errors not shown using compliance level 1.7 and 
+org.eclipse.jdt.annotation_1.1.0.v20140129-1625.jar
+
+Errors shown for compliance level 1.5 - 1.7 without the fix.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372953</commentid>
+    <comment_count>18</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-03-07 06:29:57 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC2 using Kepler SR2 +   
+Eclipse Java Development Tools Patch for Java 8 Support (BETA) 
+1.0.0.v20140306-1935</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

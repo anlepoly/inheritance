@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>418347</bug_id>
+          
+          <creation_ts>2013-09-30 10:43:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler] Type annotations from SE7 locations not handled properly during code generation.</short_desc>
+          <delta_ts>2013-10-02 06:33:18 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>287648</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>markus_keller</cc>
+    
+    <cc>noopur_gupta</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2312586</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-09-30 10:43:55 -0400</bug_when>
+    <thetext>BETA_JAVA8:
+
+// ---
+class Outer&lt;K&gt;  {
+	class Inner&lt;P&gt; {
+	}
+	public @T(1) Outer&lt;@T(2) String&gt;.@T(3) Inner&lt;@T(4) Integer&gt; @T(5) [] omi @T(6) [];
+}
+@java.lang.annotation.Target (java.lang.annotation.ElementType.TYPE_USE)
+@interface T {
+	int value();
+}
+// --
+
+Given the above, ECJ generates only 5 annotations. There should be 6. The one
+with the type path: FIELD, location=[ARRAY, ARRAY, INNER_TYPE] is absconding.
+
+AST and bindings look correct. 
+
+While debugging, you may notice that the extended dimensions would appear ahead 
+of the base dimension. This is the right behavior. See bug 418096.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2312591</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-09-30 10:46:55 -0400</bug_when>
+    <thetext>Andy, please take a look, TIA.
+
+In STB#resolveTypesFor(FieldBuilding) if you break at the call to
+Annotation.isTypeUseCompatible and look at field.type you can see that
+the binding reflects all the annotations, which should mean AST has all
+the annotations too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2312920</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-01 07:00:09 -0400</bug_when>
+    <thetext>It looks like all 6 annotations make it to class file, but javap shows only
+5. I&apos;ll investigate whether this a bug in javac or in the way we emit. TypeAnnotationWalker does not like the annotations either.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2312934</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-01 07:58:14 -0400</bug_when>
+    <thetext>*** Bug 409246 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2313070</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-01 12:07:42 -0400</bug_when>
+    <thetext>Found a bunch of issues while working on this: 
+
+(1) 
+// -- for 
+import java.lang.annotation.*;
+import static java.lang.annotation.ElementType.*;
+
+@Target({TYPE_USE}) @interface P { }
+@Target({TYPE_USE}) @interface O { }
+@Target({TYPE_USE}) @interface I { }
+
+public abstract class X&lt;T&gt; {
+	class Y&lt;Q&gt; {
+	}
+	void foo(@P Y&lt;P&gt; p) {}
+}
+
+We don&apos;t generate the INNER path entry.
+
+(2) In
+
+// --
+import java.lang.annotation.*;
+import static java.lang.annotation.ElementType.*;
+
+@Target({TYPE_USE}) @interface P { }
+@Target({TYPE_USE}) @interface O { }
+@Target({TYPE_USE}) @interface I { }
+
+public abstract class X {
+	class Y {
+		class Z {}
+	}
+	void foo(@P X.@O Y.@I Z[] p) {}
+}
+
+We attribute both @O and @I to Z.
+
+I&apos;ll include fixes for these. I also took this opportunity to cleanup
+several issues in the relevant portions of code.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2313086</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-01 12:44:09 -0400</bug_when>
+    <thetext>(3) We generate bad attributes for
+
+// --
+public abstract class X {
+	java.util.List [][] l = new java.util.ArrayList @pkg.NonNull [0] @pkg.NonNull[];     
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2313326</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-02 06:33:18 -0400</bug_when>
+    <thetext>Fixed via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=e1bb62a6f97249ff77a2f0164d289109644f1d09
+
+Tests added here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=f0f1d42036089cdc450ad38e200db5fad2a1d087
+
+I refactored the class LocationCollector significantly to promote reuse,
+take advantage of inheritance etc.
+
+Looking at the classes involved in code generation of type annotations, there
+is much more opportunities for clean up and restructuring. I think the 
+classes AnnotationContext, AnnotationCollector and LocationCollector should
+all be folded into one: AnnotationContext. In particular, making one AST traversal
+to discover annotations and another to compute their path entries is wasteful.
+This is a project for another day through: https://bugs.eclipse.org/bugs/show_bug.cgi?id=418490
+
+
+This fixes bug 404719 too.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

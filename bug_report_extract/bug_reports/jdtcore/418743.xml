@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>418743</bug_id>
+          
+          <creation_ts>2013-10-05 13:36:00 -0400</creation_ts>
+          <short_desc>[1.8][null] contradictory annotations on invocation of generic method not reported</short_desc>
+          <delta_ts>2014-03-07 00:22:00 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>noopur_gupta</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2314675</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-05 13:36:29 -0400</bug_when>
+    <thetext>NullTypeAnnotationTest.testWildcardCapture3() shows an example where
+a @Nullable type is successfully passed to a @NonNull parameter.
+
+The expected type has contradictory annotations and I think we look
+at @Nullable first and allow it to pass through.
+
+I think it may in general be a good idea to check for @NonNull first
+since violating it unsafe.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2314676</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-05 13:36:54 -0400</bug_when>
+    <thetext>Stephan, please take a look, TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2314695</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-10-05 15:19:59 -0400</bug_when>
+    <thetext>To make sure we&apos;re on the same page here:
+You&apos;re referring to 
+   getAdd(lx)
+expected type: List&lt;&lt;@NonNull @Nullable capture#&gt;&gt;
+provided type: List&lt;&lt;@Nullable capture# extends X&gt;&gt;
+
+Right?
+
+
+I see:
+- NullAnnotationMatching.analyse() computes
+    requiredBits = validNullTagBits(requiredType.tagBits)
+  which in case of contradicting bits yield 0, i.e., unknown nullness.
+- assigning List&lt;&lt;capture#&gt;&gt; from List&lt;&lt;@Nullable capture# extends&gt;&gt; is OK
+  (except for the extra pair of brackets in toString() output).
+
+I don&apos;t see any reason to change that part, because ignoring both annotations in case of a contradiction is the preferred way to avoid secondary errors. Am I missing anything?
+
+But we have a bug in terms of not reporting contradicting annotations in this case. This problem is caused by inability to report errors during substitute(). In this particular case the contridactory type is created from PGMB.substitute().
+
+This should be investigated together with bug 416190.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2314715</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-05 20:51:01 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #2)
+
+&gt;   (except for the extra pair of brackets in toString() output).
+
+I have fixed this in my branch, will make it to the repository later today.
+
+&gt; But we have a bug in terms of not reporting contradicting annotations in
+&gt; this case. This problem is caused by inability to report errors during
+&gt; substitute(). In this particular case the contridactory type is created from
+&gt; PGMB.substitute().
+&gt; 
+&gt; This should be investigated together with bug 416190.
+
+Sounds good.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2368409</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-25 12:18:14 -0500</bug_when>
+    <thetext>Test case without wildcard:
+
+//---
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
+
+public class Generics {
+	&lt;X&gt; X m(@Nullable X a) { return null; }
+	void test(@NonNull String in) {
+		@NonNull String s = m(in);
+		System.out.println(s.toLowerCase());
+	}
+	public static void main(String[] args) {
+		new Generics().test(&quot;hallo&quot;);
+	}
+}
+//---
+
+Compiler believes this is safe, but throws NPE at runtime :(
+
+Problem is again in the conflicting bits being attached to X:
+- parameter &apos;@Nullable X a&apos;
+- X being inferred as &apos;@NonNull String&apos;
+We end up with a type &apos;@NonNull @Nullable String&apos; and think it meets all requirements ....</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2368463</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-25 14:40:41 -0500</bug_when>
+    <thetext>Tests &amp; fix released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=906228369eed23f930bc548422a9ed0c01a3237e</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372778</commentid>
+    <comment_count>6</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2014-03-07 00:22:00 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC2 using Kepler SR2 +   
+Eclipse Java Development Tools Patch for Java 8 Support (BETA)
+1.0.0.v20140306-1935</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

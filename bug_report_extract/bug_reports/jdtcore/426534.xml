@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>426534</bug_id>
+          
+          <creation_ts>2014-01-24 00:21:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler] Accessibility of vararg element type not checked for generic methods.</short_desc>
+          <delta_ts>2014-01-24 19:48:46 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>424053</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2353954</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-01-24 00:21:35 -0500</bug_when>
+    <thetext>Seems to be a problem with both new and old inference schemes.
+
+// -- X.java: 
+
+import p.*;
+
+public class X  {
+    public static void main(String argv[]) {
+        new B().foo(null, null);
+    }
+}
+    
+
+// B.java
+package p;
+
+class A {
+}
+
+public class B extends A {
+    public &lt;T extends A&gt; void foo(T ... o) { }
+}
+
+If the Type parameter T were to be replaced directly by A, I get an error
+as expected.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2353955</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-01-24 00:39:27 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #0)
+&gt; Seems to be a problem with both new and old inference schemes.
+
+Correction, 1.7- does give an error.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2353957</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-01-24 00:48:40 -0500</bug_when>
+    <thetext>Stephan,
+
+In Scope.computeCompatibleMethod:
+
+
+			if (compatibilityLevel == VARARGS_COMPATIBLE) {
+				TypeBinding varargsElementType = method.parameters[method.parameters.length - 1].leafComponentType();
+				if (varargsElementType instanceof ReferenceBinding) {
+					if (!((ReferenceBinding) varargsElementType).canBeSeenBy(this)) {
+						return new ProblemMethodBinding(method, method.selector, genericTypeArguments, ProblemReasons.VarargsElementTypeNotVisible);
+					}
+				}
+			}
+the PGMB comes out as: 
+
+public transient void foo(null[]) 
+
+It stays that way well into MessageSend.generateCode.
+
+As a result, VarargsElementTypeNotVisible does not get checked. I don&apos;t yet
+understand all the voodoo :), so I&apos;ll assign this one to you.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2353959</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-01-24 00:54:46 -0500</bug_when>
+    <thetext>Regression test released here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=c65347571547f67c860a6ef249183861500993de
+
+that is GenericsRegressionTest.test426534(), remember to adjust the compliance
+check at the top of the test, Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2354395</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-24 14:26:23 -0500</bug_when>
+    <thetext>Quick guess: T is inferred as the null-type, which is
+- a subtype of any reference type (incl. A :) )
+- visible
+
+So, what should we report? null is not visible? :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2354487</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-01-24 18:48:10 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; Quick guess: T is inferred as the null-type, which is
+&gt; - a subtype of any reference type (incl. A :) )
+&gt; - visible
+
+Given this example gets flagged in 1.7- by us and by JDK including 8, 
+if there is a chain of reasoning per the new specification leading to 
+null-type, we need to report this to Oracle since they flag this code 
+as erroneous too.
+
+But the need for the visibility check comes from having to box the
+arguments into an array for which the concrete array type must be
+visible. So I am inclined to think we have a real bug here,</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2354492</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-24 19:16:21 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #5)
+&gt; But the need for the visibility check comes from having to box the
+&gt; arguments into an array for which the concrete array type must be
+&gt; visible.
+
+Interesting point. See what we are generating:
+
+         8: anewarray     #19                 // class N
+
+(attempt to generate &quot;new null[]&quot; ;-P )
+
+Investigating</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2354494</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-24 19:28:23 -0500</bug_when>
+    <thetext>On investing how the null type could be offered as an inference solution I&apos;m staring at these in 18.2.3:
+
+&quot;A constraint formula of the form S &lt;: T is reduced as follows:
+* ...
+* ...
+* Otherwise, if T is an inference variable, , the constraint reduces to the bound S &lt;: .
+* Otherwise, if S is the null type, the constraint reduces to true.&quot;
+
+I have the constraint null &lt;: T#0, which does *not* reduce to true, because prior to testing for the null type we find that T is an inference variable.
+
+Boom!
+
+BTW: no other section mentions the null type, so this is the only rule that could possibly get the null out of our way (incl. the inverse case T &lt;: null -&gt; false).
+
+Changing the order of checks (thus violating the spec) fixes the issue, I&apos;m currently testing if it breaks anything else.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2354496</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-24 19:48:27 -0500</bug_when>
+    <thetext>I&apos;ve reported the issue to the EG list [1], changed the order of checks and all seems well; it even cleared up two funny deviations in error messages.
+
+It&apos;s here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=31225f931c10340b8616c3f4ecc6725f368df84c
+
+[1] http://mail.openjdk.java.net/pipermail/lambda-spec-experts/2014-January/000494.html</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

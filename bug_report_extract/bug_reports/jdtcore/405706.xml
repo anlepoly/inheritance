@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>405706</bug_id>
+          
+          <creation_ts>2013-04-15 06:29:00 -0400</creation_ts>
+          <short_desc>Eclipse compiler fails to give compiler error when return type is a inferred generic</short_desc>
+          <delta_ts>2013-04-30 06:16:24 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.2.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Piotr Findeisen">piotr.findeisen</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>Sebastian.Zarnekow</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2243585</commentid>
+    <comment_count>0</comment_count>
+      <attachid>229715</attachid>
+    <who name="Piotr Findeisen">piotr.findeisen</who>
+    <bug_when>2013-04-15 06:29:08 -0400</bug_when>
+    <thetext>Created attachment 229715
+TypeUnsafe class
+
+Steps to reproduce
+ * using Eclipse Indigo SR2 or Eclipse Juno SR1
+ * compile the following code
+
+----------------------------------------------------------------------
+import java.util.Collection;
+
+public class TypeUnsafe {
+	public static &lt;Type,
+			CollectionType extends Collection&lt;Type&gt;&gt;
+			CollectionType
+			nullAsCollection(Class&lt;Type&gt; clazz) {
+		return null;
+	}
+
+	public static void main(String[] args) {
+		Collection&lt;Integer&gt; integers = nullAsCollection(String.class);
+	}
+}
+----------------------------------------------------------------------
+
+Expected
+ * compilation *error* like the one below, produced by javac 1.7.0_09
+
+----------------------------------------------------------------------
+TypeUnsafe.java:13: error: invalid inferred types for CollectionType; inferred type does not conform to declared bound(s)
+                Collection&lt;Integer&gt; integers = nullAsCollection(String.class);
+                                                               ^
+    inferred: Collection&lt;Integer&gt;
+    bound(s): Collection&lt;String&gt;
+  where CollectionType,Type are type-variables:
+    CollectionType extends Collection&lt;Type&gt; declared in method &lt;Type,CollectionType&gt;nullAsCollection(Class&lt;Type&gt;)
+    Type extends Object declared in method &lt;Type,CollectionType&gt;nullAsCollection(Class&lt;Type&gt;)
+1 error
+----------------------------------------------------------------------
+
+Observed
+ * code compiles without error or warning</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2243596</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-04-15 06:39:06 -0400</bug_when>
+    <thetext>Stephan, please take a look, thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2243619</commentid>
+    <comment_count>2</comment_count>
+    <who name="Sebastian Zarnekow">Sebastian.Zarnekow</who>
+    <bug_when>2013-04-15 07:40:45 -0400</bug_when>
+    <thetext>I can confirm that the problem is still present in the latest milestone of Kepler.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2244084</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-04-15 21:43:12 -0400</bug_when>
+    <thetext>ecj up-to 3.7 reports:
+
+Bound mismatch: The generic method nullAsCollection(Class&lt;Type&gt;) of type TypeUnsafe is not applicable for the arguments (Class&lt;String&gt;). The inferred type Collection&lt;Integer&gt; is not a valid substitute for the bounded parameter &lt;CollectionType extends Collection&lt;Type&gt;&gt;
+
+
+Unfortunately, 3.7.1 was a big change (introducing Java 7 support).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2245404</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-04-18 09:31:08 -0400</bug_when>
+    <thetext>Regression seems to be caused by the fix for bug 341795.
+
+Before that, the method was inferred to 
+  Type=String
+  CollectionType=Collection&lt;Integer&gt;
+with that fix we get:
+  Type=String
+  CollectionType=Collection&lt;Integer&gt;&amp;Collection&lt;String&gt;
+
+In the former case boundCheck on the second type variable would yield mismatch.
+In the latter case we no longer get that mismatch.
+
+Either the fix in bug 341795 needs to be more cautious to prevent creating
+empty intersection types, or boundCheck should detect this unsatisfiable
+&quot;solution&quot;.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2245442</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-04-18 10:28:52 -0400</bug_when>
+    <thetext>Refusing to create unsatisfiable intersection types seems to do the trick.
+Now we only need a precise definition of &quot;unsatisfiable intersection type&quot;.
+For this bug I&apos;ll focus on incompatibility due to type arguments.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2245526</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-04-18 12:10:29 -0400</bug_when>
+    <thetext>I couldn&apos;t find any rule in the JLS that would help me, but using the
+following rules we can fix this bug without causing any regressions in
+our tests:
+
+The glb of a set of types is invalid (signalled by null) if for any pair
+of types:
+1. the types themselves are not compatible in either direction.
+2. both types are parameterized types
+3. the original of one type is compatible to the original of the other
+
+I interpret the conjunction of 1-3 as indication that types are incompatible
+due to mismatching type arguments, which is exactly the thing we need to
+detect for this bug.
+
+I had been playing also with isProvablyDistinct for 1., but couldn&apos;t find
+a clear indication which is better.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2245553</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-04-18 13:00:18 -0400</bug_when>
+    <thetext>Released for 4.3 M7 via commit 57dec4f97ab62d03709eb0f38c04abeae05153fc</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250320</commentid>
+    <comment_count>8</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-04-30 06:16:24 -0400</bug_when>
+    <thetext>Verified for 4.3 M7 with build I20130428-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>229715</attachid>
+            <date>2013-04-15 06:29:00 -0400</date>
+            <delta_ts>2013-04-15 06:29:08 -0400</delta_ts>
+            <desc>TypeUnsafe class</desc>
+            <filename>TypeUnsafe.java</filename>
+            <type>application/octet-stream</type>
+            <size>328</size>
+            <attacher name="Piotr Findeisen">piotr.findeisen</attacher>
+            
+              <data encoding="base64">aW1wb3J0IGphdmEudXRpbC5Db2xsZWN0aW9uOw0KDQpwdWJsaWMgY2xhc3MgVHlwZVVuc2FmZSB7
+DQoNCglwdWJsaWMgc3RhdGljIDxUeXBlLA0KCQkJQ29sbGVjdGlvblR5cGUgZXh0ZW5kcyBDb2xs
+ZWN0aW9uPFR5cGU+Pg0KCQkJQ29sbGVjdGlvblR5cGUNCgkJCW51bGxBc0NvbGxlY3Rpb24oQ2xh
+c3M8VHlwZT4gY2xhenopIHsNCgkJcmV0dXJuIG51bGw7DQoJfQ0KDQoJcHVibGljIHN0YXRpYyB2
+b2lkIG1haW4oU3RyaW5nW10gYXJncykgew0KCQlDb2xsZWN0aW9uPEludGVnZXI+IGludGVnZXJz
+ID0gbnVsbEFzQ29sbGVjdGlvbihTdHJpbmcuY2xhc3MpOw0KCX0NCn0NCg==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

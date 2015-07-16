@@ -1,0 +1,801 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>414653</bug_id>
+          
+          <creation_ts>2013-08-08 06:39:00 -0400</creation_ts>
+          <short_desc>[test] intermittent failures in SwitchTest</short_desc>
+          <delta_ts>2015-01-05 17:02:43 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords>test</keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>shankhba</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2292688</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-08 06:39:15 -0400</bug_when>
+    <thetext>When I run RunJDTCoreTest locally, most the time I get one random failure in
+SwitchTest, re-running that particular test always passes.
+
+By instrumenting VerifyTests I see the following pattern:
+
+- VM is launched for testMarysLamb()
+- this test runs fine, socket is working
+- the log file created for this VM reports only this one test.
+
+- next VM is launched for testNestedSwitches()
+- between testMarysLamb() and testNestedSwitches() we have two tests:
+  - testBreakOut() -&gt; pass
+  - testMultipleSwitches() -&gt; fail, unexpectedly empty output
+  Why are those missing from the log?
+
+In the console I find:
+
+java.io.EOFException
+	at java.io.DataInputStream.readBoolean(DataInputStream.java:244)
+	at org.eclipse.jdt.core.tests.util.TestVerifier.loadAndRun(TestVerifier.java:583)
+	at org.eclipse.jdt.core.tests.util.TestVerifier.verifyClassFiles(TestVerifier.java:643)
+	at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runTest(AbstractRegressionTest.java:2516)
+	at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runTest(AbstractRegressionTest.java:2317)
+	at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runConformTest(AbstractRegressionTest.java:1361)
+	at org.eclipse.jdt.core.tests.compiler.regression.SwitchTest.testBreakOut(SwitchTest.java:1859)
+
+I see this for several tests incl. both &quot;missing&quot; tests, but *not* for testMarysLamb()
+
+My guess that the socket was unexpectedly closed has not yet been confirmed by logging.
+I may need to do more flushing to see if the missing log output is lost pending
+in some buffer.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2292699</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-08 07:28:25 -0400</bug_when>
+    <thetext>Next run indicates that the test prior to the failing one might have raised an
+unexpected exception, instrumenting that branch, too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2292700</commentid>
+    <comment_count>2</comment_count>
+      <attachid>234192</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-08 07:33:38 -0400</bug_when>
+    <thetext>Created attachment 234192
+instrumentation
+
+Although this code is quite crude, here&apos;s my current instrumentation.
+
+One point is, how to feed context (test name) into the test verifier,
+other point is, we can&apos;t use out or err because they&apos;re redirected for
+communication with the test driver, so I&apos;m using files in /tmp/ (hardcoded) instead.
+
+This code is not meant to be released :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2292710</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-08 08:05:48 -0400</bug_when>
+    <thetext>Wow, the test VM just leaves the building without telling anybody:
+
+This snippet:
+	try {
+		logFile.write(className+&quot; &quot;+socket.isClosed()+&quot;\n&quot;);
+		logFile.flush();
+		loadAndRun(className);
+		VerifyTests.this.logFile.write(&quot;\t \t-&gt; &quot;+socket.isClosed()+&quot;\n&quot;);
+		logFile.flush();
+		out.writeBoolean(true);
+		VerifyTests.this.logFile.write(&quot;\t true\t-&gt;&quot;+socket.isClosed()+&quot;\n&quot;);
+		logFile.flush();
+		System.err.println(VerifyTests.class.getName());
+		System.out.println(VerifyTests.class.getName());
+	} catch (Throwable e) {
+		try {
+			logFile.write(&quot;Exception: &quot;+e);
+			logFile.flush();
+		...
+
+Prints to the log file:
+
+testSideEffect false
+                -&gt; false
+         true   -&gt;false
+testFallThrough false
+&lt;EOF&gt;
+
+- testSideEffect shows the expected behavior, socket is not unexpectedly closed, OK.
+- testFallThrough gets started and then nothing, no next statement, no exception
+
+From a JUnit p.o.v. testFallThrough is marked pass, while the *next* one, 
+testFallThrough2() fails, and: that one leaves no traces in any log file!
+Perhaps, one side still believes it can talk to the test VM, while the other
+side is already gone?
+
+So, how can loadAndRun neither return nor throw?
+- hang like in an infinite loop?
+- crash the VM - and during crashing still keep the socket open?
+
+Next I may want to try detecting any VM error log files in the working directory
+before that is wiped for each new test. But that&apos;ll have to wait for another day
+I&apos;m afraid.
+
+BTW: this was with the early-access J8 b92, I don&apos;t exactly recall if I&apos;ve seen
+this also in 1.7.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2292986</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-08 18:44:09 -0400</bug_when>
+    <thetext>Next finding:
+- when the EOF exception occurs, the test VM is no longer running, 
+  its exit code however is 0 -&gt; no indication of any crash.
+
+After some more theory building regarding memory exhaustion or other accumulative
+effects, I had a closer look at SwitchTest, because despite some randomness all
+failures occurred in this suite. What I found: several occurrences of
+   System.exit(0);
+i.e. test cases force the test VM to terminate, whereas the test suite expects
+to be able to re-use the VM for subsequent tests.
+
+Now, turning all System.exit(0); into return; seems to fix the immediate issue.
+
+One thing still slightly worries me: I also saw the EOF exception without any visible
+test failures. This could indicate that tests signal green although the compiled test
+classes may not have run to completion (or at all).
+
+This implies that the mechanism to cope with termination of the test VM isn&apos;t fully
+safe. Assuming, however, we&apos;ll remove all calls to System.exit() from the test suite
+I&apos;m not sure how relevant this latter observation is.
+
+
+When applying these changes we need to observe the difference between System.exit(0) 
+vs. return. Looking at testBreakOut() this one is OK:
+   System.exit(0);
+   break;
+whereas this one complains about dead code:
+   return;
+   break;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2333567</commentid>
+    <comment_count>5</comment_count>
+      <attachid>237650</attachid>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2013-11-22 14:04:25 -0500</bug_when>
+    <thetext>Created attachment 237650
+Preventing System.exit calls shutting down the VM
+
+Using a SecurityManager to prevent System.exit() being called didn&apos;t turn out as straight-forward as it originally seemed, therefore I attached the whole class instead.
+
+One refinement might be to check the result code and on a 0 throw a ThreadDeath to end just the calling thread quietly. But that would encourage calling System.exit() more, so maybe not.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2334905</commentid>
+    <comment_count>6</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-11-27 05:34:52 -0500</bug_when>
+    <thetext>Failed in N20131126-2000:
+
+http://download.eclipse.org/eclipse/downloads/drops4/N20131126-2000/testresults/html/org.eclipse.jdt.core.tests.compiler_linux.gtk.x86_6.0.html</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2335645</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-11-28 12:17:25 -0500</bug_when>
+    <thetext>(In reply to Timo Kinnunen from comment #5)
+&gt; Preventing System.exit calls shutting down the VM
+
+Thanks for the patch.
+Have you tried how the tests would cope with it?
+Do they still get notified that the test has finished, even if exit() is blocked?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2335674</commentid>
+    <comment_count>8</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2013-11-28 12:58:31 -0500</bug_when>
+    <thetext>I&apos;m afraid to say I haven&apos;t, I&apos;m not yet at the point of having the test suites up and running. 
+I have tested that the AccessControlException gets thrown and it doesn&apos;t block native library loading like only setting a default SecurityManager in code does. 
+
+The code is implemented to make System.exit() calls easy to identify for removal in my own projects, but this may not be how the test suites would prefer to deal with them. I suppose the tests that called System.exit() would show up as failed due to the AccessControlException, which sounds like what you&apos;d want to happen.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2335865</commentid>
+    <comment_count>9</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-11-29 07:19:43 -0500</bug_when>
+    <thetext>http://download.eclipse.org/eclipse/downloads/drops4/N20131128-2000/testresults/html/org.eclipse.jdt.core.tests.compiler_linux.gtk.x86_6.0.html</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2336136</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-11-29 14:41:59 -0500</bug_when>
+    <thetext>If anyone has some time to look into fixing this I&apos;d suggest to start looking at org.eclipse.jdt.core.tests.util.TestVerifier.loadAndRun(String): there we catch a SocketException with this comment:
+
+	// connection was reset because target program has exited
+
+I&apos;d assume that this is the location where we need to react to the VM exit. Interestingly both callers of that method ignore the method return value (and boolean return doesn&apos;t really suffice to report the 3 possible outcomes). Maybe s.t. as easy as setting reuseVM=false could signal that a new vm must be launched for the next test.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2344569</commentid>
+    <comment_count>11</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-12-22 21:49:33 -0500</bug_when>
+    <thetext>Failed:
+Build ID: N20131220-2000
+Test Results: http://download.eclipse.org/eclipse/downloads/drops4/N20131220-2000/testresults/html/org.eclipse.jdt.core.tests.compiler_linux.gtk.x86_6.0.html
+
+testSideEffect - 1.7
+
+Unexpected output running resulting class file for testSideEffect.java: --[START]-- ---[END]---
+
+junit.framework.AssertionFailedError: Unexpected output running resulting class file for testSideEffect.java:
+--[START]--
+---[END]---
+
+at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runTest(AbstractRegressionTest.java:2344)
+at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runTest(AbstractRegressionTest.java:2120)
+at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runConformTest(AbstractRegressionTest.java:1191)
+at org.eclipse.jdt.core.tests.compiler.regression.SwitchTest.testSideEffect(SwitchTest.java:1701)
+at org.eclipse.jdt.core.tests.util.CompilerTestSetup.run(CompilerTestSetup.java:55)
+at org.eclipse.test.EclipseTestRunner.run(EclipseTestRunner.java:657)
+at org.eclipse.test.EclipseTestRunner.run(EclipseTestRunner.java:310)
+at org.eclipse.test.CoreTestApplication.runTests(CoreTestApplication.java:36)
+at org.eclipse.test.CoreTestApplication.run(CoreTestApplication.java:32)
+at org.eclipse.equinox.internal.app.EclipseAppContainer.callMethodWithException(EclipseAppContainer.java:587)
+at org.eclipse.equinox.internal.app.EclipseAppHandle.run(EclipseAppHandle.java:198)
+at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.runApplication(EclipseAppLauncher.java:109)
+at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.start(EclipseAppLauncher.java:80)
+at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:372)
+at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:226)
+at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:636)
+at org.eclipse.equinox.launcher.Main.basicRun(Main.java:591)
+at org.eclipse.equinox.launcher.Main.run(Main.java:1450)
+at org.eclipse.equinox.launcher.Main.main(Main.java:1426)
+at org.eclipse.core.launcher.Main.main(Main.java:34)
+
+
+Please also see: Bug 422220</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2344870</commentid>
+    <comment_count>12</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-12-26 00:40:36 -0500</bug_when>
+    <thetext>Failed again.
+Build ID : I20131224-0800
+Location: http://download.eclipse.org/eclipse/downloads/drops4/I20131224-0800/testresults/html/org.eclipse.jdt.core.tests.compiler_linux.gtk.x86_6.0.html
+
+Platform: Linux
+testMarysLamb - 1.7
+Unexpected output running resulting class file for testMarysLamb.java: --[START]-- ---[END]---
+
+junit.framework.AssertionFailedError: Unexpected output running resulting class file for testMarysLamb.java:
+--[START]--
+---[END]---
+
+at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runTest(AbstractRegressionTest.java:2344)
+at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runTest(AbstractRegressionTest.java:2120)
+at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runConformTest(AbstractRegressionTest.java:1191)
+at org.eclipse.jdt.core.tests.compiler.regression.SwitchTest.testMarysLamb(SwitchTest.java:1824)
+at org.eclipse.jdt.core.tests.util.CompilerTestSetup.run(CompilerTestSetup.java:55)
+at org.eclipse.test.EclipseTestRunner.run(EclipseTestRunner.java:657)
+at org.eclipse.test.EclipseTestRunner.run(EclipseTestRunner.java:310)
+at org.eclipse.test.CoreTestApplication.runTests(CoreTestApplication.java:36)
+at org.eclipse.test.CoreTestApplication.run(CoreTestApplication.java:32)
+at org.eclipse.equinox.internal.app.EclipseAppContainer.callMethodWithException(EclipseAppContainer.java:587)
+at org.eclipse.equinox.internal.app.EclipseAppHandle.run(EclipseAppHandle.java:198)
+at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.runApplication(EclipseAppLauncher.java:109)
+at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.start(EclipseAppLauncher.java:80)
+at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:372)
+at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:226)
+at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:636)
+at org.eclipse.equinox.launcher.Main.basicRun(Main.java:591)
+at org.eclipse.equinox.launcher.Main.run(Main.java:1450)
+at org.eclipse.equinox.launcher.Main.main(Main.java:1426)
+at org.eclipse.core.launcher.Main.main(Main.java:34)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2346797</commentid>
+    <comment_count>13</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2014-01-08 04:17:50 -0500</bug_when>
+    <thetext>And again in N20140107-2000:
+
+Unexpected output running resulting class file for testMarysLamb.java: --[START]-- ---[END]---
+
+junit.framework.AssertionFailedError: Unexpected output running resulting class file for testMarysLamb.java:
+--[START]--
+---[END]---
+
+at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runTest(AbstractRegressionTest.java:2344)
+at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runTest(AbstractRegressionTest.java:2120)
+at org.eclipse.jdt.core.tests.compiler.regression.AbstractRegressionTest.runConformTest(AbstractRegressionTest.java:1191)
+at org.eclipse.jdt.core.tests.compiler.regression.SwitchTest.testMarysLamb(SwitchTest.java:1824)
+at org.eclipse.jdt.core.tests.util.CompilerTestSetup.run(CompilerTestSetup.java:55)
+at org.eclipse.test.EclipseTestRunner.run(EclipseTestRunner.java:657)
+at org.eclipse.test.EclipseTestRunner.run(EclipseTestRunner.java:310)
+at org.eclipse.test.CoreTestApplication.runTests(CoreTestApplication.java:36)
+at org.eclipse.test.CoreTestApplication.run(CoreTestApplication.java:32)
+at org.eclipse.equinox.internal.app.EclipseAppContainer.callMethodWithException(EclipseAppContainer.java:587)
+at org.eclipse.equinox.internal.app.EclipseAppHandle.run(EclipseAppHandle.java:198)
+at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.runApplication(EclipseAppLauncher.java:109)
+at org.eclipse.core.runtime.internal.adaptor.EclipseAppLauncher.start(EclipseAppLauncher.java:80)
+at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:372)
+at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:226)
+at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:636)
+at org.eclipse.equinox.launcher.Main.basicRun(Main.java:591)
+at org.eclipse.equinox.launcher.Main.run(Main.java:1450)
+at org.eclipse.equinox.launcher.Main.main(Main.java:1426)
+at org.eclipse.core.launcher.Main.main(Main.java:34)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2346799</commentid>
+    <comment_count>14</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2014-01-08 04:18:24 -0500</bug_when>
+    <thetext>Please either fix or disable the test - it creates unnecessary noise when looking at the tests.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2347247</commentid>
+    <comment_count>15</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-01-09 00:01:53 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; When applying these changes we need to observe the difference between
+&gt; System.exit(0) 
+&gt; vs. return. Looking at testBreakOut() this one is OK:
+&gt;    System.exit(0);
+&gt;    break;
+&gt; whereas this one complains about dead code:
+&gt;    return;
+&gt;    break;
+
+Since none of us have time to investigate, we can go with this approach as a wrok around fix. As long as System.exit call are there for a specific purpose, we can simply replace all System.exit calls with &quot;return;&quot; or &quot;break junk;&quot; or anything similar that would be appropriate.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2347249</commentid>
+    <comment_count>16</comment_count>
+      <attachid>238801</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-01-09 00:18:30 -0500</bug_when>
+    <thetext>Created attachment 238801
+Work around fix
+
+(In reply to Jayaprakash Arthanareeswaran from comment #15)
+&gt; Since none of us have time to investigate, we can go with this approach as a
+&gt; wrok around fix.
+
+A quick workaround fix.
+
+Stephan, would you have time to try this out and see if the failures still occur in your environment?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2347543</commentid>
+    <comment_count>17</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2014-01-09 10:58:04 -0500</bug_when>
+    <thetext>Also failed in N20140108-2000.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2347551</commentid>
+    <comment_count>18</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-09 11:08:24 -0500</bug_when>
+    <thetext>Doing the change in my working environment would only make sense by releasing this to BETA_JAVA8, but I believe we want to have it in master, right?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2347917</commentid>
+    <comment_count>19</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-01-10 06:26:39 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #18)
+&gt; Doing the change in my working environment would only make sense by
+&gt; releasing this to BETA_JAVA8, but I believe we want to have it in master,
+&gt; right?
+
+That&apos;s right. I have gone ahead and released this in master. We will see how the N builds go. I will keep this bug open till then.
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=653892de0ce6d92080f2ac329ebf5ae3bc092866</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2349214</commentid>
+    <comment_count>20</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-01-13 22:50:45 -0500</bug_when>
+    <thetext>Last two N builds went well. Fix appears to be working. Thanks Stephan and Timo for your help.
+
+Marking as resolved.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2349329</commentid>
+    <comment_count>21</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2014-01-14 05:57:40 -0500</bug_when>
+    <thetext>Also green in N20140113-2000.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>234192</attachid>
+            <date>2013-08-08 07:33:00 -0400</date>
+            <delta_ts>2013-08-08 07:33:38 -0400</delta_ts>
+            <desc>instrumentation</desc>
+            <filename>eclipse.jdt.core.tests.compiler.patch</filename>
+            <type>text/plain</type>
+            <size>12568</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0Fic3RyYWN0UmVncmVz
+c2lvblRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0Fic3RyYWN0UmVn
+cmVzc2lvblRlc3QuamF2YQppbmRleCBlYTNkMDE5Li5hMzU2YWFjIDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9BYnN0cmFjdFJlZ3Jlc3Npb25UZXN0LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vQWJzdHJhY3RSZWdyZXNzaW9uVGVzdC5q
+YXZhCkBAIC0xMDg0LDcgKzEwODQsOCBAQAogCQkJCWV4cGVjdGVkU3VjY2Vzc091dHB1dFN0cmlu
+ZywKIAkJCQl0aGlzLmNsYXNzcGF0aHMsCiAJCQkJbnVsbCwKLQkJCQl2bUFyZ3VtZW50cyk7CisJ
+CQkJdm1Bcmd1bWVudHMsCisJCQkJZ2V0Q2xhc3MoKS5nZXROYW1lKCkrJ18nK2dldE5hbWUoKSk7
+CiAJCWFzc2VydFRydWUodGhpcy52ZXJpZmllci5mYWlsdXJlUmVhc29uLCAvLyBjb21wdXRlZCBi
+eSB2ZXJpZnlDbGFzc0ZpbGVzKC4uLikgYWN0aW9uCiAJCQkJcGFzc2VkKTsKIAkJaWYgKHZtQXJn
+dW1lbnRzICE9IG51bGwpIHsKQEAgLTI1MTksNyArMjUyMCw4IEBACiAJCQkJCWV4cGVjdGVkRXJy
+b3JTdHJpbmcsCiAJCQkJCXRoaXMuY2xhc3NwYXRocywKIAkJCQkJbnVsbCwKLQkJCQkJdm1Bcmd1
+bWVudHMpOworCQkJCQl2bUFyZ3VtZW50cywKKwkJCQkJZ2V0Q2xhc3MoKS5nZXROYW1lKCkrJy4n
+K2dldE5hbWUoKSk7CiAJCQlpZiAoIXBhc3NlZCkgewogCQkJCVN5c3RlbS5vdXQucHJpbnRsbihn
+ZXRDbGFzcygpLmdldE5hbWUoKSArICcjJyArIGdldE5hbWUoKSk7CiAJCQkJU3RyaW5nIGV4ZWNF
+cnJvclN0cmluZyA9IHRoaXMudmVyaWZpZXIuZ2V0RXhlY3V0aW9uRXJyb3IoKTsKZGlmZiAtLWdp
+dCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9q
+ZHQvY29yZS90ZXN0cy91dGlsL1Rlc3RWZXJpZmllci5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNv
+cmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL3V0aWwvVGVz
+dFZlcmlmaWVyLmphdmEKaW5kZXggZGU5YmE5My4uYzE5ZTY0OSAxMDA2NDQKLS0tIGEvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rl
+c3RzL3V0aWwvVGVzdFZlcmlmaWVyLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVz
+dHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL3V0aWwvVGVzdFZlcmlm
+aWVyLmphdmEKQEAgLTE0Niw3ICsxNDYsNyBAQAogcHJpdmF0ZSBTdHJpbmcgZ2V0VmVyaWZ5VGVz
+dHNDb2RlKCkgewogCXJldHVybgogCQkiLyoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKipcbiIgKyAKLQkJ
+IiAqIENvcHlyaWdodCAoYykgMjAwMCwgMjAxMSBJQk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy5c
+biIgKyAKKwkJIiAqIENvcHlyaWdodCAoYykgMjAwMCwgMjAxMiBJQk0gQ29ycG9yYXRpb24gYW5k
+IG90aGVycy5cbiIgKyAKIAkJIiAqIEFsbCByaWdodHMgcmVzZXJ2ZWQuIFRoaXMgcHJvZ3JhbSBh
+bmQgdGhlIGFjY29tcGFueWluZyBtYXRlcmlhbHNcbiIgKyAKIAkJIiAqIGFyZSBtYWRlIGF2YWls
+YWJsZSB1bmRlciB0aGUgdGVybXMgb2YgdGhlIEVjbGlwc2UgUHVibGljIExpY2Vuc2UgdjEuMFxu
+IiArIAogCQkiICogd2hpY2ggYWNjb21wYW5pZXMgdGhpcyBkaXN0cmlidXRpb24sIGFuZCBpcyBh
+dmFpbGFibGUgYXRcbiIgKyAKQEAgLTE2MiwxMyArMTYyLDE3IEBACiAJCSJpbXBvcnQgamF2YS5p
+by5GaWxlO1xuIiArIAogCQkiaW1wb3J0IGphdmEuaW8uRmlsZUlucHV0U3RyZWFtO1xuIiArIAog
+CQkiaW1wb3J0IGphdmEuaW8uRmlsZU5vdEZvdW5kRXhjZXB0aW9uO1xuIiArIAorCQkiaW1wb3J0
+IGphdmEuaW8uRmlsZVdyaXRlcjtcbiIgKyAKIAkJImltcG9ydCBqYXZhLmlvLklPRXhjZXB0aW9u
+O1xuIiArIAogCQkiaW1wb3J0IGphdmEuaW8uSW5wdXRTdHJlYW07XG4iICsgCisJCSJpbXBvcnQg
+amF2YS5pby5PdXRwdXRTdHJlYW07XG4iICsgCisJCSJpbXBvcnQgamF2YS5pby5Xcml0ZXI7XG4i
+ICsgCiAJCSJpbXBvcnQgamF2YS5sYW5nLnJlZmxlY3QuSW52b2NhdGlvblRhcmdldEV4Y2VwdGlv
+bjtcbiIgKyAKIAkJImltcG9ydCBqYXZhLmxhbmcucmVmbGVjdC5NZXRob2Q7XG4iICsgCiAJCSJp
+bXBvcnQgamF2YS5uZXQuU2VydmVyU29ja2V0O1xuIiArIAogCQkiaW1wb3J0IGphdmEubmV0LlNv
+Y2tldDtcbiIgKyAKIAkJImltcG9ydCBqYXZhLnV0aWwuU3RyaW5nVG9rZW5pemVyO1xuIiArIAor
+CQkiXG4iICsgCiAJCSJcbiIgKyAKIAkJIi8qKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKipcbiIgKyAKIAkJIiAqXG4iICsgCkBAIC0xODEsNiArMTg1
+LDcgQEAKIAkJIglpbnQgcG9ydE51bWJlcjtcbiIgKyAKIAkJIglTb2NrZXQgc29ja2V0O1xuIiAr
+IAogCQkiXG4iICsgCisJCSIJV3JpdGVyIGxvZ0ZpbGU7XG4iICsgCiAJCSIvKipcbiIgKyAKIAkJ
+IiAqIE5PVEU6IENvZGUgY29waWVkIGZyb20ganVuaXQudXRpbC5UZXN0Q2FzZUNsYXNzTG9hZGVy
+LlxuIiArIAogCQkiICpcbiIgKyAKQEAgLTIzMCw3ICsyMzUsNiBAQAogCQkiCQl3aGlsZSAoc3Qu
+aGFzTW9yZVRva2VucygpKSB7XG4iICsgCiAJCSIJCQl0aGlzLnBhdGhJdGVtc1tpKytdPSBzdC5u
+ZXh0VG9rZW4oKTtcbiIgKyAKIAkJIgkJfVxuIiArIAotCQkiXG4iICsgCiAJCSIJfVxuIiArIAog
+CQkiCXB1YmxpYyBqYXZhLm5ldC5VUkwgZ2V0UmVzb3VyY2UoU3RyaW5nIG5hbWUpIHtcbiIgKyAK
+IAkJIgkJcmV0dXJuIENsYXNzTG9hZGVyLmdldFN5c3RlbVJlc291cmNlKG5hbWUpO1xuIiArIApA
+QCAtMzM5LDggKzM0MywxNSBAQAogCQkiCQl0aHJvdyBlLmdldFRhcmdldEV4Y2VwdGlvbigpO1xu
+IiArIAogCQkiCX1cbiIgKyAKIAkJIn1cbiIgKyAKKwkJIlxuIiArIAorCQkiVmVyaWZ5VGVzdHMo
+U3RyaW5nIHRlc3ROYW1lKSB7XG4iICsgCisJCSIJdHJ5IHtcbiIgKyAKKwkJIgkJbG9nRmlsZSA9
+IG5ldyBGaWxlV3JpdGVyKG5ldyBGaWxlKFwiL3RtcC90ZXN0XCIrdGVzdE5hbWUrXCIubG9nXCIp
+KTtcbiIgKyAKKwkJIgl9IGNhdGNoIChJT0V4Y2VwdGlvbiBlKSB7XG4iICsgCisJCSIJfVxuIiAr
+IAorCQkifVxuIiArIAogCQkicHVibGljIHN0YXRpYyB2b2lkIG1haW4oU3RyaW5nW10gYXJncykg
+dGhyb3dzIElPRXhjZXB0aW9uIHtcbiIgKyAKLQkJIglWZXJpZnlUZXN0cyB2ZXJpZnkgPSBuZXcg
+VmVyaWZ5VGVzdHMoKTtcbiIgKyAKKwkJIglWZXJpZnlUZXN0cyB2ZXJpZnkgPSBuZXcgVmVyaWZ5
+VGVzdHMoYXJnc1sxXSk7XG4iICsgCiAJCSIJdmVyaWZ5LnBvcnROdW1iZXIgPSBJbnRlZ2VyLnBh
+cnNlSW50KGFyZ3NbMF0pO1xuIiArIAogCQkiCXZlcmlmeS5ydW4oKTtcbiIgKyAKIAkJIn1cbiIg
+KyAKQEAgLTM1MSwxNyArMzYyLDMwIEBACiAJCSIJc2VydmVyLmNsb3NlKCk7XG4iICsgCiAJCSJc
+biIgKyAKIAkJIglEYXRhSW5wdXRTdHJlYW0gaW4gPSBuZXcgRGF0YUlucHV0U3RyZWFtKHRoaXMu
+c29ja2V0LmdldElucHV0U3RyZWFtKCkpO1xuIiArIAotCQkiCWZpbmFsIERhdGFPdXRwdXRTdHJl
+YW0gb3V0ID0gbmV3IERhdGFPdXRwdXRTdHJlYW0odGhpcy5zb2NrZXQuZ2V0T3V0cHV0U3RyZWFt
+KCkpO1xuIiArIAorCQkiCWZpbmFsIE91dHB1dFN0cmVhbSBvdXRwdXRTdHJlYW0gPSB0aGlzLnNv
+Y2tldC5nZXRPdXRwdXRTdHJlYW0oKTtcbiIgKyAKKwkJIglmaW5hbCBEYXRhT3V0cHV0U3RyZWFt
+IG91dCA9IG5ldyBEYXRhT3V0cHV0U3RyZWFtKG91dHB1dFN0cmVhbSk7XG4iICsgCiAJCSIJd2hp
+bGUgKHRydWUpIHtcbiIgKyAKIAkJIgkJZmluYWwgU3RyaW5nIGNsYXNzTmFtZSA9IGluLnJlYWRV
+VEYoKTtcbiIgKyAKIAkJIgkJVGhyZWFkIHRocmVhZCA9IG5ldyBUaHJlYWQoKSB7XG4iICsgCiAJ
+CSIJCQlwdWJsaWMgdm9pZCBydW4oKSB7XG4iICsgCiAJCSIJCQkJdHJ5IHtcbiIgKyAKKwkJIgkJ
+CQkJbG9nRmlsZS53cml0ZShjbGFzc05hbWUrXCIgXCIrc29ja2V0LmlzQ2xvc2VkKCkrXCJcXG5c
+Iik7XG4iICsgCisJCSIJCQkJCWxvZ0ZpbGUuZmx1c2goKTtcbiIgKyAKIAkJIgkJCQkJbG9hZEFu
+ZFJ1bihjbGFzc05hbWUpO1xuIiArIAorCQkiCQkJCQlWZXJpZnlUZXN0cy50aGlzLmxvZ0ZpbGUu
+d3JpdGUoXCJcXHQgXFx0LT4gXCIrc29ja2V0LmlzQ2xvc2VkKCkrXCJcXG5cIik7XG4iICsgCisJ
+CSIJCQkJCWxvZ0ZpbGUuZmx1c2goKTtcbiIgKyAKIAkJIgkJCQkJb3V0LndyaXRlQm9vbGVhbih0
+cnVlKTtcbiIgKyAKKwkJIgkJCQkJVmVyaWZ5VGVzdHMudGhpcy5sb2dGaWxlLndyaXRlKFwiXFx0
+IHRydWVcXHQtPlwiK3NvY2tldC5pc0Nsb3NlZCgpK1wiXFxuXCIpO1xuIiArIAorCQkiCQkJCQls
+b2dGaWxlLmZsdXNoKCk7XG4iICsgCiAJCSIJCQkJCVN5c3RlbS5lcnIucHJpbnRsbihWZXJpZnlU
+ZXN0cy5jbGFzcy5nZXROYW1lKCkpO1xuIiArIAogCQkiCQkJCQlTeXN0ZW0ub3V0LnByaW50bG4o
+VmVyaWZ5VGVzdHMuY2xhc3MuZ2V0TmFtZSgpKTtcbiIgKyAKIAkJIgkJCQl9IGNhdGNoIChUaHJv
+d2FibGUgZSkge1xuIiArIAorCQkiCQkJCQl0cnkge1xuIiArIAorCQkiCQkJCQkJbG9nRmlsZS53
+cml0ZShcIkV4Y2VwdGlvbjogXCIrZSk7XG4iICsgCisJCSIJCQkJCQlsb2dGaWxlLmZsdXNoKCk7
+XG4iICsgCisJCSIJCQkJCX0gY2F0Y2ggKElPRXhjZXB0aW9uIGUyKSB7XG4iICsgCisJCSIJCQkJ
+CQkvLyBub3BcbiIgKyAKKwkJIgkJCQkJfVxuIiArIAogCQkiCQkJCQllLnByaW50U3RhY2tUcmFj
+ZSgpO1xuIiArIAogCQkiCQkJCQl0cnkge1xuIiArIAogCQkiCQkJCQkJU3lzdGVtLmVyci5wcmlu
+dGxuKFZlcmlmeVRlc3RzLmNsYXNzLmdldE5hbWUoKSk7XG4iICsgCkBAIC0zNzMsNiArMzk3LDcg
+QEAKIAkJIgkJCQl9XG4iICsgCiAJCSIJCQkJdHJ5IHtcbiIgKyAKIAkJIgkJCQkJb3V0LmZsdXNo
+KCk7XG4iICsgCisJCSIJCQkJCWxvZ0ZpbGUuZmx1c2goKTtcbiIgKyAKIAkJIgkJCQl9IGNhdGNo
+IChJT0V4Y2VwdGlvbiBlKSB7XG4iICsgCiAJCSIJCQkJCWUucHJpbnRTdGFja1RyYWNlKCk7XG4i
+ICsgCiAJCSIJCQkJfVxuIiArIApAQCAtMzgxLDcgKzQwNiw3IEBACiAJCSIJCXRocmVhZC5zdGFy
+dCgpO1xuIiArIAogCQkiCX1cbiIgKyAKIAkJIn1cbiIgKyAKLQkJIn0iOworCQkifVxuIjsKIH0K
+IHByaXZhdGUgdm9pZCBsYXVuY2hBbmRSdW4oU3RyaW5nIGNsYXNzTmFtZSwgU3RyaW5nW10gY2xh
+c3NwYXRocywgU3RyaW5nW10gcHJvZ3JhbUFyZ3VtZW50cywgU3RyaW5nW10gdm1Bcmd1bWVudHMp
+IHsKIAkvLyB3ZSB3b24ndCByZXVzZSB0aGUgdm0sIHNodXQgdGhlIGV4aXN0aW5nIG9uZSBpZiBy
+dW5uaW5nCkBAIC00NTAsNyArNDc1LDcgQEAKIAl9IGNhdGNoIChJbnRlcnJ1cHRlZEV4Y2VwdGlv
+biBlKSB7CiAJfQogfQotcHJpdmF0ZSB2b2lkIGxhdW5jaFZlcmlmeVRlc3RzSWZOZWVkZWQoU3Ry
+aW5nW10gY2xhc3NwYXRocywgU3RyaW5nW10gdm1Bcmd1bWVudHMpIHsKK3ByaXZhdGUgdm9pZCBs
+YXVuY2hWZXJpZnlUZXN0c0lmTmVlZGVkKFN0cmluZ1tdIGNsYXNzcGF0aHMsIFN0cmluZ1tdIHZt
+QXJndW1lbnRzLCBTdHJpbmcgdGVzdE5hbWUpIHsKIAkvLyBkZXRlcm1pbmUgaWYgd2UgY2FuIHJl
+dXNlIHRoZSB2bQogCWlmICh0aGlzLnZtICE9IG51bGwgJiYgdGhpcy52bS5pc1J1bm5pbmcoKSAm
+JiB0aGlzLmNsYXNzcGF0aENhY2hlICE9IG51bGwpIHsKIAkJaWYgKGNsYXNzcGF0aHMubGVuZ3Ro
+ID09IHRoaXMuY2xhc3NwYXRoQ2FjaGUubGVuZ3RoKSB7CkBAIC00OTcsNyArNTIyLDcgQEAKIAl9
+CiAJbGF1bmNoZXIuc2V0UHJvZ3JhbUNsYXNzKFZlcmlmeVRlc3RzLmNsYXNzLmdldE5hbWUoKSk7
+CiAJaW50IHBvcnROdW1iZXIgPSBVdGlsLmdldEZyZWVQb3J0KCk7Ci0JbGF1bmNoZXIuc2V0UHJv
+Z3JhbUFyZ3VtZW50cyhuZXcgU3RyaW5nW10ge0ludGVnZXIudG9TdHJpbmcocG9ydE51bWJlcil9
+KTsKKwlsYXVuY2hlci5zZXRQcm9ncmFtQXJndW1lbnRzKG5ldyBTdHJpbmdbXSB7SW50ZWdlci50
+b1N0cmluZyhwb3J0TnVtYmVyKSwgdGVzdE5hbWV9KTsKIAl0cnkgewogCQl0aGlzLnZtID0gbGF1
+bmNoZXIubGF1bmNoKCk7CiAJCWZpbmFsIElucHV0U3RyZWFtIGlucHV0ID0gdGhpcy52bS5nZXRJ
+bnB1dFN0cmVhbSgpOwpAQCAtNjA4LDIyICs2MzMsMjIgQEAKICAqIFZlcmlmeSB0aGF0IHRoZSBj
+bGFzcyBmaWxlcyBjcmVhdGVkIGZvciB0aGUgZ2l2ZW4gdGVzdCBmaWxlIGNhbiBiZSBsb2FkZWQg
+YnkKICAqIGEgdmlydHVhbCBtYWNoaW5lLgogICovCi1wdWJsaWMgYm9vbGVhbiB2ZXJpZnlDbGFz
+c0ZpbGVzKFN0cmluZyBzb3VyY2VGaWxlUGF0aCwgU3RyaW5nIGNsYXNzTmFtZSwgU3RyaW5nIGV4
+cGVjdGVkU3VjY2Vzc091dHB1dFN0cmluZywgU3RyaW5nW10gY2xhc3NwYXRocykgewotCXJldHVy
+biB2ZXJpZnlDbGFzc0ZpbGVzKHNvdXJjZUZpbGVQYXRoLCBjbGFzc05hbWUsIGV4cGVjdGVkU3Vj
+Y2Vzc091dHB1dFN0cmluZywgIiIsIGNsYXNzcGF0aHMsIG51bGwsIG51bGwpOworcHVibGljIGJv
+b2xlYW4gdmVyaWZ5Q2xhc3NGaWxlcyhTdHJpbmcgc291cmNlRmlsZVBhdGgsIFN0cmluZyBjbGFz
+c05hbWUsIFN0cmluZyBleHBlY3RlZFN1Y2Nlc3NPdXRwdXRTdHJpbmcsIFN0cmluZ1tdIGNsYXNz
+cGF0aHMsIFN0cmluZyB0ZXN0TmFtZSkgeworCXJldHVybiB2ZXJpZnlDbGFzc0ZpbGVzKHNvdXJj
+ZUZpbGVQYXRoLCBjbGFzc05hbWUsIGV4cGVjdGVkU3VjY2Vzc091dHB1dFN0cmluZywgIiIsIGNs
+YXNzcGF0aHMsIG51bGwsIG51bGwsIHRlc3ROYW1lKTsKIH0KIC8qKgogICogVmVyaWZ5IHRoYXQg
+dGhlIGNsYXNzIGZpbGVzIGNyZWF0ZWQgZm9yIHRoZSBnaXZlbiB0ZXN0IGZpbGUgY2FuIGJlIGxv
+YWRlZCBieQogICogYSB2aXJ0dWFsIG1hY2hpbmUuCiAgKi8KLXB1YmxpYyBib29sZWFuIHZlcmlm
+eUNsYXNzRmlsZXMoU3RyaW5nIHNvdXJjZUZpbGVQYXRoLCBTdHJpbmcgY2xhc3NOYW1lLCBTdHJp
+bmcgZXhwZWN0ZWRTdWNjZXNzT3V0cHV0U3RyaW5nLCBTdHJpbmdbXSBjbGFzc3BhdGhzLCBTdHJp
+bmdbXSBwcm9ncmFtQXJndW1lbnRzLCBTdHJpbmdbXSB2bUFyZ3VtZW50cykgewotCXJldHVybiB2
+ZXJpZnlDbGFzc0ZpbGVzKHNvdXJjZUZpbGVQYXRoLCBjbGFzc05hbWUsIGV4cGVjdGVkU3VjY2Vz
+c091dHB1dFN0cmluZywgIiIsIGNsYXNzcGF0aHMsIHByb2dyYW1Bcmd1bWVudHMsIHZtQXJndW1l
+bnRzKTsKK3B1YmxpYyBib29sZWFuIHZlcmlmeUNsYXNzRmlsZXMoU3RyaW5nIHNvdXJjZUZpbGVQ
+YXRoLCBTdHJpbmcgY2xhc3NOYW1lLCBTdHJpbmcgZXhwZWN0ZWRTdWNjZXNzT3V0cHV0U3RyaW5n
+LCBTdHJpbmdbXSBjbGFzc3BhdGhzLCBTdHJpbmdbXSBwcm9ncmFtQXJndW1lbnRzLCBTdHJpbmdb
+XSB2bUFyZ3VtZW50cywgU3RyaW5nIHRlc3ROYW1lKSB7CisJcmV0dXJuIHZlcmlmeUNsYXNzRmls
+ZXMoc291cmNlRmlsZVBhdGgsIGNsYXNzTmFtZSwgZXhwZWN0ZWRTdWNjZXNzT3V0cHV0U3RyaW5n
+LCAiIiwgY2xhc3NwYXRocywgcHJvZ3JhbUFyZ3VtZW50cywgdm1Bcmd1bWVudHMsIHRlc3ROYW1l
+KTsKIH0KIHB1YmxpYyBib29sZWFuIHZlcmlmeUNsYXNzRmlsZXMoU3RyaW5nIHNvdXJjZUZpbGVQ
+YXRoLCBTdHJpbmcgY2xhc3NOYW1lLCBTdHJpbmcgZXhwZWN0ZWRPdXRwdXRTdHJpbmcsCi0JCVN0
+cmluZyBleHBlY3RlZEVycm9yU3RyaW5nU3RhcnQsIFN0cmluZ1tdIGNsYXNzcGF0aHMsIFN0cmlu
+Z1tdIHByb2dyYW1Bcmd1bWVudHMsIFN0cmluZ1tdIHZtQXJndW1lbnRzKSB7CisJCVN0cmluZyBl
+eHBlY3RlZEVycm9yU3RyaW5nU3RhcnQsIFN0cmluZ1tdIGNsYXNzcGF0aHMsIFN0cmluZ1tdIHBy
+b2dyYW1Bcmd1bWVudHMsIFN0cmluZ1tdIHZtQXJndW1lbnRzLCBTdHJpbmcgdGVzdE5hbWUpIHsK
+IAl0aGlzLm91dHB1dEJ1ZmZlciA9IG5ldyBTdHJpbmdCdWZmZXIoKTsKIAl0aGlzLmVycm9yQnVm
+ZmVyID0gbmV3IFN0cmluZ0J1ZmZlcigpOwogCWlmICh0aGlzLnJldXNlVk0gJiYgcHJvZ3JhbUFy
+Z3VtZW50cyA9PSBudWxsKSB7Ci0JCWxhdW5jaFZlcmlmeVRlc3RzSWZOZWVkZWQoY2xhc3NwYXRo
+cywgdm1Bcmd1bWVudHMpOworCQlsYXVuY2hWZXJpZnlUZXN0c0lmTmVlZGVkKGNsYXNzcGF0aHMs
+IHZtQXJndW1lbnRzLCB0ZXN0TmFtZSk7CiAJCWxvYWRBbmRSdW4oY2xhc3NOYW1lKTsKIAl9IGVs
+c2UgewogCQlsYXVuY2hBbmRSdW4oY2xhc3NOYW1lLCBjbGFzc3BhdGhzLCBwcm9ncmFtQXJndW1l
+bnRzLCB2bUFyZ3VtZW50cyk7CkBAIC02MzcsMTEgKzY2MiwxMSBAQAogICogVmVyaWZ5IHRoYXQg
+dGhlIGNsYXNzIGZpbGVzIGNyZWF0ZWQgZm9yIHRoZSBnaXZlbiB0ZXN0IGZpbGUgY2FuIGJlIGxv
+YWRlZCBhbmQgcnVuIHdpdGggYW4gZXhwZWN0ZWQgZXJyb3IgY29udGFpbmVkCiAgKiBpbiB0aGUg
+ZXhwZWN0ZWRTdWNjZXNzT3V0cHV0U3RyaW5nIHN0cmluZy4KICAqLwotcHVibGljIGJvb2xlYW4g
+dmVyaWZ5Q2xhc3NGaWxlc1Rocm93aW5nRXJyb3IoU3RyaW5nIHNvdXJjZUZpbGVQYXRoLCBTdHJp
+bmcgY2xhc3NOYW1lLCBTdHJpbmcgZXhwZWN0ZWRTdWNjZXNzT3V0cHV0U3RyaW5nLCBTdHJpbmdb
+XSBjbGFzc3BhdGhzLCBTdHJpbmdbXSBwcm9ncmFtQXJndW1lbnRzLCBTdHJpbmdbXSB2bUFyZ3Vt
+ZW50cykgeworcHVibGljIGJvb2xlYW4gdmVyaWZ5Q2xhc3NGaWxlc1Rocm93aW5nRXJyb3IoU3Ry
+aW5nIHNvdXJjZUZpbGVQYXRoLCBTdHJpbmcgY2xhc3NOYW1lLCBTdHJpbmcgZXhwZWN0ZWRTdWNj
+ZXNzT3V0cHV0U3RyaW5nLCBTdHJpbmdbXSBjbGFzc3BhdGhzLCBTdHJpbmdbXSBwcm9ncmFtQXJn
+dW1lbnRzLCBTdHJpbmdbXSB2bUFyZ3VtZW50cywgU3RyaW5nIHRlc3ROYW1lKSB7CiAJdGhpcy5v
+dXRwdXRCdWZmZXIgPSBuZXcgU3RyaW5nQnVmZmVyKCk7CiAJdGhpcy5lcnJvckJ1ZmZlciA9IG5l
+dyBTdHJpbmdCdWZmZXIoKTsKIAlpZiAodGhpcy5yZXVzZVZNICYmIHByb2dyYW1Bcmd1bWVudHMg
+PT0gbnVsbCkgewotCQlsYXVuY2hWZXJpZnlUZXN0c0lmTmVlZGVkKGNsYXNzcGF0aHMsIHZtQXJn
+dW1lbnRzKTsKKwkJbGF1bmNoVmVyaWZ5VGVzdHNJZk5lZWRlZChjbGFzc3BhdGhzLCB2bUFyZ3Vt
+ZW50cywgdGVzdE5hbWUpOwogCQlsb2FkQW5kUnVuKGNsYXNzTmFtZSk7CiAJfSBlbHNlIHsKIAkJ
+bGF1bmNoQW5kUnVuKGNsYXNzTmFtZSwgY2xhc3NwYXRocywgcHJvZ3JhbUFyZ3VtZW50cywgdm1B
+cmd1bWVudHMpOwpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGls
+ZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL3V0aWwvVmVyaWZ5VGVzdHMuamF2YSBi
+L29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQv
+Y29yZS90ZXN0cy91dGlsL1ZlcmlmeVRlc3RzLmphdmEKaW5kZXggZDM2YmFhMC4uMDg0Y2YzNyAx
+MDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9l
+Y2xpcHNlL2pkdC9jb3JlL3Rlc3RzL3V0aWwvVmVyaWZ5VGVzdHMuamF2YQorKysgYi9vcmcuZWNs
+aXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVz
+dHMvdXRpbC9WZXJpZnlUZXN0cy5qYXZhCkBAIC0xNSwxMyArMTUsMTcgQEAKIGltcG9ydCBqYXZh
+LmlvLkZpbGU7CiBpbXBvcnQgamF2YS5pby5GaWxlSW5wdXRTdHJlYW07CiBpbXBvcnQgamF2YS5p
+by5GaWxlTm90Rm91bmRFeGNlcHRpb247CitpbXBvcnQgamF2YS5pby5GaWxlV3JpdGVyOwogaW1w
+b3J0IGphdmEuaW8uSU9FeGNlcHRpb247CiBpbXBvcnQgamF2YS5pby5JbnB1dFN0cmVhbTsKK2lt
+cG9ydCBqYXZhLmlvLk91dHB1dFN0cmVhbTsKK2ltcG9ydCBqYXZhLmlvLldyaXRlcjsKIGltcG9y
+dCBqYXZhLmxhbmcucmVmbGVjdC5JbnZvY2F0aW9uVGFyZ2V0RXhjZXB0aW9uOwogaW1wb3J0IGph
+dmEubGFuZy5yZWZsZWN0Lk1ldGhvZDsKIGltcG9ydCBqYXZhLm5ldC5TZXJ2ZXJTb2NrZXQ7CiBp
+bXBvcnQgamF2YS5uZXQuU29ja2V0OwogaW1wb3J0IGphdmEudXRpbC5TdHJpbmdUb2tlbml6ZXI7
+CisKIAogLyoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKgogICoKQEAgLTM0LDYgKzM4LDcgQEAKIAlpbnQgcG9ydE51bWJlcjsKIAlTb2NrZXQgc29j
+a2V0OwogCisJV3JpdGVyIGxvZ0ZpbGU7CiAvKioKICAqIE5PVEU6IENvZGUgY29waWVkIGZyb20g
+anVuaXQudXRpbC5UZXN0Q2FzZUNsYXNzTG9hZGVyLgogICoKQEAgLTgzLDcgKzg4LDYgQEAKIAkJ
+d2hpbGUgKHN0Lmhhc01vcmVUb2tlbnMoKSkgewogCQkJdGhpcy5wYXRoSXRlbXNbaSsrXT0gc3Qu
+bmV4dFRva2VuKCk7CiAJCX0KLQogCX0KIAlwdWJsaWMgamF2YS5uZXQuVVJMIGdldFJlc291cmNl
+KFN0cmluZyBuYW1lKSB7CiAJCXJldHVybiBDbGFzc0xvYWRlci5nZXRTeXN0ZW1SZXNvdXJjZShu
+YW1lKTsKQEAgLTE5Miw4ICsxOTYsMTUgQEAKIAkJdGhyb3cgZS5nZXRUYXJnZXRFeGNlcHRpb24o
+KTsKIAl9CiB9CisKK1ZlcmlmeVRlc3RzKFN0cmluZyB0ZXN0TmFtZSkgeworCXRyeSB7CisJCWxv
+Z0ZpbGUgPSBuZXcgRmlsZVdyaXRlcihuZXcgRmlsZSgiL3RtcC90ZXN0Iit0ZXN0TmFtZSsiLmxv
+ZyIpKTsKKwl9IGNhdGNoIChJT0V4Y2VwdGlvbiBlKSB7CisJfQorfQogcHVibGljIHN0YXRpYyB2
+b2lkIG1haW4oU3RyaW5nW10gYXJncykgdGhyb3dzIElPRXhjZXB0aW9uIHsKLQlWZXJpZnlUZXN0
+cyB2ZXJpZnkgPSBuZXcgVmVyaWZ5VGVzdHMoKTsKKwlWZXJpZnlUZXN0cyB2ZXJpZnkgPSBuZXcg
+VmVyaWZ5VGVzdHMoYXJnc1sxXSk7CiAJdmVyaWZ5LnBvcnROdW1iZXIgPSBJbnRlZ2VyLnBhcnNl
+SW50KGFyZ3NbMF0pOwogCXZlcmlmeS5ydW4oKTsKIH0KQEAgLTIwNCwxNyArMjE1LDMwIEBACiAJ
+c2VydmVyLmNsb3NlKCk7CiAKIAlEYXRhSW5wdXRTdHJlYW0gaW4gPSBuZXcgRGF0YUlucHV0U3Ry
+ZWFtKHRoaXMuc29ja2V0LmdldElucHV0U3RyZWFtKCkpOwotCWZpbmFsIERhdGFPdXRwdXRTdHJl
+YW0gb3V0ID0gbmV3IERhdGFPdXRwdXRTdHJlYW0odGhpcy5zb2NrZXQuZ2V0T3V0cHV0U3RyZWFt
+KCkpOworCWZpbmFsIE91dHB1dFN0cmVhbSBvdXRwdXRTdHJlYW0gPSB0aGlzLnNvY2tldC5nZXRP
+dXRwdXRTdHJlYW0oKTsKKwlmaW5hbCBEYXRhT3V0cHV0U3RyZWFtIG91dCA9IG5ldyBEYXRhT3V0
+cHV0U3RyZWFtKG91dHB1dFN0cmVhbSk7CiAJd2hpbGUgKHRydWUpIHsKIAkJZmluYWwgU3RyaW5n
+IGNsYXNzTmFtZSA9IGluLnJlYWRVVEYoKTsKIAkJVGhyZWFkIHRocmVhZCA9IG5ldyBUaHJlYWQo
+KSB7CiAJCQlwdWJsaWMgdm9pZCBydW4oKSB7CiAJCQkJdHJ5IHsKKwkJCQkJbG9nRmlsZS53cml0
+ZShjbGFzc05hbWUrIiAiK3NvY2tldC5pc0Nsb3NlZCgpKyJcbiIpOworCQkJCQlsb2dGaWxlLmZs
+dXNoKCk7CiAJCQkJCWxvYWRBbmRSdW4oY2xhc3NOYW1lKTsKKwkJCQkJVmVyaWZ5VGVzdHMudGhp
+cy5sb2dGaWxlLndyaXRlKCJcdCBcdC0+ICIrc29ja2V0LmlzQ2xvc2VkKCkrIlxuIik7CisJCQkJ
+CWxvZ0ZpbGUuZmx1c2goKTsKIAkJCQkJb3V0LndyaXRlQm9vbGVhbih0cnVlKTsKKwkJCQkJVmVy
+aWZ5VGVzdHMudGhpcy5sb2dGaWxlLndyaXRlKCJcdCB0cnVlXHQtPiIrc29ja2V0LmlzQ2xvc2Vk
+KCkrIlxuIik7CisJCQkJCWxvZ0ZpbGUuZmx1c2goKTsKIAkJCQkJU3lzdGVtLmVyci5wcmludGxu
+KFZlcmlmeVRlc3RzLmNsYXNzLmdldE5hbWUoKSk7CiAJCQkJCVN5c3RlbS5vdXQucHJpbnRsbihW
+ZXJpZnlUZXN0cy5jbGFzcy5nZXROYW1lKCkpOwogCQkJCX0gY2F0Y2ggKFRocm93YWJsZSBlKSB7
+CisJCQkJCXRyeSB7CisJCQkJCQlsb2dGaWxlLndyaXRlKCJFeGNlcHRpb246ICIrZSk7CisJCQkJ
+CQlsb2dGaWxlLmZsdXNoKCk7CisJCQkJCX0gY2F0Y2ggKElPRXhjZXB0aW9uIGUyKSB7CisJCQkJ
+CQkvLyBub3AKKwkJCQkJfQogCQkJCQllLnByaW50U3RhY2tUcmFjZSgpOwogCQkJCQl0cnkgewog
+CQkJCQkJU3lzdGVtLmVyci5wcmludGxuKFZlcmlmeVRlc3RzLmNsYXNzLmdldE5hbWUoKSk7CkBA
+IC0yMjYsNiArMjUwLDcgQEAKIAkJCQl9CiAJCQkJdHJ5IHsKIAkJCQkJb3V0LmZsdXNoKCk7CisJ
+CQkJCWxvZ0ZpbGUuZmx1c2goKTsKIAkJCQl9IGNhdGNoIChJT0V4Y2VwdGlvbiBlKSB7CiAJCQkJ
+CWUucHJpbnRTdGFja1RyYWNlKCk7CiAJCQkJfQ==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>237650</attachid>
+            <date>2013-11-22 14:04:00 -0500</date>
+            <delta_ts>2013-11-22 14:04:25 -0500</delta_ts>
+            <desc>Preventing System.exit calls shutting down the VM</desc>
+            <filename>SecurityManagerUtil.java</filename>
+            <type>text/plain</type>
+            <size>1662</size>
+            <attacher name="Timo Kinnunen">timo.kinnunen</attacher>
+            
+              <data encoding="base64">LyoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKgogKiBDb3B5cmlnaHQgKGMpIDIwMTMgVGltbyBLaW5udW5l
+bi4KICogQWxsIHJpZ2h0cyByZXNlcnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55
+aW5nIG1hdGVyaWFscwogKiBhcmUgbWFkZSBhdmFpbGFibGUgdW5kZXIgdGhlIHRlcm1zIG9mIHRo
+ZSBFY2xpcHNlIFB1YmxpYyBMaWNlbnNlIHYxLjAKICogd2hpY2ggaXMgYXZhaWxhYmxlIGF0IGh0
+dHA6Ly93d3cuZWNsaXBzZS5vcmcvbGVnYWwvZXBsLXYxMC5odG1sCiAqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKi8KcGFja2FnZSB1dGlscy5zZWN1cml0eTsKCmltcG9ydCBqYXZhLmlvLklPRXhjZXB0aW9u
+OwppbXBvcnQgamF2YS5uaW8uY2hhcnNldC5DaGFyc2V0OwppbXBvcnQgamF2YS5uaW8uZmlsZS5G
+aWxlczsKaW1wb3J0IGphdmEubmlvLmZpbGUuUGF0aDsKaW1wb3J0IGphdmEuc2VjdXJpdHkuQWNj
+ZXNzQ29udHJvbEV4Y2VwdGlvbjsKCnB1YmxpYyBjbGFzcyBTZWN1cml0eU1hbmFnZXJVdGlsIHsK
+ICAKICBwdWJsaWMgc3RhdGljIHZvaWQgcHJldmVudFN5c3RlbUV4aXQoKSB7CiAgICAKICAgIHRy
+eSB7CiAgICAgIFBhdGggcGF0aCA9IEZpbGVzLmNyZWF0ZVRlbXBGaWxlKCJhbGwiLCAiLnBvbGlj
+eSIpOwogICAgICBDaGFyc2V0IGFzY2lpID0gQ2hhcnNldC5mb3JOYW1lKCJBU0NJSSIpOwogICAg
+ICBieXRlW10gYnl0ZXMgPSAoImdyYW50IHtcbiIKICAgICAgICAgICsgIiAgcGVybWlzc2lvbiBq
+YXZhLnNlY3VyaXR5LkFsbFBlcm1pc3Npb247XG4iICsgIn07IikKICAgICAgICAgIC5nZXRCeXRl
+cyhhc2NpaSk7CiAgICAgIEZpbGVzLndyaXRlKHBhdGgsIGJ5dGVzKTsKICAgICAgU3lzdGVtLnNl
+dFByb3BlcnR5KCJqYXZhLnNlY3VyaXR5LnBvbGljeSIsIHBhdGgudG9TdHJpbmcoKSk7CiAgICAg
+IFNlY3VyaXR5TWFuYWdlciBtYW5hZ2VyID0gbmV3IFNlY3VyaXR5TWFuYWdlcigpIHsKICAgICAg
+ICAKICAgICAgICBAT3ZlcnJpZGUKICAgICAgICBwdWJsaWMgdm9pZCBjaGVja0V4aXQoaW50IHN0
+YXR1cykgewogICAgICAgICAgCiAgICAgICAgICBzdXBlci5jaGVja0V4aXQoc3RhdHVzKTsKICAg
+ICAgICAgIHRocm93IG5ldyBBY2Nlc3NDb250cm9sRXhjZXB0aW9uKCJDYWxsaW5nIFN5c3RlbS5l
+eGl0KCkgbm90IGFsbG93ZWQiKTsKICAgICAgICB9CiAgICAgIH07CiAgICAgIFN5c3RlbS5zZXRT
+ZWN1cml0eU1hbmFnZXIobWFuYWdlcik7CiAgICAgIHRyeSB7CiAgICAgICAgbWFuYWdlci5jaGVj
+a0V4aXQoMCk7CiAgICAgIH0gY2F0Y2goRXhjZXB0aW9uIGV4cGVjdGVkKSB7CiAgICAgICAgcmV0
+dXJuOwogICAgICB9IGZpbmFsbHkgewogICAgICAgIEZpbGVzLmRlbGV0ZUlmRXhpc3RzKHBhdGgp
+OwogICAgICB9CiAgICB9IGNhdGNoKElPRXhjZXB0aW9uIGUpIHsKICAgICAgdGhyb3cgbmV3IEFz
+c2VydGlvbkVycm9yKCJDYW5ub3QgcHJldmVudCBTeXN0ZW0uZXhpdCgpIiwgZSk7CiAgICB9CiAg
+ICB0aHJvdyBuZXcgQXNzZXJ0aW9uRXJyb3IoIkNhbm5vdCBwcmV2ZW50IFN5c3RlbS5leGl0KCki
+KTsKICB9Cn0K
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>238801</attachid>
+            <date>2014-01-09 00:18:00 -0500</date>
+            <delta_ts>2014-01-09 00:18:30 -0500</delta_ts>
+            <desc>Work around fix</desc>
+            <filename>Fixed-Bug-414653.patch</filename>
+            <type>text/plain</type>
+            <size>2882</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZS50
+ZXN0cy5jb21waWxlcgpkaWZmIC0tZ2l0IHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9j
+b21waWxlci9yZWdyZXNzaW9uL1N3aXRjaFRlc3QuamF2YSBzcmMvb3JnL2VjbGlwc2UvamR0L2Nv
+cmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9Td2l0Y2hUZXN0LmphdmEKaW5kZXggMTY1YjE5
+YS4uZDc4YzI3ZiAxMDA2NDQKLS0tIHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21w
+aWxlci9yZWdyZXNzaW9uL1N3aXRjaFRlc3QuamF2YQorKysgc3JjL29yZy9lY2xpcHNlL2pkdC9j
+b3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vU3dpdGNoVGVzdC5qYXZhCkBAIC0xLDQgKzEs
+NCBAQAogLyoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioKLSAqIENvcHlyaWdodCAoYykgMjAwNSwgMjAx
+MiBJQk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy4KKyAqIENvcHlyaWdodCAoYykgMjAwNSwgMjAx
+NCBJQk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy4KICAqIEFsbCByaWdodHMgcmVzZXJ2ZWQuIFRo
+aXMgcHJvZ3JhbSBhbmQgdGhlIGFjY29tcGFueWluZyBtYXRlcmlhbHMKICAqIGFyZSBtYWRlIGF2
+YWlsYWJsZSB1bmRlciB0aGUgdGVybXMgb2YgdGhlIEVjbGlwc2UgUHVibGljIExpY2Vuc2UgdjEu
+MApAQCAtMTQ2NCw1ICsxNDY0LDUgQEAKIAkJIglwdWJsaWMgc3RhdGljIHZvaWQgbWFpbihTdHJp
+bmdbXSBhcmd2KSB7XG4iICsKIAkJIgkJU3RyaW5nIGRpc3BhdGNoZXIgPSBcIlx1MDAwMFwiO1xu
+IiArCi0JCSIJCWZvciAoaW50IGkgPSAwOyBpIDwgMTAwOyBpKyspIHtcbiIgKworCQkiCQlvdXRl
+cjogZm9yIChpbnQgaSA9IDA7IGkgPCAxMDA7IGkrKykge1xuIiArCiAJCSIJCQlzd2l0Y2ggKGRp
+c3BhdGNoZXIpIHtcbiIgKwogCQkiCQkJY2FzZSBcIlx1MDAwMFwiOlxuIiArCkBAIC0xNDgzLDUg
+KzE0ODMsNSBAQAogCQkiCQkJZGVmYXVsdDpcbiIgKwogCQkiCQkJCVN5c3RlbS5vdXQucHJpbnRs
+bihcIkRlZmF1bHRcIik7XG4iICsKLQkJIgkJCQlTeXN0ZW0uZXhpdCgwKTtcbiIgKworCQkiCQkJ
+CWJyZWFrIG91dGVyO1xuIiArCiAJCSIJCQljYXNlIFwiXHUwMDAwXHUwMDAwXHUwMDAwXHUwMDAw
+XHUwMDAwXHUwMDAwXHUwMDAwXHUwMDAwXCI6XG4iICsKIAkJIgkJCQlTeXN0ZW0ub3V0LnByaW50
+KFwiOCBcIik7XG4iICsKQEAgLTE1MjAsNSArMTUyMCw1IEBACiAJCSIJcHVibGljIHN0YXRpYyB2
+b2lkIG1haW4oU3RyaW5nW10gYXJndikge1xuIiArCiAJCSIJCVN0cmluZyBkaXNwYXRjaGVyID0g
+XCJcdTAwMDBcIjtcbiIgKwotCQkiCQl3aGlsZSh0cnVlKSB7XG4iICsKKwkJIgkJb3V0ZXI6IHdo
+aWxlKHRydWUpIHtcbiIgKwogCQkiCQkJc3dpdGNoIChkaXNwYXRjaGVyKSB7XG4iICsKIAkJIgkJ
+CWNhc2UgXCJcdTAwMDBcIjpcbiIgKwpAQCAtMTU0NCw1ICsxNTQ0LDUgQEAKIAkJIgkJCWRlZmF1
+bHQ6XG4iICsKIAkJIgkJCQlTeXN0ZW0ub3V0LnByaW50bG4oXCJEZWZhdWx0XCIpO1xuIiArCi0J
+CSIJCQkJU3lzdGVtLmV4aXQoMCk7XG4iICsKKwkJIgkJCQlicmVhayBvdXRlcjtcbiIgKwogCQki
+CQkJY2FzZSBcIlx1MDAwMFx1MDAwMFx1MDAwMFx1MDAwMFx1MDAwMFx1MDAwMFx1MDAwMFx1MDAw
+MFwiOlxuIiArCiAJCSIJCQkJU3lzdGVtLm91dC5wcmludChcIjggXCIpO1xuIiArCkBAIC0xNzIy
+LDUgKzE3MjIsNSBAQAogCQkiICAgIH1cbiIgKwogCQkiICAgIHB1YmxpYyBzdGF0aWMgdm9pZCBt
+YWluKFN0cmluZyBbXSBhcmdzKSB7XG4iICsKLQkJIiAgICAJd2hpbGUgKHRydWUpIHtcbiIgKwor
+CQkiICAgIAlvdXRlcjogd2hpbGUgKHRydWUpIHtcbiIgKwogCQkiICAgIAkJU3RyaW5nIHMgPSBu
+dWxsO1xuIiArCiAJCSIgICAgCQlzd2l0Y2gocyA9IGRpc3BhdGNoZXIoKSkge1xuIiArCkBAIC0x
+NzQwLDUgKzE3NDAsNSBAQAogCQkiICAgIAkJCQlicmVhaztcbiIgKwogCQkiICAgIAkJZGVmYXVs
+dDogU3lzdGVtLm91dC5wcmludChcIkRPTkVcIik7XG4iICsKLQkJIiAgICAJCQkJU3lzdGVtLmV4
+aXQoMCk7XG4iICsKKwkJIiAgICAJCQkJYnJlYWsgb3V0ZXI7XG4iICsKIAkJIiAgICAJCX1cbiIg
+KwogCQkiICAgIAl9XG4iICsKQEAgLTE3NzIsNSArMTc3Miw1IEBACiAJCSIgICAgfVxuIiArCiAJ
+CSIgICAgcHVibGljIHN0YXRpYyB2b2lkIG1haW4oU3RyaW5nIFtdIGFyZ3MpIHtcbiIgKwotCQki
+ICAgIAl3aGlsZSAodHJ1ZSkge1xuIiArCisJCSIgICAgCW91dGVyOiB3aGlsZSAodHJ1ZSkge1xu
+IiArCiAJCSIgICAgCQlTdHJpbmcgcyA9IG51bGw7XG4iICsKIAkJIiAgICAJCXN3aXRjaChzID0g
+ZGlzcGF0Y2hlcigpKSB7XG4iICsKQEAgLTE3ODEsNSArMTc4MSw1IEBACiAJCSIgICAgCQljYXNl
+IFwiMFwiOiBicmVhaztcbiIgKwogCQkiICAgIAkJZGVmYXVsdDogU3lzdGVtLm91dC5wcmludChc
+IkRPTkVcIik7XG4iICsKLQkJIiAgICAJCQkJU3lzdGVtLmV4aXQoMCk7XG4iICsKKwkJIiAgICAJ
+CQkJYnJlYWsgb3V0ZXI7XG4iICsKIAkJIiAgICAJCX1cbiIgKwogCQkiICAgIAl9XG4iICsKQEAg
+LTE4NDYsOSArMTg0Niw3IEBACiAJCSIgICAgCQkJCWJyZWFrO1xuIiArCiAJCSIgICAgCQlkZWZh
+dWx0OiBTeXN0ZW0ub3V0LnByaW50KFwiRE9ORVwiKTtcbiIgKwotCQkiICAgIAkJCQlTeXN0ZW0u
+ZXhpdCgwKTtcbiIgKwogCQkiICAgIAkJCQkgYnJlYWsganVuaztcbiIgKwogCQkiICAgIAkJfVxu
+IiArCiAJCSIgICAgCX1cbiIgKwotCQkiICAgCVN5c3RlbS5vdXQucHJpbnRsbihcIkJyb2tlblwi
+KTtcbiIgKwogCQkiICAgIH1cbiIgKwogCQkifVxuIiw=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

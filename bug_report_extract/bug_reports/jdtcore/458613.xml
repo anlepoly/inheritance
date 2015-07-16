@@ -1,0 +1,501 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>458613</bug_id>
+          
+          <creation_ts>2015-01-28 03:36:00 -0500</creation_ts>
+          <short_desc>[1.8] lambda not shown in quick type hierarchy</short_desc>
+          <delta_ts>2015-03-18 01:40:52 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/41591</see_also>
+    
+    <see_also>https://git.eclipse.org/r/41896</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=6395db1d3e68d8903c45f196e87bf93430cfb719</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M6</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Noopur Gupta">noopur_gupta</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>saammana</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2511176</commentid>
+    <comment_count>0</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2015-01-28 03:36:55 -0500</bug_when>
+    <thetext>package p1;
+
+import java.util.Arrays;
+import java.util.Comparator;
+
+public class C1 {
+	Comparator&lt;String&gt; c1 = (o1, o2) -&gt; o1.compareToIgnoreCase(o2);
+
+	public static void main(String[] args) {
+		Comparator&lt;String&gt; c2 = (o1, o2) -&gt; o1.compareToIgnoreCase(o2);
+		Arrays.sort(new String[2], (o1, o2) -&gt; o1.compareToIgnoreCase(o2)); // not shown in Ctrl+T
+	}
+}
+
+---------------------------------------------------------
+
+In the above example, invoke Quick Type Hierarchy (Ctrl+T) on &quot;-&gt;&quot;.
+The third lambda is not shown in the quick type hierarchy result.
+
+If Open Type Hierarchy (F4) is invoked on &quot;-&gt;&quot;, all three lambdas are shown in the result.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2512122</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-29 11:51:10 -0500</bug_when>
+    <thetext>I may be looking at the wrong place, but in TypeHierarchyLifeCycle, line no 330, the hierarchy returned by createTypeHierarchy() does contain all three lambda. I don&apos;t know what happens from there.
+
+Noopur, can you please confirm?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2515060</commentid>
+    <comment_count>2</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2015-02-06 04:38:04 -0500</bug_when>
+    <thetext>(In reply to Jay Arthanareeswaran from comment #1)
+&gt; I may be looking at the wrong place, but in TypeHierarchyLifeCycle, line no
+&gt; 330, the hierarchy returned by createTypeHierarchy() does contain all three
+&gt; lambda. I don&apos;t know what happens from there.
+&gt; 
+&gt; Noopur, can you please confirm?
+
+Correct. After that the lambda gets filtered as the type of its superInterface&apos;s type arg does not match its parameter&apos;s type.
+
+Smaller example, which doesn&apos;t involve Comparator and compares the lambda with similar anonymous class also:
+
+package p;
+
+interface I9&lt;T&gt; {
+  void foo(T x); // Press Ctrl+T on foo
+}
+
+class Cx {
+  I9&lt;String&gt; i9a = x -&gt; {};
+  
+  public static void main(String[] args) {
+    A.sort(new String[2], x -&gt; { // not shown in Ctrl+T
+    });
+    A.sort(new String[2], new I9&lt;String&gt;() {
+      @Override
+      public void foo(String x) {}
+    });
+  } 
+}
+
+class A {
+  static &lt;T&gt; void sort(T[] t, I9&lt;? super T&gt; i9b) {} 
+}
+
+In the above example, the lambda type gets filtered in TypeHierarchyContentProvider#addTypeChildren because the type of its superInterface&apos;s type arg comes as: [-Ljava.lang.String;] i.e. (? super String), whereas its parameter&apos;s type comes as: [Ljava.lang.String;] i.e. (String), which do not match.
+
+For the other lambda, I9&apos;s type arg is [Ljava.lang.String;] which matches its parameter type.
+For the anonymous class, I9&apos;s type arg is [QString;] which matches its method&apos;s parameter type.
+
+The superInterface&apos;s type arg is obtained from the result of IType.getSuperInterfaceTypeSignatures() for lambdas and from IType.getSuperclassTypeSignature() for anonymous class in MethodOverrideTester#computeSubstitutions.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2516302</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-10 01:58:26 -0500</bug_when>
+    <thetext>Thanks Noopur for the pointer.
+
+I see that the LambdaExpression#resolvedType is same as the expectedType:
+
+   interface I9&lt;? super java.lang.String&gt;
+
+whereas LambdaExpression#descriptor is:
+
+   public abstract void foo(java.lang.String) 
+
+Are we right in leaving the resolvedType same as expectedType or should we, at some point, also adjust the resovledType accordingly.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2517062</commentid>
+    <comment_count>4</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2015-02-11 03:50:49 -0500</bug_when>
+    <thetext>Perhaps LE.descriptor.declaringClass should be used instead of le.resolvedType in org.eclipse.jdt.internal.core.LambdaExpression.LambdaExpression(JavaElement, LambdaExpression). Resolved type will contain wild cards while super interfaces do not and this filtering happens when computing the descriptor for the lambda inside PTB.getSingleAbstractMethod</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2517064</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-11 03:57:07 -0500</bug_when>
+    <thetext>(In reply to Sasikanth Bharadwaj from comment #4)
+&gt; Perhaps LE.descriptor.declaringClass should be used instead of
+&gt; le.resolvedType in
+&gt; org.eclipse.jdt.internal.core.LambdaExpression.LambdaExpression(JavaElement,
+&gt; LambdaExpression). Resolved type will contain wild cards while super
+&gt; interfaces do not and this filtering happens when computing the descriptor
+&gt; for the lambda inside PTB.getSingleAbstractMethod
+
+Sounds perfect, thanks Sasi! This should be good enough for this bug and if we are fine with what the resolvedType contains today.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2517100</commentid>
+    <comment_count>6</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-02-11 04:52:53 -0500</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/41591</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2517227</commentid>
+    <comment_count>7</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-11 08:25:12 -0500</bug_when>
+    <thetext>(In reply to Eclipse Genie from comment #6)
+&gt; New Gerrit change created: https://git.eclipse.org/r/41591
+
+Hmm... Hudson job failed (second time today) with a non relevant test failure. Failing tests run fine in my environment. Will release after completing them locally.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2517278</commentid>
+    <comment_count>8</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-11 09:19:41 -0500</bug_when>
+    <thetext>My patch breaks code like this:
+
+interface I {
+	void doit();
+}
+interface J extends I {
+}
+public class X {
+	public static void main(String[] args) {
+		J j  = () -&gt; { System.out.println(&quot;Lambda&quot;); };
+		j.doit();
+	}
+}
+
+
+This is a test case from bug 430141, whose fix was doing the exact opposite of my patch :)
+
+Basically, descriptor.declaringClass points to &apos;I&apos; while resolvedType is &apos;J&apos;;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2517621</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-11 19:37:27 -0500</bug_when>
+    <thetext>Here&apos;s a snippet the would combine the best of both worlds:
+
+TypeBinding supertype = lambdaExpression.resolvedType;
+TypeBinding desctype = lambdaExpression.descriptor.declaringClass;
+if (desctype instanceof ParameterizedTypeBinding)
+    supertype = Scope.substitute((ParameterizedTypeBinding) desctype, supertype.original());
+this.interphase = new String(CharOperation.replaceOnCopy(supertype.genericTypeSignature(), &apos;/&apos;, &apos;.&apos;));
+
+idea being: compose 
+* the resolvedType (which can be more specific than descriptor.declaringClass)
+* with the parameterization from descriptor.declaringClass (because the the param. of resolvedType may be over-specific).
+
+I don&apos;t readily have much theory to back this, so please take it with a grain of salt :)
+
+Anyway, I believe, whatever tweaks we are inserting here, we may want to restrict them to type elided lambdas, so we don&apos;t mess around with the already-precise typing of typed lambdas.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2517641</commentid>
+    <comment_count>10</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-11 23:12:23 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #9)
+&gt; idea being: compose 
+&gt; * the resolvedType (which can be more specific than
+&gt; descriptor.declaringClass)
+&gt; * with the parameterization from descriptor.declaringClass (because the the
+&gt; param. of resolvedType may be over-specific).
+
+In this case, does it make sense to take care of things in the UI front while filtering out? Noopur/Markus, what&apos;s your take?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518855</commentid>
+    <comment_count>11</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-02-13 16:06:49 -0500</bug_when>
+    <thetext>(In reply to Jay Arthanareeswaran from comment #10)
+&gt; In this case, does it make sense to take care of things in the UI front
+&gt; while filtering out? Noopur/Markus, what&apos;s your take?
+
+No, the actual problem is really in Core. The super interface type of the lambda expression should be I9&lt;String&gt;, not I9&lt;? super String&gt;. The latter is not a valid type of a type declaration, so it should not be inferred as supertype of the lambda.
+
+As a last resort, we could work around this specific problem by adding this at MethodOverrideTester line 455:
+
+if (instantiatedType.isLambda()) {
+    // workaround for Bug 458613: [1.8] lambda not shown in quick type hierarchy
+    for (int j= 0; j &lt; superTypeArguments.length; j++) {
+        String superTypeArgument= superTypeArguments[j];
+        switch (superTypeArgument.charAt(0)) {
+            case Signature.C_SUPER:
+            case Signature.C_EXTENDS:
+                superTypeArguments[j]= superTypeArgument.substring(1);
+        }
+    }
+}
+
+But Stephan&apos;s proposed solution from comment 9 looks way better and solves the problem where it is created.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2519059</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-15 08:24:46 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #9)
+&gt; I don&apos;t readily have much theory to back this, so please take it with a
+&gt; grain of salt :)
+
+Rather than applying a lot of hand-waving to show why this should be correct, let me show an example where this snippet still fails:
+
+interface I9&lt;X,T&gt; {
+  void foo(T x); // Press Ctrl+T on foo
+}
+
+interface I10&lt;T&gt; extends I9&lt;Number,T&gt; {}
+
+class Cx {
+  I9&lt;Number,String&gt; i9a = x -&gt; {};
+  
+  public static void main(String[] args) {
+    B.sort(new String[2], x -&gt; { // #still-fails
+    });
+    A.sort(new String[2], x -&gt; {
+    });
+  } 
+}
+
+class A {
+  static &lt;T&gt; void sort(T[] t, I9&lt;Number,? super T&gt; i9b) {} 
+}
+class B {
+  static &lt;T&gt; void sort(T[] t, I10&lt;? super T&gt; i10) {} 
+}
+
+This not only combines the current issue with the situation of a SAM found in a super type, but also challenges partial parameterizations (I10 exposes/propagates T from I9, but not X). As a result, my previous patch fails to show the lambda at #still-fails in the hierarchy.
+
+It&apos;s interesting that this requires information that is not readily available after the compiler has resolved everything. While the compiler has found all types to be *compatible*, it didn&apos;t even bother to compute the exact type of the lambda. Still the resolved compiler bindings should be the best starting point for computing that imaginary exact lambda type.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2519062</commentid>
+    <comment_count>13</comment_count>
+      <attachid>250807</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-15 08:49:00 -0500</bug_when>
+    <thetext>Created attachment 250807
+more substitution magic
+
+This is the substitution magic that seems to be necessary to compute a precise lambda type.
+
+To illustrate using the I10 example:
+
+We ignore
+  lambda.resolvedType = I10&lt;? super java.lang.String&gt;
+
+Instead we start from
+  original = I10&lt;T&gt;
+  descType = I9&lt;java.lang.Number,java.lang.String&gt;
+To find the substitution for T, we map original to the level of descType:
+  originalSuper = I9&lt;java.lang.Number,T&gt;
+
+During substitution of I10&lt;T&gt; we see
+  T (from I10)
+We find this TVB at rank 1 in the arguments of originalSuper
+We look up the argument at rank 1 in descType
+  -&gt; substitute T(I10) by String
+Result of full substitution is:
+  I10&lt;String&gt;
+
+voila.
+
+This computation is kind-of the inverse of TB.findSuperTypeOriginatingFrom(), as in:
+  lambda.descriptor.declaringClass.findSubTypeOriginatingFrom(lambda.resolvedType)
+
+If anyone sees a simpler solution I&apos;m all ears.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2519063</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-15 08:52:05 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #13)
+&gt; Created attachment 250807 [details]
+&gt; more substitution magic
+
+Please ignore this line:
+
+import org.eclipse.objectteams.otdt.internal.core.compiler.lookup.ITeamAnchor;
+
+Obviously I was not in my plain JDT workspace :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2519160</commentid>
+    <comment_count>15</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-02-16 03:39:32 -0500</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/41896</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2519627</commentid>
+    <comment_count>16</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-17 00:08:02 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #13)
+&gt; idea being: compose 
+&gt; * the resolvedType (which can be more specific than
+&gt; descriptor.declaringClass)
+&gt; * with the parameterization from descriptor.declaringClass (because the the
+&gt; param. of resolvedType may be over-specific).
+
+I earlier believed that we construct such a type binding while computing SAM. But looks like I was wrong.
+
+(In reply to Stephan Herrmann from comment #13)
+&gt; If anyone sees a simpler solution I&apos;m all ears.
+
+Not from me. I have put the patch with some tests in Gerrit and Hudson gave green. Unless someone has anything else, we can release this.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2519771</commentid>
+    <comment_count>17</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-02-17 05:56:05 -0500</bug_when>
+    <thetext>+1 from me. JDT UI tests are also green with this patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2519792</commentid>
+    <comment_count>18</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-02-17 06:57:26 -0500</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/41896 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=6395db1d3e68d8903c45f196e87bf93430cfb719</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2519883</commentid>
+    <comment_count>19</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-02-17 09:00:03 -0500</bug_when>
+    <thetext>.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2533322</commentid>
+    <comment_count>20</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-03-18 01:40:52 -0400</bug_when>
+    <thetext>Verified for 4.5 M6 with build I20150317-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>250807</attachid>
+            <date>2015-02-15 08:49:00 -0500</date>
+            <delta_ts>2015-02-15 08:49:00 -0500</delta_ts>
+            <desc>more substitution magic</desc>
+            <filename>lambda-hierarchy.patch</filename>
+            <type>text/plain</type>
+            <size>3807</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9p
+bnRlcm5hbC9jb3JlL0xhbWJkYUV4cHJlc3Npb24uamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+L21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0xhbWJkYUV4cHJlc3Npb24uamF2
+YQppbmRleCAzMjdiMDdiLi4yZWY5ZDM1IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29yZS9MYW1iZGFFeHByZXNzaW9uLmph
+dmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVy
+bmFsL2NvcmUvTGFtYmRhRXhwcmVzc2lvbi5qYXZhCkBAIC0yMCw4ICsyMCwxNSBAQAogaW1wb3J0
+IG9yZy5lY2xpcHNlLmpkdC5jb3JlLldvcmtpbmdDb3B5T3duZXI7CiBpbXBvcnQgb3JnLmVjbGlw
+c2UuamR0LmNvcmUuY29tcGlsZXIuQ2hhck9wZXJhdGlvbjsKIGltcG9ydCBvcmcuZWNsaXBzZS5q
+ZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwLkJpbmRpbmc7CitpbXBvcnQgb3JnLmVjbGlwc2Uu
+amR0LmludGVybmFsLmNvbXBpbGVyLmxvb2t1cC5Mb29rdXBFbnZpcm9ubWVudDsKK2ltcG9ydCBv
+cmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwLlBhcmFtZXRlcml6ZWRUeXBl
+QmluZGluZzsKK2ltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3Vw
+LlNjb3BlOworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAu
+U3Vic3RpdHV0aW9uOworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5s
+b29rdXAuVHlwZUJpbmRpbmc7CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBp
+bGVyLmxvb2t1cC5UeXBlVmFyaWFibGVCaW5kaW5nOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5p
+bnRlcm5hbC5jb3JlLnV0aWwuTWVtZW50b1Rva2VuaXplcjsKIGltcG9ydCBvcmcuZWNsaXBzZS5q
+ZHQuaW50ZXJuYWwuY29yZS51dGlsLlV0aWw7CitpbXBvcnQgb3JnLmVjbGlwc2Uub2JqZWN0dGVh
+bXMub3RkdC5pbnRlcm5hbC5jb3JlLmNvbXBpbGVyLmxvb2t1cC5JVGVhbUFuY2hvcjsKIAogcHVi
+bGljIGNsYXNzIExhbWJkYUV4cHJlc3Npb24gZXh0ZW5kcyBTb3VyY2VUeXBlIHsKIApAQCAtNDEs
+MTEgKzQ4LDUwIEBACiAJCXRoaXMuc291cmNlU3RhcnQgPSBsYW1iZGFFeHByZXNzaW9uLnNvdXJj
+ZVN0YXJ0OwogCQl0aGlzLnNvdXJjZUVuZCA9IGxhbWJkYUV4cHJlc3Npb24uc291cmNlRW5kOwog
+CQl0aGlzLmFycm93UG9zaXRpb24gPSBsYW1iZGFFeHByZXNzaW9uLmFycm93UG9zaXRpb247Ci0J
+CXRoaXMuaW50ZXJwaGFzZSA9IG5ldyBTdHJpbmcoQ2hhck9wZXJhdGlvbi5yZXBsYWNlT25Db3B5
+KGxhbWJkYUV4cHJlc3Npb24ucmVzb2x2ZWRUeXBlLmdlbmVyaWNUeXBlU2lnbmF0dXJlKCksICcv
+JywgJy4nKSk7CisJCQorCQlUeXBlQmluZGluZyBzdXBlcnR5cGUgPSBmaW5kTGFtYmRhU3VwZXJU
+eXBlKGxhbWJkYUV4cHJlc3Npb24pOworCQl0aGlzLmludGVycGhhc2UgPSBuZXcgU3RyaW5nKENo
+YXJPcGVyYXRpb24ucmVwbGFjZU9uQ29weShzdXBlcnR5cGUuZ2VuZXJpY1R5cGVTaWduYXR1cmUo
+KSwgJy8nLCAnLicpKTsKIAkJdGhpcy5lbGVtZW50SW5mbyA9IG1ha2VUeXBlRWxlbWVudEluZm8o
+dGhpcywgdGhpcy5pbnRlcnBoYXNlLCB0aGlzLnNvdXJjZVN0YXJ0LCB0aGlzLnNvdXJjZUVuZCwg
+dGhpcy5hcnJvd1Bvc2l0aW9uKTsgCiAJCXRoaXMubGFtYmRhTWV0aG9kID0gTGFtYmRhRmFjdG9y
+eS5jcmVhdGVMYW1iZGFNZXRob2QodGhpcywgbGFtYmRhRXhwcmVzc2lvbik7CiAJCXRoaXMuZWxl
+bWVudEluZm8uY2hpbGRyZW4gPSBuZXcgSUphdmFFbGVtZW50W10geyB0aGlzLmxhbWJkYU1ldGhv
+ZCB9OwogCX0KKworCXB1YmxpYyBUeXBlQmluZGluZyBmaW5kTGFtYmRhU3VwZXJUeXBlKG9yZy5l
+Y2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5hc3QuTGFtYmRhRXhwcmVzc2lvbiBsYW1iZGFF
+eHByZXNzaW9uKSB7CisJCS8vIHN0YXJ0IGZyb20gdGhlIHNwZWNpZmljIHR5cGUsIGlnbm9yaW5n
+IHR5cGUgYXJndW1lbnRzOgorCQlUeXBlQmluZGluZyBvcmlnaW5hbCA9IGxhbWJkYUV4cHJlc3Np
+b24ucmVzb2x2ZWRUeXBlLm9yaWdpbmFsKCk7CisJCS8vIGluZmVyIHR5cGUgYXJndW1lbnRzIGZy
+b20gaGVyZToKKwkJZmluYWwgVHlwZUJpbmRpbmcgZGVzY1R5cGUgPSBsYW1iZGFFeHByZXNzaW9u
+LmRlc2NyaXB0b3IuZGVjbGFyaW5nQ2xhc3M7CisJCWlmIChkZXNjVHlwZSBpbnN0YW5jZW9mIFBh
+cmFtZXRlcml6ZWRUeXBlQmluZGluZykgeworCQkJZmluYWwgUGFyYW1ldGVyaXplZFR5cGVCaW5k
+aW5nIGRlc2NQVEIgPSAoUGFyYW1ldGVyaXplZFR5cGVCaW5kaW5nKSBkZXNjVHlwZTsKKwkJCS8v
+IGludGVybWVkaWF0ZSB0eXBlOiBvcmlnaW5hbCBwdWxsZWQgdXAgdG8gdGhlIGxldmVsIG9mIGRl
+c2NUeXBlOgorCQkJZmluYWwgVHlwZUJpbmRpbmcgb3JpZ2luYWxTdXBlciA9IG9yaWdpbmFsLmZp
+bmRTdXBlclR5cGVPcmlnaW5hdGluZ0Zyb20oZGVzY1R5cGUpOworCQkJcmV0dXJuIFNjb3BlLnN1
+YnN0aXR1dGUobmV3IFN1YnN0aXR1dGlvbigpIHsKKwkJCQkJCQlAT3ZlcnJpZGUKKwkJCQkJCQlw
+dWJsaWMgVHlwZUJpbmRpbmcgc3Vic3RpdHV0ZShUeXBlVmFyaWFibGVCaW5kaW5nIHR5cGVWYXJp
+YWJsZSkgeworCQkJCQkJCQlpZiAob3JpZ2luYWxTdXBlciBpbnN0YW5jZW9mIFBhcmFtZXRlcml6
+ZWRUeXBlQmluZGluZykgeworCQkJCQkJCQkJUGFyYW1ldGVyaXplZFR5cGVCaW5kaW5nIG9yaWdp
+bmFsU3VwZXJQVEIgPSAoUGFyYW1ldGVyaXplZFR5cGVCaW5kaW5nKSBvcmlnaW5hbFN1cGVyOwor
+CQkJCQkJCQkJVHlwZUJpbmRpbmdbXSBzdXBlckFyZ3VtZW50cyA9IG9yaWdpbmFsU3VwZXJQVEIu
+YXJndW1lbnRzOworCQkJCQkJCQkJZm9yIChpbnQgaSA9IDA7IGkgPCBzdXBlckFyZ3VtZW50cy5s
+ZW5ndGg7IGkrKykgeworCQkJCQkJCQkJCS8vIGlmIG9yaWdpbmFsU3VwZXIgaG9sZHMgdHlwZVZh
+cmlhYmxlIGFzIGl0IGkndGggYXJndW1lbnQsIHRoZW4gdGhlIGkndGggYXJndW1lbnQgb2YgZGVz
+Y1R5cGUgaXMgb3VyIGFuc3dlcjoKKwkJCQkJCQkJCQlpZiAoVHlwZUJpbmRpbmcuZXF1YWxzRXF1
+YWxzKHN1cGVyQXJndW1lbnRzW2ldLCB0eXBlVmFyaWFibGUpKQorCQkJCQkJCQkJCQlyZXR1cm4g
+ZGVzY1BUQi5hcmd1bWVudHNbaV07CisJCQkJCQkJCQl9CisJCQkJCQkJCX0KKwkJCQkJCQkJLy8g
+cmVndWxhciBzdWJzdGl0dXRpb246CisJCQkJCQkJCXJldHVybiBkZXNjUFRCLnN1YnN0aXR1dGUo
+dHlwZVZhcmlhYmxlKTsKKwkJCQkJCQl9CisJCQkJCQkJQE92ZXJyaWRlCisJCQkJCQkJcHVibGlj
+IGJvb2xlYW4gaXNSYXdTdWJzdGl0dXRpb24oKSB7CisJCQkJCQkJCXJldHVybiBkZXNjUFRCLmlz
+UmF3VHlwZSgpOworCQkJCQkJCX0KKwkJCQkJCQlAT3ZlcnJpZGUKKwkJCQkJCQlwdWJsaWMgTG9v
+a3VwRW52aXJvbm1lbnQgZW52aXJvbm1lbnQoKSB7CisJCQkJCQkJCXJldHVybiBkZXNjUFRCLmVu
+dmlyb25tZW50OworCQkJCQkJCX0KKwkJCQkJCX0sIG9yaWdpbmFsKTsKKwkJfQorCQlyZXR1cm4g
+b3JpZ2luYWw7CisJfQogCQogCS8vIENvbnN0cnVjdGlvbiBmcm9tIG1lbWVudG8KIAlMYW1iZGFF
+eHByZXNzaW9uKEphdmFFbGVtZW50IHBhcmVudCwgU3RyaW5nIGludGVycGhhc2UsIGludCBzb3Vy
+Y2VTdGFydCwgaW50IHNvdXJjZUVuZCwgaW50IGFycm93UG9zaXRpb24pIHsK
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

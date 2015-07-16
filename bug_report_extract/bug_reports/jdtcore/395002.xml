@@ -1,0 +1,858 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>395002</bug_id>
+          
+          <creation_ts>2012-11-23 19:28:00 -0500</creation_ts>
+          <short_desc>Self bound generic class doesn&apos;t resolve bounds properly for wildcards for certain parametrisation.</short_desc>
+          <delta_ts>2013-02-04 11:11:07 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.2.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>critical</bug_severity>
+          <target_milestone>4.3 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Elias Vasylenko">eliasv</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>1</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2187173</commentid>
+    <comment_count>0</comment_count>
+      <attachid>223929</attachid>
+    <who name="Elias Vasylenko">eliasv</who>
+    <bug_when>2012-11-23 19:28:29 -0500</bug_when>
+    <thetext>Created attachment 223929
+Minimal failing test case.
+
+The following code compiles okay with Oracle JDK 7/8 and with OpenJDK 7, but not using the Eclipse JDT:
+
+public class Bug&lt;T extends SelfBound&lt;?, T&gt;&gt; {
+	public Bug() {
+		new Test&lt;T, SelfBound&lt;?, T&gt;&gt;();
+	}
+}
+
+interface SelfBound&lt;S extends SelfBound&lt;S, T&gt;, T&gt; {
+}
+
+class Test&lt;S extends SelfBound&lt;? extends T, ?&gt;, T&gt; {
+}
+
+It&apos;s perhaps a little complex looking a test case at first glance, but it&apos;s as far as I was able to reduce it from the original code.
+
+The error given by the JDT is:
+
+Bound mismatch: The type T is not a valid substitute for the bounded parameter &lt;S extends SelfBound&lt;? extends T,?&gt;&gt; of the type Test&lt;S,T&gt;
+
+The simplest way to demonstrate logically that it *should* compile (I think) is to observe that if you replace the first line with:
+
+public class Bug&lt;T extends SelfBound&lt;? extends SelfBound&lt;?, T&gt;, T&gt;&gt; {
+
+... then the error goes away. It should be easy enough to see that that this substitution is possible could be figured out automagically by the compiler, since it&apos;s pretty much the one which exists on &apos;S&apos; in SelfBound to begin with.
+
+(I wouldn&apos;t be *terribly* surprised if this is actually a bug with my code and with Oracle JDK / OpenJDK for compiling it, though, as I had to file a bug report with them a couple of days ago for not handling something with generics which actually worked properly with the JDT, and that was a simpler case than this one...)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2187181</commentid>
+    <comment_count>1</comment_count>
+    <who name="Elias Vasylenko">eliasv</who>
+    <bug_when>2012-11-23 20:43:59 -0500</bug_when>
+    <thetext>Okay, well I suppose a less fussy looking minimal test case would be:
+
+
+public interface Bug&lt;T extends SelfBound&lt;?, T&gt;&gt; extends
+		Test&lt;T, SelfBound&lt;?, T&gt;&gt; {
+}
+
+interface SelfBound&lt;S extends SelfBound&lt;S, T&gt;, T&gt; {
+}
+
+interface Test&lt;S extends SelfBound&lt;? extends T, ?&gt;, T&gt; {
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2187229</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-11-24 09:43:12 -0500</bug_when>
+    <thetext>From a brief look I&apos;m leaning towards saying you may be missing one particular type constraint (regarding the original example):
+
+In the declaration of Test the first wildcard (inside the constraint for S) is correlated to the independent parameter T.
+
+When instantiating Test&lt;T, SelfBound&lt;?, T&gt;&gt;, the parameter T is constraint from its declaration SelfBound&lt;?, T&gt; where the wildcard is unconstrained.
+
+I would have to dig into the JLS whether some transitive effects of type constraints allow context information to be used to see the correlation between T and SelfBound&lt;?, T&gt; (at the instantiation of Test). However, I&apos;d also say that two occurrences of SelfBound&lt;?,T&gt; are not the same type and hence the correlation isn&apos;t even established.
+
+What am I missing?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2187281</commentid>
+    <comment_count>3</comment_count>
+    <who name="Elias Vasylenko">eliasv</who>
+    <bug_when>2012-11-25 08:17:34 -0500</bug_when>
+    <thetext>Okay, even overlooking my lack of proof-reading, I picked terrible names for the type parameters... Sorry about that. I suggest use these replacements so we can say e.g. &apos;T&apos; without having to spend so much effort explaining which one:
+
+public class Bug&lt;A extends SelfBound&lt;?, A&gt;&gt; {
+	public Bug() {
+		new Test&lt;A, SelfBound&lt;?, A&gt;&gt;();
+	}
+}
+
+interface SelfBound&lt;S extends SelfBound&lt;S, T&gt;, T&gt; {
+}
+
+class Test&lt;X extends SelfBound&lt;? extends Y, ?&gt;, Y&gt; {
+}
+
+So, we know that:
+
+  A extends SelfBound&lt;?, A&gt;
+
+So when we parametrise X and Y using &apos;A&apos; and &apos;SelfBound&lt;?, A&gt;&apos; respectively we need to know if it also true that:
+
+  A extends SelfBound&lt;? extends SelfBound&lt;?, A&gt;, ?&gt;
+
+as required by the constraint on X with Y.
+
+I&apos;d argue that we can infer that the constraints are satisfied from the bounds on the parameters of SelfBound, expanding the known bound on A as follows:
+
+  A extends SelfBound&lt;?CaptureForS extends SelfBound&lt;?CaptureForS, A&gt;, A&gt;
+
+Which it seems to me more than satisfies the bound on X we got for the given parametrisation of Y. (The name ?CaptureForS might not be appropriate, I just wanted to show that the two wildcards necessarilly represented the same type. I&apos;m unsure that that&apos;s even important here.)
+
+I&apos;m not sure what you mean by the occurences of &apos;SelfBound&lt;?, T&gt;&apos; are not the same type. The wildcard in the first occurence will represent some yet unknown particular type at the parametrisation of Bug, one which will satisfy the bound on S, but the wildcard in the second occurence, at the parametrisation of Test, tells us we don&apos;t even need to care as long as T is the same both times, right?
+
+At any rate, I feel like I should be the one asking you this not the other way around: what am I missing?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2194967</commentid>
+    <comment_count>4</comment_count>
+    <who name="Elias Vasylenko">eliasv</who>
+    <bug_when>2012-12-16 08:11:04 -0500</bug_when>
+    <thetext>Hi again, is it rude for me to &apos;bump&apos; a bug report like this?
+
+It&apos;s just that it&apos;s difficult for me to work right now as part of my code only compiles in the JDT and part only compiles with Oracle JDK/OpenJDK and I&apos;m not sure which parts I need to change! If you guys think this is not actually a bug with the JDT I&apos;d like to create a bug report with Oracle as soon as possible, as they are even slower to respond than you ;p. No, I&apos;m only joking, I don&apos;t want to seem ungrateful for all the work you guys do...
+
+Well, thanks for the help :).
+
+Eli</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2195003</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-16 11:58:52 -0500</bug_when>
+    <thetext>Hi Elias,
+
+no, not rude. It&apos;s just that this bug requires some background research which must be fitted into day-to-day work :)
+
+To find out what&apos;s right and what&apos;s wrong we have to match your example against the JLS.
+
+Using the example as written in comment 3 (thanks for cleanup) we need to answer this question:
+Is 
+  Test&lt;A, SelfBound&lt;?, A&gt;&gt;
+a valid invocation of
+  Test&lt;X extends SelfBound&lt;? extends Y, ?&gt;, Y&gt;
+?
+
+The relevant paragraphs from the JLS are in 4.5:
+  &quot;A generic class or interface declaration C (8.1.2, 9.1.2) with one or more type parameters A1,...,An which have corresponding bounds B1,...,Bn defines a set of parameterized types, one for each possible invocation of the type parameter section.
+  ...
+  Let P = C&lt;T1,...,Tn&gt; be a parameterized type. It must be the case that, after P is subjected to capture conversion (5.1.10) resulting in the type C&lt;X1,...,Xn&gt;, for each type argument Xi (1  i  n), Xi &lt;: Bi[A1:=X1,...,An:=Xn] (4.10), or a compile-time error occurs.&quot;
+
+
+We identify:
+ C = Test
+ A1 = X
+ A2 = Y
+ B1 = SelfBound&lt;? extends Y, ?&gt;
+ B2 = Object
+ P = Test&lt;A, SelfBound&lt;?, A&gt;&gt;
+ T1 = A
+ T2 = SelfBound&lt;?, A&gt;
+  
+Step 1:
+-------
+Capture conversion of Test&lt;A, SelfBound&lt;?, A&gt;&gt;
+
+Interestingly, 5.1.10 mentions: 
+  &quot;Capture conversion is not applied recursively.&quot;
+From that I&apos;d conclude that the capture conversion of the above type is the type itself, because the nested wildcard is not converted.
+
+We get:
+ X1 = A
+ X2 = SelfBound&lt;?, A&gt;
+
+Step 2:
+-------
+Check subtyping of Xi against their upper bounds, need to show:
+  A                &lt;:  B1[X:=A,Y:=SelfBound&lt;?, A&gt;]
+  SelfBound&lt;?, A&gt;  &lt;:  B2[X:=A,Y:=SelfBound&lt;?, A&gt;]
+  
+Performing the substitutions in the RHS I get these goals:
+  A                &lt;:  SelfBound&lt;? extends SelfBound&lt;?, A&gt;, ?&gt;
+  SelfBound&lt;?, A&gt;  &lt;:  Object
+  
+The second goal is trivially true.
+Can we show the first goal?
+
+A itself is declared with an upper bound of SelfBound&lt;?, A&gt;
+
+If we can show that (Check1):
+  SelfBound&lt;?, A&gt;  &lt;:  SelfBound&lt;? extends SelfBound&lt;?, A&gt;, ?&gt;
+we may substitute A for the LHS to conclude that also A is a subtype of the RHS.
+
+From here we&apos;d need to apply 4.10.2 for subtyping of parameterized types, which uses 5.1.10 for capture conversion, etc.
+
+As this is not getting easier (I couldn&apos;t yet find a solution down that alley), and I might be getting into trouble if the above already has an error, I tried the following shortcut: feed the goal Check1 into javac and ecj:
+
+class Client {
+    &lt;A&gt; void foo1(SelfBound&lt;?,A&gt; arg1) {
+        SelfBound&lt;? extends SelfBound&lt;?, A&gt;, ?&gt; var1 = arg1;
+    }
+}
+
+javac and ecj agree that this is legal, i.e.:
+  SelfBound&lt;?,A&gt;  &lt;:  SelfBound&lt;? extends SelfBound&lt;?, A&gt;, ?&gt;
+
+Above I mentioned that from this we could replace the LHS with A:
+
+class Client {
+    &lt;A extends SelfBound&lt;?,A&gt;&gt; void foo2(A arg2) {
+        SelfBound&lt;? extends SelfBound&lt;?, A&gt;, ?&gt; var2 = arg2;
+    }
+}
+
+This is where javac and ecj start disagreeing:
+
+javac: accept:
+ecj: Type mismatch: cannot convert from A to SelfBound&lt;? extends SelfBound&lt;?,A&gt;,?&gt;
+
+
+Moreover we can make ecj accept this example by an intermediate assignment:
+
+class Client {
+    &lt;A extends SelfBound&lt;?,A&gt;&gt; void foo3(A arg3) {
+        SelfBound&lt;?, A&gt; var3 = arg3;
+        SelfBound&lt;? extends SelfBound&lt;?, A&gt;, ?&gt; var4 = var3;
+    }
+}
+
+From this I&apos;m leaning towards saying that ecj indeed has a bug, since subtyping *should* be transitive, whereas the difference between foo2 and foo3 demonstrates otherwise.
+
+Still this is no definite answer, due to the shortcut taken. If deduction of the omitted step is possible using 4.10.2 and 5.1.10, then ecj has a bug. After both compilers have already agreed in this regard, closing this gap should likely be possible.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2195161</commentid>
+    <comment_count>6</comment_count>
+    <who name="Elias Vasylenko">eliasv</who>
+    <bug_when>2012-12-17 05:27:49 -0500</bug_when>
+    <thetext>Wow, this is a fantastic summary of the problem, very interesting read :). Thanks for taking the time to go into so much detail, very much appreciated. The assignment example you reduced it to to show a break in transitivity is great.
+
+Cheers,
+
+Eli</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2195777</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-18 11:01:38 -0500</bug_when>
+    <thetext>I had a brief email consultation with Erik Ernst, how confirmed that the goals in comment 5 should hold true with the semantics of wildcards.
+
+As a study how exactly the JLS achieves this I continued my experiment of symbol manipulation, starting from this goal (copied from comment 5):
+
+Goal1:
+    SelfBound&lt;?, A&gt;  &lt;:  SelfBound&lt;? extends SelfBound&lt;?, A&gt;, ?&gt;
+
+To show subtyping we want to apply the 3rd para of 4.10.2, identifying
+  C = SelfBound
+  R1 = ?
+  R2 = A
+We construct the required capture of C&lt;R1,R2&gt; using 5.1.10, writing ?1 for the first capture of ?:
+  X1 = ?1 extends (SelfBound&lt;S,T&gt;[S:=?1,T:=A])
+     = ?1 extends SelfBound&lt;?1,A&gt;
+  X2 = A
+Yielding the following capture:
+  SelfBound&lt;?1 extends SelfBound&lt;?1,A&gt;, A&gt;
+
+This &quot;reduces&quot; Goal1 to the following:
+
+Goal2:
+    SelfBound&lt;?1 extends SelfBound&lt;?1,A&gt;, A&gt;  &lt;:  SelfBound&lt;? extends SelfBound&lt;?, A&gt;, ?&gt;
+
+
+Now the 2nd para of 4.10.2 can be applied:
+  C = SelfBound
+  T1 = ?1 extends SelfBound&lt;?1,A&gt;
+  T2 = A
+  S1 = ? extends SelfBound&lt;?,A&gt;
+  S2 = ?
+
+This reduces Goal2 to the two followoing goals:
+
+Goal3a (T1 &lt;= S1):
+  ?1 extends SelfBound&lt;?1,A&gt;  &lt;=  ? extends SelfBound&lt;?,A&gt;
+Goal3b (T2 &lt;= S2):
+  A  &lt;=  ?
+
+Common sense tells us that Goal3b is trivially true. Interestingly I could *not* find anything to back this in JLS 4.5.1!! Anybody?
+
+To show Goal3a I&apos;m constructing the following chain using 4.5.1:
+  O  &lt;=  ? extends O  &lt;=  ? extends P  &lt;= ? extends Q   
+      forall  O &lt;: P, P &lt;: Q
+
+I&apos;m &quot;guessing&quot; intermediate terms using:
+  O = ?1 extends SelfBound&lt;?1,A&gt;
+  P = SelfBound&lt;?1,A&gt;
+  Q = SelfBound&lt;?,A&gt;
+
+O &lt;: P holds by definition
+P &lt;: Q   is  SelfBound&lt;?1,A&gt;  &lt;:  SelfBound&lt;?,A&gt;
+  which holds because  ?1 &lt;= ?  and  A &lt;= A
+  (the former part again based on common sense, no backing in the JLS)
+
+Inserting back into the above chain (omitting intermediates) we get indeed:
+  ?1 extends SelfBound&lt;?1,A&gt;  &lt;=  ? extends SelfBound&lt;?,A&gt;
+Q.E.D. (Goal3a as the last remaining goal).
+
+
+When debugging ecj using a passing example Client from comment 5 I could see that the intermediate goals shown by ecj pretty well match with my manual symbol manipulation, good.
+
+Now I can start to look where ecj fails to see the desired conformance.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2195957</commentid>
+    <comment_count>8</comment_count>
+      <attachid>224898</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-18 16:17:28 -0500</bug_when>
+    <thetext>Created attachment 224898
+patch under test
+
+Here&apos;s a patch under test that uses the following insight from the above analysis:
+
+In some situations ecj cannot see type compatibility from a type variable via its upper bound if that upper bound itself needs capture conversion for the subtyping analysis.
+
+
+The fix is implemented in three steps:
+
+If compatibility check fails give it a second try using the capture of the first upper bound. This addition was needed inside ReferenceBinding.isCompatibleWith0(TypeBinding) and TypeVariableBinding.boundCheck(Substitution,TypeBinding).
+
+Unfortunately, neither location has reference to a Scope, as required for capture conversion. Therefore as an auxiliary step, signatures of the above methods had to be augmented to pass a Scope.
+
+Third, the extended signatures are called by clients needing this additional check. I found these to be relevant:
++ resolve methods of:
+  - Assignment
+  - FieldDeclaration
+  - LocalDeclaration
++ Scope.parameterCompatibilityLevel(..) for method lookup.
++ all callers of boundCheck have a Scope at hand so I&apos;m passing it, too</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2195993</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-18 18:53:48 -0500</bug_when>
+    <thetext>During testing I noticed the following issue:
+
+If compatibility for a pair of types is first checked without passing a valid scope to isCompatibleWith()  we store the result of this check and when later re-checking the same pair with a scope available the cached info will cause the desired check to be bypassed.
+
+I&apos;ve added a test that demonstrates this, and augmented a few more calls to isCompatibleWith() as to pass a valid scope.
+
+However, there are way too many calls to that method to catch them all, I&apos;d say. The assumption that compatibility can be checked without a lexical context is too widespread in the compiler to be quickly undone.
+
+Therefore, I also added safety code to isCompatibleWith() to avoid caching a result if chances are that we need to recheck this later with a scope for capture conversion. The compiler test suite shows too paths how this safety code can be triggered (via TypeBinding.isTypeArgumentContainedBy() and MethodVerifier15.checkForNameClash()).
+
+Thus we get the following characteristics:
+- a call to isCompatibleWith passing a null-scope does not spoil the result of subsequent calls
+- the cache is reset to null only very rarely</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2195996</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-18 19:08:35 -0500</bug_when>
+    <thetext>I&apos;ve released tests and fix for 4.3M5 via commit 557b79fe942a0c2ecd096efec77764eeda1e9de9.
+
+@Elias, because there is a slight risk that the fix is incomplete, I would appreciate if you could download a nightly build any time soon to test how the patch behaves in real life, with probably more uses of this tricky type, than I have in my tests. 
+TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2196136</commentid>
+    <comment_count>11</comment_count>
+    <who name="Elias Vasylenko">eliasv</who>
+    <bug_when>2012-12-19 07:50:02 -0500</bug_when>
+    <thetext>Fantastic news, and thanks again for the quick and detailed responses, Stephan.
+
+I&apos;ll test out the fix as soon as I can, which hopefully will be as soon as I get home from work today. And don&apos;t worry, my original code is quite outrageously overcomplicated, so I will be sure to put your patch through its paces ;).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2196205</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-19 09:50:40 -0500</bug_when>
+    <thetext>Fix is indeed included in http://download.eclipse.org/eclipse/downloads/drops4/N20121218-2000/</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2196406</commentid>
+    <comment_count>13</comment_count>
+    <who name="Elias Vasylenko">eliasv</who>
+    <bug_when>2012-12-19 19:25:49 -0500</bug_when>
+    <thetext>(In reply to comment #12)
+&gt; Fix is indeed included in
+&gt; http://download.eclipse.org/eclipse/downloads/drops4/N20121218-2000/
+
+Can confirm it works for me, Stephan. Great work getting it out so quickly! It&apos;s wonderful to have all those red squiggly lines disappearing.
+
+I do actually still have some code where you disagree with the Oracle JDK, but I&apos;ll post a separate bug report for it when I get a chance as I&apos;m not sure if it&apos;s actually related to this, it&apos;s perhaps a little more complicated. It occurs within the same set of classes in the original code but the minimum I&apos;ve managed to reduce a reproducible test case to is like 7 interfaces...
+
+If I do come across some errors which I&apos;m more sure are actually related to this bug would it be more helpful to post them here or to report a separate bug?
+
+Sorry for giving you all this extra work ^_^.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2196916</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-21 06:40:44 -0500</bug_when>
+    <thetext>(In reply to comment #13)
+&gt; (In reply to comment #12)
+&gt; &gt; Fix is indeed included in
+&gt; &gt; http://download.eclipse.org/eclipse/downloads/drops4/N20121218-2000/
+&gt; 
+&gt; Can confirm it works for me,
+
+Thanks for letting us know!
+
+ 
+&gt; If I do come across some errors which I&apos;m more sure are actually related to
+&gt; this bug would it be more helpful to post them here or to report a separate
+&gt; bug?
+
+I&apos;d say: if you find a problem that clearly relates to the same type structure and if you detect it within the M5 cycle, you may re-open this bug. But normally a new bug with a new example will be easier to track.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211872</commentid>
+    <comment_count>15</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-02-04 11:11:07 -0500</bug_when>
+    <thetext>This has already been verified by the reporter. Marking the status appropriately.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>223929</attachid>
+            <date>2012-11-23 19:28:00 -0500</date>
+            <delta_ts>2012-11-23 19:28:29 -0500</delta_ts>
+            <desc>Minimal failing test case.</desc>
+            <filename>Bug.java</filename>
+            <type>text/x-java</type>
+            <size>230</size>
+            <attacher name="Elias Vasylenko">eliasv</attacher>
+            
+              <data encoding="base64">cGFja2FnZSBidWd0ZXN0OwoKcHVibGljIGNsYXNzIEJ1ZzxUIGV4dGVuZHMgU2VsZkJvdW5kPD8s
+IFQ+PiB7CglwdWJsaWMgQnVnKCkgewoJCW5ldyBUZXN0PFQsIFNlbGZCb3VuZDw/LCBUPj4oKTsK
+CX0KfQoKaW50ZXJmYWNlIFNlbGZCb3VuZDxTIGV4dGVuZHMgU2VsZkJvdW5kPFMsIFQ+LCBUPiB7
+Cn0KCmNsYXNzIFRlc3Q8UyBleHRlbmRzIFNlbGZCb3VuZDw/IGV4dGVuZHMgVCwgPz4sIFQ+IHsK
+fQo=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>224898</attachid>
+            <date>2012-12-18 16:17:00 -0500</date>
+            <delta_ts>2012-12-18 16:17:28 -0500</delta_ts>
+            <desc>patch under test</desc>
+            <filename>Bug-395002--Self-bound-generic-class-doesnt-resolve-.patch</filename>
+            <type>text/plain</type>
+            <size>19909</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0dlbmVyaWNzUmVncmVz
+c2lvblRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0dlbmVyaWNzUmVn
+cmVzc2lvblRlc3QuamF2YQppbmRleCBmZmM2YjY3Li40MTU5YTkzIDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9HZW5lcmljc1JlZ3Jlc3Npb25UZXN0LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vR2VuZXJpY3NSZWdyZXNzaW9uVGVzdC5q
+YXZhCkBAIC0yOCw3ICsyOCw3IEBACiAJLy8gU3RhdGljIGluaXRpYWxpemVyIHRvIHNwZWNpZnkg
+dGVzdHMgc3Vic2V0IHVzaW5nIFRFU1RTXyogc3RhdGljIHZhcmlhYmxlcwogCS8vIEFsbCBzcGVj
+aWZpZWQgdGVzdHMgd2hpY2ggZG9lcyBub3QgYmVsb25nIHRvIHRoZSBjbGFzcyBhcmUgc2tpcHBl
+ZC4uLgogCXN0YXRpYyB7Ci0vLwkJVEVTVFNfTkFNRVMgPSBuZXcgU3RyaW5nW10geyAidGVzdDM0
+NzQyNiIgfTsKKy8vCQlURVNUU19OQU1FUyA9IG5ldyBTdHJpbmdbXSB7ICJ0ZXN0QnVnMzk1MDAy
+XzQiIH07CiAvLwkJVEVTVFNfTkFNRVMgPSBuZXcgU3RyaW5nW10geyAidGVzdDE0NjQiIH07CiAv
+LwkJVEVTVFNfTlVNQkVSUyA9IG5ldyBpbnRbXSB7IDE0NjUgfTsKIC8vCQlURVNUU19SQU5HRSA9
+IG5ldyBpbnRbXSB7IDEwOTcsIC0xIH07CkBAIC0yNjQ5LDQgKzI2NDksODQgQEAKIAkJIi0tLS0t
+LS0tLS1cbiIsCiAJCW51bGwsIHRydWUsIGN1c3RvbU9wdGlvbnMpOwogfQorCisvLyBodHRwczov
+L2J1Z3MuZWNsaXBzZS5vcmcvMzk1MDAyIC0gU2VsZiBib3VuZCBnZW5lcmljIGNsYXNzIGRvZXNu
+J3QgcmVzb2x2ZSBib3VuZHMgcHJvcGVybHkgZm9yIHdpbGRjYXJkcyBmb3IgY2VydGFpbiBwYXJh
+bWV0cmlzYXRpb24uCisvLyB2ZXJzaW9uIHdpdGggaW50ZXJtZWRpYXRlIGFzc2lnbm1lbnQsIGFs
+d2F5cyB3b3JrZWQKK3B1YmxpYyB2b2lkIHRlc3RCdWczOTUwMDJfMSgpIHsKKwlydW5Db25mb3Jt
+VGVzdChuZXcgU3RyaW5nW10geworCQkiQ2xpZW50LmphdmEiLAorCQkiaW50ZXJmYWNlIFNlbGZC
+b3VuZDxTIGV4dGVuZHMgU2VsZkJvdW5kPFMsIFQ+LCBUPiB7XG4iICsgCisJCSJ9XG4iICsKKwkJ
+InB1YmxpYyBjbGFzcyBDbGllbnQge1xuIiArCisJCSIJPEEgZXh0ZW5kcyBTZWxmQm91bmQ8PyxB
+Pj4gdm9pZCBmb28zKEEgYXJnMykge1xuIiArIAorCQkiCQlTZWxmQm91bmQ8PywgQT4gdmFyMyA9
+IGFyZzM7XG4iICsgCisJCSIJCVNlbGZCb3VuZDw/IGV4dGVuZHMgU2VsZkJvdW5kPD8sIEE+LCA/
+PiB2YXI0ID0gdmFyMztcbiIgKyAKKwkJIgl9XG4iICsKKwkJIn1cbiIKKwkJfSk7Cit9CisKKy8v
+IGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy8zOTUwMDIgLSBTZWxmIGJvdW5kIGdlbmVyaWMgY2xh
+c3MgZG9lc24ndCByZXNvbHZlIGJvdW5kcyBwcm9wZXJseSBmb3Igd2lsZGNhcmRzIGZvciBjZXJ0
+YWluIHBhcmFtZXRyaXNhdGlvbi4KKy8vIHZlcnNpb24gd2l0aCBkaXJlY3QgYXNzaWdubWVudCB0
+byBsb2NhbAorcHVibGljIHZvaWQgdGVzdEJ1ZzM5NTAwMl8yKCkgeworCXJ1bkNvbmZvcm1UZXN0
+KG5ldyBTdHJpbmdbXSB7CisJCSJDbGllbnQuamF2YSIsCisJCSJpbnRlcmZhY2UgU2VsZkJvdW5k
+PFMgZXh0ZW5kcyBTZWxmQm91bmQ8UywgVD4sIFQ+IHtcbiIgKyAKKwkJIn1cbiIgKworCQkicHVi
+bGljIGNsYXNzIENsaWVudCB7XG4iICsKKwkJIgk8QSBleHRlbmRzIFNlbGZCb3VuZDw/LEE+PiB2
+b2lkIGZvbzIoQSBhcmcyKSB7XG4iICsgCisJCSIJCVNlbGZCb3VuZDw/IGV4dGVuZHMgU2VsZkJv
+dW5kPD8sIEE+LCA/PiB2YXIyID0gYXJnMjtcbiIgKyAKKwkJIgl9XG4iICsKKwkJIn1cbiIKKwkJ
+fSk7Cit9CisKKy8vIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy8zOTUwMDIgLSBTZWxmIGJvdW5k
+IGdlbmVyaWMgY2xhc3MgZG9lc24ndCByZXNvbHZlIGJvdW5kcyBwcm9wZXJseSBmb3Igd2lsZGNh
+cmRzIGZvciBjZXJ0YWluIHBhcmFtZXRyaXNhdGlvbi4KKy8vIHZlcnNpb24gd2l0aCBkaXJlY3Qg
+YXNzaWdubWVudCB0byBmaWVsZAorcHVibGljIHZvaWQgdGVzdEJ1ZzM5NTAwMl8zKCkgeworCXJ1
+bkNvbmZvcm1UZXN0KG5ldyBTdHJpbmdbXSB7CisJCSJDbGllbnQuamF2YSIsCisJCSJpbnRlcmZh
+Y2UgU2VsZkJvdW5kPFMgZXh0ZW5kcyBTZWxmQm91bmQ8UywgVD4sIFQ+IHtcbiIgKyAKKwkJIn1c
+biIgKworCQkicHVibGljIGNsYXNzIENsaWVudDxBIGV4dGVuZHMgU2VsZkJvdW5kPD8sQT4+ICB7
+XG4iICsKKwkJIglTZWxmQm91bmQ8PyBleHRlbmRzIFNlbGZCb3VuZDw/LCBBPiwgPz4gZmllbGQy
+O1xuIiArCisJCSIJdm9pZCBmb28yKEEgYXJnMikge1xuIiArIAorCQkiCQlmaWVsZDIgPSBhcmcy
+O1xuIiArIAorCQkiCX1cbiIgKworCQkifVxuIgorCQl9KTsKK30KKworLy8gaHR0cHM6Ly9idWdz
+LmVjbGlwc2Uub3JnLzM5NTAwMiAtIFNlbGYgYm91bmQgZ2VuZXJpYyBjbGFzcyBkb2Vzbid0IHJl
+c29sdmUgYm91bmRzIHByb3Blcmx5IGZvciB3aWxkY2FyZHMgZm9yIGNlcnRhaW4gcGFyYW1ldHJp
+c2F0aW9uLgorLy8gdmVyc2lvbiB3aXRoIGFyZ3VtZW50IHBhc3NpbmcKK3B1YmxpYyB2b2lkIHRl
+c3RCdWczOTUwMDJfNCgpIHsKKwlydW5Db25mb3JtVGVzdChuZXcgU3RyaW5nW10geworCQkiQ2xp
+ZW50LmphdmEiLAorCQkiaW50ZXJmYWNlIFNlbGZCb3VuZDxTIGV4dGVuZHMgU2VsZkJvdW5kPFMs
+IFQ+LCBUPiB7XG4iICsgCisJCSJ9XG4iICsKKwkJInB1YmxpYyBjbGFzcyBDbGllbnQ8QSBleHRl
+bmRzIFNlbGZCb3VuZDw/LEE+PiAge1xuIiArCisJCSIJdm9pZCBiYXIoU2VsZkJvdW5kPD8gZXh0
+ZW5kcyBTZWxmQm91bmQ8PywgQT4sID8+IGFyZ0Jhcikge307XG4iICsKKwkJIgl2b2lkIGZvbzIo
+QSBhcmcyKSB7XG4iICsgCisJCSIJCWJhcihhcmcyKTtcbiIgKyAKKwkJIgl9XG4iICsKKwkJIn1c
+biIKKwkJfSk7Cit9CisKKy8vIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy8zOTUwMDIgLSBTZWxm
+IGJvdW5kIGdlbmVyaWMgY2xhc3MgZG9lc24ndCByZXNvbHZlIGJvdW5kcyBwcm9wZXJseSBmb3Ig
+d2lsZGNhcmRzIGZvciBjZXJ0YWluIHBhcmFtZXRyaXNhdGlvbi4KKy8vIG9yaWdpbmFsIHByb2Js
+ZW0gd2l0aCBpbnZvY2F0aW9uIG9mIGdlbmVyaWMgdHlwZQorcHVibGljIHZvaWQgdGVzdEJ1ZzM5
+NTAwMl9mdWxsKCkgeworCXJ1bkNvbmZvcm1UZXN0KG5ldyBTdHJpbmdbXSB7CisJCSJCdWcuamF2
+YSIsCisJCSJpbnRlcmZhY2UgU2VsZkJvdW5kPFMgZXh0ZW5kcyBTZWxmQm91bmQ8UywgVD4sIFQ+
+IHtcbiIgKyAKKwkJIn1cbiIgKworCQkiY2xhc3MgVGVzdDxYIGV4dGVuZHMgU2VsZkJvdW5kPD8g
+ZXh0ZW5kcyBZLCA/PiwgWT4ge1xuIiArIAorCQkifVxuIiArCisJCSJwdWJsaWMgY2xhc3MgQnVn
+PEEgZXh0ZW5kcyBTZWxmQm91bmQ8PywgQT4+IHtcbiIgKyAKKwkJIglwdWJsaWMgQnVnKCkge1xu
+IiArIAorCQkiCQluZXcgVGVzdDxBLCBTZWxmQm91bmQ8PywgQT4+KCk7XG4iICsgCisJCSIJfVxu
+IiArIAorCQkifVxuIgorCQl9KTsKK30KIH0KXCBObyBuZXdsaW5lIGF0IGVuZCBvZiBmaWxlCmRp
+ZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2Vj
+bGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsUmVmZXJlbmNlSW1w
+bFRlc3RzLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3Jn
+L2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsUmVmZXJlbmNl
+SW1wbFRlc3RzLmphdmEKaW5kZXggZmZhNjdiNC4uMGI4ZTQyNyAxMDA2NDQKLS0tIGEvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rl
+c3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbFJlZmVyZW5jZUltcGxUZXN0cy5qYXZhCisrKyBi
+L29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQv
+Y29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxSZWZlcmVuY2VJbXBsVGVzdHMuamF2
+YQpAQCAtMzgsNiArMzgsNyBAQAogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21w
+aWxlci5pbXBsLkNvbnN0YW50OwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21w
+aWxlci5sb29rdXAuTG9jYWxWYXJpYWJsZUJpbmRpbmc7CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0
+LmludGVybmFsLmNvbXBpbGVyLmxvb2t1cC5QYWNrYWdlQmluZGluZzsKK2ltcG9ydCBvcmcuZWNs
+aXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwLlNjb3BlOwogaW1wb3J0IG9yZy5lY2xp
+cHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuVHlwZUJpbmRpbmc7CiAKIC8qKgpAQCAt
+MTAyMiw3ICsxMDIzLDcgQEAKIAkJcHVibGljIFBhY2thZ2VCaW5kaW5nIGdldFBhY2thZ2UoKSB7
+CiAJCQlyZXR1cm4gbnVsbDsKIAkJfQotCQlwdWJsaWMgYm9vbGVhbiBpc0NvbXBhdGlibGVXaXRo
+KFR5cGVCaW5kaW5nIHJpZ2h0KSB7CisJCXB1YmxpYyBib29sZWFuIGlzQ29tcGF0aWJsZVdpdGgo
+VHlwZUJpbmRpbmcgcmlnaHQsIFNjb3BlIGNhcHR1cmVTY29wZSkgewogCQkJcmV0dXJuIGZhbHNl
+OwogCQl9CiAJCXB1YmxpYyBjaGFyW10gcXVhbGlmaWVkU291cmNlTmFtZSgpIHsKZGlmZiAtLWdp
+dCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5h
+bC9jb21waWxlci9hc3QvQXNzaWdubWVudC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29t
+cGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9Bc3NpZ25tZW50Lmph
+dmEKaW5kZXggOWFjYWIxOC4uNDEyNmI3MSAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNv
+cmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9Bc3NpZ25t
+ZW50LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2Uv
+amR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9Bc3NpZ25tZW50LmphdmEKQEAgLTE5MCw3ICsxOTAs
+NyBAQAogCQlzY29wZS5jb21waWxhdGlvblVuaXRTY29wZSgpLnJlY29yZFR5cGVDb252ZXJzaW9u
+KGxoc1R5cGUsIHJoc1R5cGUpOwogCX0KIAlpZiAodGhpcy5leHByZXNzaW9uLmlzQ29uc3RhbnRW
+YWx1ZU9mVHlwZUFzc2lnbmFibGVUb1R5cGUocmhzVHlwZSwgbGhzVHlwZSkKLQkJCXx8IHJoc1R5
+cGUuaXNDb21wYXRpYmxlV2l0aChsaHNUeXBlKSkgeworCQkJfHwgcmhzVHlwZS5pc0NvbXBhdGli
+bGVXaXRoKGxoc1R5cGUsIHNjb3BlKSkgewogCQl0aGlzLmV4cHJlc3Npb24uY29tcHV0ZUNvbnZl
+cnNpb24oc2NvcGUsIGxoc1R5cGUsIHJoc1R5cGUpOwogCQljaGVja0Fzc2lnbm1lbnQoc2NvcGUs
+IGxoc1R5cGUsIHJoc1R5cGUpOwogCQlpZiAodGhpcy5leHByZXNzaW9uIGluc3RhbmNlb2YgQ2Fz
+dEV4cHJlc3Npb24KZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29y
+Zy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvRmllbGREZWNsYXJhdGlvbi5qYXZh
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFs
+L2NvbXBpbGVyL2FzdC9GaWVsZERlY2xhcmF0aW9uLmphdmEKaW5kZXggMTdkNWZmYS4uYTM4YTZk
+MCAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2Uv
+amR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9GaWVsZERlY2xhcmF0aW9uLmphdmEKKysrIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2FzdC9GaWVsZERlY2xhcmF0aW9uLmphdmEKQEAgLTIyNCw3ICsyMjQsNyBAQAogCQkJCWlm
+IChmaWVsZFR5cGUgIT0gaW5pdGlhbGl6YXRpb25UeXBlKSAvLyBtdXN0IGNhbGwgYmVmb3JlIGNv
+bXB1dGVDb252ZXJzaW9uKCkgYW5kIHR5cGVNaXNtYXRjaEVycm9yKCkKIAkJCQkJaW5pdGlhbGl6
+YXRpb25TY29wZS5jb21waWxhdGlvblVuaXRTY29wZSgpLnJlY29yZFR5cGVDb252ZXJzaW9uKGZp
+ZWxkVHlwZSwgaW5pdGlhbGl6YXRpb25UeXBlKTsKIAkJCQlpZiAodGhpcy5pbml0aWFsaXphdGlv
+bi5pc0NvbnN0YW50VmFsdWVPZlR5cGVBc3NpZ25hYmxlVG9UeXBlKGluaXRpYWxpemF0aW9uVHlw
+ZSwgZmllbGRUeXBlKQotCQkJCQkJfHwgaW5pdGlhbGl6YXRpb25UeXBlLmlzQ29tcGF0aWJsZVdp
+dGgoZmllbGRUeXBlKSkgeworCQkJCQkJfHwgaW5pdGlhbGl6YXRpb25UeXBlLmlzQ29tcGF0aWJs
+ZVdpdGgoZmllbGRUeXBlLCBjbGFzc1Njb3BlKSkgewogCQkJCQl0aGlzLmluaXRpYWxpemF0aW9u
+LmNvbXB1dGVDb252ZXJzaW9uKGluaXRpYWxpemF0aW9uU2NvcGUsIGZpZWxkVHlwZSwgaW5pdGlh
+bGl6YXRpb25UeXBlKTsKIAkJCQkJaWYgKGluaXRpYWxpemF0aW9uVHlwZS5uZWVkc1VuY2hlY2tl
+ZENvbnZlcnNpb24oZmllbGRUeXBlKSkgewogCQkJCQkJICAgIGluaXRpYWxpemF0aW9uU2NvcGUu
+cHJvYmxlbVJlcG9ydGVyKCkudW5zYWZlVHlwZUNvbnZlcnNpb24odGhpcy5pbml0aWFsaXphdGlv
+biwgaW5pdGlhbGl6YXRpb25UeXBlLCBmaWVsZFR5cGUpOwpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Fz
+dC9Mb2NhbERlY2xhcmF0aW9uLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9v
+cmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0xvY2FsRGVjbGFyYXRpb24uamF2
+YQppbmRleCA5NjUxNmJmLi5mNDA5MTE1IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0xvY2FsRGVj
+bGFyYXRpb24uamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNs
+aXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0xvY2FsRGVjbGFyYXRpb24uamF2YQpAQCAt
+MjQ3LDcgKzI0Nyw3IEBACiAJCQkJCWlmICh2YXJpYWJsZVR5cGUgIT0gaW5pdGlhbGl6YXRpb25U
+eXBlKSAvLyBtdXN0IGNhbGwgYmVmb3JlIGNvbXB1dGVDb252ZXJzaW9uKCkgYW5kIHR5cGVNaXNt
+YXRjaEVycm9yKCkKIAkJCQkJCXNjb3BlLmNvbXBpbGF0aW9uVW5pdFNjb3BlKCkucmVjb3JkVHlw
+ZUNvbnZlcnNpb24odmFyaWFibGVUeXBlLCBpbml0aWFsaXphdGlvblR5cGUpOwogCQkJCQlpZiAo
+dGhpcy5pbml0aWFsaXphdGlvbi5pc0NvbnN0YW50VmFsdWVPZlR5cGVBc3NpZ25hYmxlVG9UeXBl
+KGluaXRpYWxpemF0aW9uVHlwZSwgdmFyaWFibGVUeXBlKQotCQkJCQkJfHwgaW5pdGlhbGl6YXRp
+b25UeXBlLmlzQ29tcGF0aWJsZVdpdGgodmFyaWFibGVUeXBlKSkgeworCQkJCQkJfHwgaW5pdGlh
+bGl6YXRpb25UeXBlLmlzQ29tcGF0aWJsZVdpdGgodmFyaWFibGVUeXBlLCBzY29wZSkpIHsKIAkJ
+CQkJCXRoaXMuaW5pdGlhbGl6YXRpb24uY29tcHV0ZUNvbnZlcnNpb24oc2NvcGUsIHZhcmlhYmxl
+VHlwZSwgaW5pdGlhbGl6YXRpb25UeXBlKTsKIAkJCQkJCWlmIChpbml0aWFsaXphdGlvblR5cGUu
+bmVlZHNVbmNoZWNrZWRDb252ZXJzaW9uKHZhcmlhYmxlVHlwZSkpIHsKIAkJCQkJCSAgICBzY29w
+ZS5wcm9ibGVtUmVwb3J0ZXIoKS51bnNhZmVUeXBlQ29udmVyc2lvbih0aGlzLmluaXRpYWxpemF0
+aW9uLCBpbml0aWFsaXphdGlvblR5cGUsIHZhcmlhYmxlVHlwZSk7CmRpZmYgLS1naXQgYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGls
+ZXIvbG9va3VwL0FycmF5QmluZGluZy5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGls
+ZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9BcnJheUJpbmRpbmcu
+amF2YQppbmRleCA2YmJiYzk0Li41NTcyYzgxIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL0Fy
+cmF5QmluZGluZy5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvQXJyYXlCaW5kaW5nLmphdmEKQEAg
+LTE2NCw3ICsxNjQsNyBAQAogCiAvKiBBbnN3ZXIgdHJ1ZSBpZiB0aGUgcmVjZWl2ZXIgdHlwZSBj
+YW4gYmUgYXNzaWduZWQgdG8gdGhlIGFyZ3VtZW50IHR5cGUgKHJpZ2h0KQogKi8KLXB1YmxpYyBi
+b29sZWFuIGlzQ29tcGF0aWJsZVdpdGgoVHlwZUJpbmRpbmcgb3RoZXJUeXBlKSB7CitwdWJsaWMg
+Ym9vbGVhbiBpc0NvbXBhdGlibGVXaXRoKFR5cGVCaW5kaW5nIG90aGVyVHlwZSwgU2NvcGUgY2Fw
+dHVyZVNjb3BlKSB7CiAJaWYgKHRoaXMgPT0gb3RoZXJUeXBlKQogCQlyZXR1cm4gdHJ1ZTsKIApA
+QCAtMTkxLDcgKzE5MSw3IEBACiAJCQkJVHlwZUJpbmRpbmcgb3RoZXJMb3dlckJvdW5kOwogCQkJ
+CWlmICgob3RoZXJMb3dlckJvdW5kID0gb3RoZXJDYXB0dXJlLmxvd2VyQm91bmQpICE9IG51bGwp
+IHsKIAkJCQkJaWYgKCFvdGhlckxvd2VyQm91bmQuaXNBcnJheVR5cGUoKSkgcmV0dXJuIGZhbHNl
+OwotCQkJCQlyZXR1cm4gaXNDb21wYXRpYmxlV2l0aChvdGhlckxvd2VyQm91bmQpOworCQkJCQly
+ZXR1cm4gaXNDb21wYXRpYmxlV2l0aChvdGhlckxvd2VyQm91bmQsIGNhcHR1cmVTY29wZSk7CiAJ
+CQkJfQogCQkJfQogCQkJcmV0dXJuIGZhbHNlOwpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9C
+YXNlVHlwZUJpbmRpbmcuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvQmFzZVR5cGVCaW5kaW5nLmphdmEK
+aW5kZXggNDBjOTA3NS4uOWJmOTZkOSAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUv
+Y29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9CYXNlVHlw
+ZUJpbmRpbmcuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNs
+aXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL0Jhc2VUeXBlQmluZGluZy5qYXZhCkBA
+IC0xNTAsNyArMTUwLDcgQEAKIAkKIAkvKiBBbnN3ZXIgdHJ1ZSBpZiB0aGUgcmVjZWl2ZXIgdHlw
+ZSBjYW4gYmUgYXNzaWduZWQgdG8gdGhlIGFyZ3VtZW50IHR5cGUgKHJpZ2h0KQogCSovCi0JcHVi
+bGljIGZpbmFsIGJvb2xlYW4gaXNDb21wYXRpYmxlV2l0aChUeXBlQmluZGluZyBsZWZ0KSB7CisJ
+cHVibGljIGZpbmFsIGJvb2xlYW4gaXNDb21wYXRpYmxlV2l0aChUeXBlQmluZGluZyBsZWZ0LCBT
+Y29wZSBjYXB0dXJlU2NvcGUpIHsKIAkJaWYgKHRoaXMgPT0gbGVmdCkKIAkJCXJldHVybiB0cnVl
+OwogCQlpbnQgcmlnaHQybGVmdCA9IHRoaXMuaWQgKyAobGVmdC5pZDw8NCk7CmRpZmYgLS1naXQg
+YS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwv
+Y29tcGlsZXIvbG9va3VwL0NsYXNzU2NvcGUuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2Nv
+bXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvQ2xhc3NTY29w
+ZS5qYXZhCmluZGV4IGMyM2I2NjQuLmI1MGNmYTEgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAv
+Q2xhc3NTY29wZS5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvQ2xhc3NTY29wZS5qYXZhCkBAIC05
+NzAsNyArOTcwLDcgQEAKIAkJc291cmNlVHlwZS50YWdCaXRzIHw9IChzdXBlclR5cGUudGFnQml0
+cyAmIFRhZ0JpdHMuSGllcmFyY2h5SGFzUHJvYmxlbXMpOyAvLyBwcm9wYWdhdGUgaWYgbWlzc2lu
+ZyBzdXBlcnRweWUKIAkJc291cmNlVHlwZS5zdXBlcmNsYXNzID0gc3VwZXJUeXBlOwogCQkvLyBi
+b3VuZCBjaGVjayAoaW4gY2FzZSBvZiBib2d1cyBkZWZpbml0aW9uIG9mIEVudW0gdHlwZSkKLQkJ
+aWYgKHJlZlR5cGVWYXJpYWJsZXNbMF0uYm91bmRDaGVjayhzdXBlclR5cGUsIHNvdXJjZVR5cGUp
+ICE9IFR5cGVDb25zdGFudHMuT0spIHsKKwkJaWYgKHJlZlR5cGVWYXJpYWJsZXNbMF0uYm91bmRD
+aGVjayhzdXBlclR5cGUsIHNvdXJjZVR5cGUsIHRoaXMpICE9IFR5cGVDb25zdGFudHMuT0spIHsK
+IAkJCXByb2JsZW1SZXBvcnRlcigpLnR5cGVNaXNtYXRjaEVycm9yKHJvb3RFbnVtVHlwZSwgcmVm
+VHlwZVZhcmlhYmxlc1swXSwgc291cmNlVHlwZSwgbnVsbCk7CiAJCX0KIAkJcmV0dXJuICFmb3Vu
+ZEN5Y2xlOwpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2Vj
+bGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9NZXRob2RWZXJpZmllcjE1LmphdmEg
+Yi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwv
+Y29tcGlsZXIvbG9va3VwL01ldGhvZFZlcmlmaWVyMTUuamF2YQppbmRleCBjY2I5MzNiLi45Mzc0
+NDM1IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBz
+ZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL01ldGhvZFZlcmlmaWVyMTUuamF2YQorKysg
+Yi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwv
+Y29tcGlsZXIvbG9va3VwL01ldGhvZFZlcmlmaWVyMTUuamF2YQpAQCAtNjc5LDcgKzY3OSw3IEBA
+CiAJCQkJCQljb250aW51ZSBuZXh0OwogCQkJCXJldHVybiBpbmhlcml0ZWRNZXRob2Q7IC8vIG5v
+dCBhIG1hdGNoCiAJCQl9Ci0JCX0gZWxzZSBpZiAoaW5oZXJpdGVkVHlwZVZhcmlhYmxlLmJvdW5k
+Q2hlY2soc3Vic3RpdHV0ZSwgYXJndW1lbnQpICE9IFR5cGVDb25zdGFudHMuT0spIHsKKwkJfSBl
+bHNlIGlmIChpbmhlcml0ZWRUeXBlVmFyaWFibGUuYm91bmRDaGVjayhzdWJzdGl0dXRlLCBhcmd1
+bWVudCwgdGhpcy50eXBlLnNjb3BlKSAhPSBUeXBlQ29uc3RhbnRzLk9LKSB7CiAJICAgIAlyZXR1
+cm4gaW5oZXJpdGVkTWV0aG9kOwogCQl9CiAJfQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9Q
+YXJhbWV0ZXJpemVkR2VuZXJpY01ldGhvZEJpbmRpbmcuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5j
+b3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvUGFy
+YW1ldGVyaXplZEdlbmVyaWNNZXRob2RCaW5kaW5nLmphdmEKaW5kZXggYzM0MTk0Mi4uMzNlOTUz
+YSAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2Uv
+amR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9QYXJhbWV0ZXJpemVkR2VuZXJpY01ldGhvZEJp
+bmRpbmcuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBz
+ZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1BhcmFtZXRlcml6ZWRHZW5lcmljTWV0aG9k
+QmluZGluZy5qYXZhCkBAIC0xMDcsNyArMTA3LDcgQEAKIAkJICAgIH0KIAkJICAgIAogCQkgICAg
+aWYgKHVuY2hlY2tlZEFyZ3VtZW50cyAhPSBudWxsICYmIHVuY2hlY2tlZEFyZ3VtZW50c1tpXSA9
+PSBudWxsKSBjb250aW51ZTsgLy8gb25seSBib3VuZCBjaGVjayBpZiBpbmZlcnJlZCB0aHJvdWdo
+IDE1LjEyLjIuNgotCQkJc3dpdGNoICh0eXBlVmFyaWFibGUuYm91bmRDaGVjayhzdWJzdGl0dXRp
+b24sIHN1YnN0aXR1dGVGb3JDaGVja3MpKSB7CisJCQlzd2l0Y2ggKHR5cGVWYXJpYWJsZS5ib3Vu
+ZENoZWNrKHN1YnN0aXR1dGlvbiwgc3Vic3RpdHV0ZUZvckNoZWNrcywgc2NvcGUpKSB7CiAJCQkJ
+Y2FzZSBUeXBlQ29uc3RhbnRzLk1JU01BVENIIDoKIAkJCSAgICAgICAgLy8gaW5jb21wYXRpYmxl
+IGR1ZSB0byBib3VuZCBjaGVjawogCQkJCQlpbnQgYXJnTGVuZ3RoID0gYXJndW1lbnRzLmxlbmd0
+aDsKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNl
+L2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvUGFyYW1ldGVyaXplZFR5cGVCaW5kaW5nLmph
+dmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvbG9va3VwL1BhcmFtZXRlcml6ZWRUeXBlQmluZGluZy5qYXZhCmluZGV4IDFl
+Y2Y3YWEuLmE3ODFjMTYgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVy
+L29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvUGFyYW1ldGVyaXplZFR5
+cGVCaW5kaW5nLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2Vj
+bGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9QYXJhbWV0ZXJpemVkVHlwZUJpbmRp
+bmcuamF2YQpAQCAtNzIsNyArNzIsNyBAQAogCQkJVHlwZVZhcmlhYmxlQmluZGluZ1tdIHR5cGVW
+YXJpYWJsZXMgPSB0aGlzLnR5cGUudHlwZVZhcmlhYmxlcygpOwogCQkJaWYgKHRoaXMuYXJndW1l
+bnRzICE9IG51bGwgJiYgdHlwZVZhcmlhYmxlcyAhPSBudWxsKSB7IC8vIGFyZ3VtZW50cyBtYXkg
+YmUgbnVsbCBpbiBlcnJvciBjYXNlcwogCQkJCWZvciAoaW50IGkgPSAwLCBsZW5ndGggPSB0eXBl
+VmFyaWFibGVzLmxlbmd0aDsgaSA8IGxlbmd0aDsgaSsrKSB7Ci0JCQkJICAgIGlmICh0eXBlVmFy
+aWFibGVzW2ldLmJvdW5kQ2hlY2sodGhpcywgdGhpcy5hcmd1bWVudHNbaV0pICAhPSBUeXBlQ29u
+c3RhbnRzLk9LKSB7CisJCQkJICAgIGlmICh0eXBlVmFyaWFibGVzW2ldLmJvdW5kQ2hlY2sodGhp
+cywgdGhpcy5hcmd1bWVudHNbaV0sIHNjb3BlKSAgIT0gVHlwZUNvbnN0YW50cy5PSykgewogCQkJ
+CSAgICAJaGFzRXJyb3JzID0gdHJ1ZTsKIAkJCQkgICAgCWlmICgodGhpcy5hcmd1bWVudHNbaV0u
+dGFnQml0cyAmIFRhZ0JpdHMuSGFzTWlzc2luZ1R5cGUpID09IDApIHsKIAkJCQkgICAgCQkvLyBk
+byBub3QgcmVwb3J0IHNlY29uZGFyeSBlcnJvciwgaWYgdHlwZSByZWZlcmVuY2UgYWxyZWFkeSBn
+b3QgY29tcGxhaW5lZCBhZ2FpbnN0CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9j
+b21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1JlZmVyZW5j
+ZUJpbmRpbmcuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNl
+L2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvUmVmZXJlbmNlQmluZGluZy5qYXZhCmluZGV4
+IGMxYTYwNzMuLjAzOWRkYmQgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBp
+bGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvUmVmZXJlbmNlQmlu
+ZGluZy5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNl
+L2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvUmVmZXJlbmNlQmluZGluZy5qYXZhCkBAIC0x
+MDkzLDcgKzEwOTMsNyBAQAogICogSW4gYWRkaXRpb24gdG8gaW1wcm92aW5nIHBlcmZvcm1hbmNl
+LCBjYWNoaW5nIGFsc28gZW5zdXJlcyB0aGVyZSBpcyBubyBpbmZpbml0ZSByZWdyZXNzaW9uCiAg
+KiBzaW5jZSBwZXIgbmF0dXJlLCB0aGUgY29tcGF0aWJpbGl0eSBjaGVjayBpcyByZWN1cnNpdmUg
+dGhyb3VnaCBwYXJhbWV0ZXJpemVkIHR5cGUgYXJndW1lbnRzICgxMjI3NzUpCiAgKi8KLXB1Ymxp
+YyBib29sZWFuIGlzQ29tcGF0aWJsZVdpdGgoVHlwZUJpbmRpbmcgb3RoZXJUeXBlKSB7CitwdWJs
+aWMgYm9vbGVhbiBpc0NvbXBhdGlibGVXaXRoKFR5cGVCaW5kaW5nIG90aGVyVHlwZSwgU2NvcGUg
+Y2FwdHVyZVNjb3BlKSB7CiAJaWYgKG90aGVyVHlwZSA9PSB0aGlzKQogCQlyZXR1cm4gdHJ1ZTsK
+IAlpZiAob3RoZXJUeXBlLmlkID09IFR5cGVJZHMuVF9KYXZhTGFuZ09iamVjdCkKQEAgLTExMDks
+NyArMTEwOSw3IEBACiAJCX0KIAl9CiAJdGhpcy5jb21wYXRpYmxlQ2FjaGUucHV0KG90aGVyVHlw
+ZSwgQm9vbGVhbi5GQUxTRSk7IC8vIHByb3RlY3QgZnJvbSByZWN1cnNpdmUgY2FsbAotCWlmIChp
+c0NvbXBhdGlibGVXaXRoMChvdGhlclR5cGUpKSB7CisJaWYgKGlzQ29tcGF0aWJsZVdpdGgwKG90
+aGVyVHlwZSwgY2FwdHVyZVNjb3BlKSkgewogCQl0aGlzLmNvbXBhdGlibGVDYWNoZS5wdXQob3Ro
+ZXJUeXBlLCBCb29sZWFuLlRSVUUpOwogCQlyZXR1cm4gdHJ1ZTsKIAl9CkBAIC0xMTE5LDcgKzEx
+MTksNyBAQAogLyoqCiAgKiBBbnN3ZXIgdHJ1ZSBpZiB0aGUgcmVjZWl2ZXIgdHlwZSBjYW4gYmUg
+YXNzaWduZWQgdG8gdGhlIGFyZ3VtZW50IHR5cGUgKHJpZ2h0KQogICovCi1wcml2YXRlIGJvb2xl
+YW4gaXNDb21wYXRpYmxlV2l0aDAoVHlwZUJpbmRpbmcgb3RoZXJUeXBlKSB7Citwcml2YXRlIGJv
+b2xlYW4gaXNDb21wYXRpYmxlV2l0aDAoVHlwZUJpbmRpbmcgb3RoZXJUeXBlLCBTY29wZSBjYXB0
+dXJlU2NvcGUpIHsKIAlpZiAob3RoZXJUeXBlID09IHRoaXMpCiAJCXJldHVybiB0cnVlOwogCWlm
+IChvdGhlclR5cGUuaWQgPT0gVHlwZUlkcy5UX0phdmFMYW5nT2JqZWN0KQpAQCAtMTE1Nyw4ICsx
+MTU3LDE3IEBACiAJCQkJCQkJCQkJLy8gYWJvdmUgaWYgc2FtZSBlcmFzdXJlCiAJCQl9CiAJCQlS
+ZWZlcmVuY2VCaW5kaW5nIG90aGVyUmVmZXJlbmNlVHlwZSA9IChSZWZlcmVuY2VCaW5kaW5nKSBv
+dGhlclR5cGU7Ci0JCQlpZiAob3RoZXJSZWZlcmVuY2VUeXBlLmlzSW50ZXJmYWNlKCkpIC8vIGNv
+dWxkIGJlIGFubm90YXRpb24gdHlwZQotCQkJCXJldHVybiBpbXBsZW1lbnRzSW50ZXJmYWNlKG90
+aGVyUmVmZXJlbmNlVHlwZSwgdHJ1ZSk7CisJCQlpZiAob3RoZXJSZWZlcmVuY2VUeXBlLmlzSW50
+ZXJmYWNlKCkpIHsgLy8gY291bGQgYmUgYW5ub3RhdGlvbiB0eXBlCisJCQkJaWYgKGltcGxlbWVu
+dHNJbnRlcmZhY2Uob3RoZXJSZWZlcmVuY2VUeXBlLCB0cnVlKSkKKwkJCQkJcmV0dXJuIHRydWU7
+CisJCQkJaWYgKHRoaXMgaW5zdGFuY2VvZiBUeXBlVmFyaWFibGVCaW5kaW5nICYmIGNhcHR1cmVT
+Y29wZSAhPSBudWxsKSB7CisJCQkJCVR5cGVWYXJpYWJsZUJpbmRpbmcgdHlwZVZhcmlhYmxlID0g
+KFR5cGVWYXJpYWJsZUJpbmRpbmcpIHRoaXM7CisJCQkJCWlmICh0eXBlVmFyaWFibGUuZmlyc3RC
+b3VuZCAhPSBudWxsICYmIHR5cGVWYXJpYWJsZS5pZCAhPSBUeXBlSWRzLlRfSmF2YUxhbmdPYmpl
+Y3QpIHsKKwkJCQkJCVR5cGVCaW5kaW5nIGJvdW5kID0gdHlwZVZhcmlhYmxlLmZpcnN0Qm91bmQu
+Y2FwdHVyZShjYXB0dXJlU2NvcGUsIC0xKTsgLy8gbm8gcG9zaXRpb24gbmVlZGVkIGFzIHRoaXMg
+Y2FwdHVyZSB3aWxsIG5ldmVyIGVzY2FwZSB0aGlzIGNvbnRleHQKKwkJCQkJCXJldHVybiBib3Vu
+ZC5pc0NvbXBhdGlibGVXaXRoKG90aGVyUmVmZXJlbmNlVHlwZSk7CisJCQkJCX0KKwkJCQl9CisJ
+CQl9CiAJCQlpZiAoaXNJbnRlcmZhY2UoKSkgIC8vIEV4cGxpY2l0IGNvbnZlcnNpb24gZnJvbSBh
+biBpbnRlcmZhY2UKIAkJCQkJCQkJCQkvLyB0byBhIGNsYXNzIGlzIG5vdCBhbGxvd2VkCiAJCQkJ
+cmV0dXJuIGZhbHNlOwpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIv
+b3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9TY29wZS5qYXZhIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2xvb2t1cC9TY29wZS5qYXZhCmluZGV4IDg5MTZlNDguLmIyNzE0ZmYgMTAwNjQ0Ci0tLSBh
+L29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9j
+b21waWxlci9sb29rdXAvU2NvcGUuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21w
+aWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1Njb3BlLmphdmEK
+QEAgLTQxNTIsNyArNDE1Miw3IEBACiAKIAlwcml2YXRlIGludCBwYXJhbWV0ZXJDb21wYXRpYmls
+aXR5TGV2ZWwoVHlwZUJpbmRpbmcgYXJnLCBUeXBlQmluZGluZyBwYXJhbSwgTG9va3VwRW52aXJv
+bm1lbnQgZW52LCBib29sZWFuIHRpZUJyZWFraW5nVmFyYXJnc01ldGhvZHMpIHsKIAkJLy8gb25s
+eSBjYWxsZWQgaWYgZW52Lm9wdGlvbnMuc291cmNlTGV2ZWwgPj0gQ2xhc3NGaWxlQ29uc3RhbnRz
+LkpESzFfNQotCQlpZiAoYXJnLmlzQ29tcGF0aWJsZVdpdGgocGFyYW0pKQorCQlpZiAoYXJnLmlz
+Q29tcGF0aWJsZVdpdGgocGFyYW0sIHRoaXMpKQogCQkJcmV0dXJuIENPTVBBVElCTEU7CiAJCWlm
+ICh0aWVCcmVha2luZ1ZhcmFyZ3NNZXRob2RzICYmICh0aGlzLmNvbXBpbGVyT3B0aW9ucygpLmNv
+bXBsaWFuY2VMZXZlbCA+PSBDbGFzc0ZpbGVDb25zdGFudHMuSkRLMV83IHx8ICFDb21waWxlck9w
+dGlvbnMudG9sZXJhdGVJbGxlZ2FsQW1iaWd1b3VzVmFyYXJnc0ludm9jYXRpb24pKSB7CiAJCQkv
+KiAxNS4xMi4yLjUgQ2hvb3NpbmcgdGhlIE1vc3QgU3BlY2lmaWMgTWV0aG9kLCAuLi4gT25lIHZh
+cmlhYmxlIGFyaXR5IG1lbWJlciBtZXRob2QgbmFtZWQgbSBpcyBtb3JlIHNwZWNpZmljIHRoYW4K
+ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvVHlwZUJpbmRpbmcuamF2YSBiL29yZy5lY2xpcHNl
+LmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29r
+dXAvVHlwZUJpbmRpbmcuamF2YQppbmRleCA3ODcxMjExLi42NzE5OWRhIDEwMDY0NAotLS0gYS9v
+cmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29t
+cGlsZXIvbG9va3VwL1R5cGVCaW5kaW5nLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUv
+Y29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9UeXBlQmlu
+ZGluZy5qYXZhCkBAIC00NTAsNyArNDUwLDExIEBACiAKIC8qIEFuc3dlciB0cnVlIGlmIHRoZSBy
+ZWNlaXZlciB0eXBlIGNhbiBiZSBhc3NpZ25lZCB0byB0aGUgYXJndW1lbnQgdHlwZSAocmlnaHQp
+CiAgKi8KLXB1YmxpYyBhYnN0cmFjdCBib29sZWFuIGlzQ29tcGF0aWJsZVdpdGgoVHlwZUJpbmRp
+bmcgcmlnaHQpOworcHVibGljIGJvb2xlYW4gaXNDb21wYXRpYmxlV2l0aChUeXBlQmluZGluZyBy
+aWdodCkgeworCXJldHVybiBpc0NvbXBhdGlibGVXaXRoKHJpZ2h0LCBudWxsKTsgLy8gZGVsZWdh
+dGUgZnJvbSB0aGUgb2xkIHNpZ25hdHVyZSB0byB0aGUgbmV3IGltcGxlbWVudGF0aW9uOgorfQor
+Ly8gdmVyc2lvbiB0aGF0IGFsbG93cyB0byBjYXB0dXJlIGEgdHlwZSBib3VuZCB1c2luZyAnc2Nv
+cGUnOgorcHVibGljIGFic3RyYWN0IGJvb2xlYW4gaXNDb21wYXRpYmxlV2l0aChUeXBlQmluZGlu
+ZyByaWdodCwgU2NvcGUgc2NvcGUpOwogCiBwdWJsaWMgYm9vbGVhbiBpc0VudW0oKSB7CiAJcmV0
+dXJuIGZhbHNlOwpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3Jn
+L2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9UeXBlVmFyaWFibGVCaW5kaW5n
+LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50
+ZXJuYWwvY29tcGlsZXIvbG9va3VwL1R5cGVWYXJpYWJsZUJpbmRpbmcuamF2YQppbmRleCA5MWE3
+MDY1Li41MzZlMzk1IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9v
+cmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1R5cGVWYXJpYWJsZUJpbmRp
+bmcuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1R5cGVWYXJpYWJsZUJpbmRpbmcuamF2YQpAQCAt
+NTIsNyArNTIsMjAgQEAKIAkvKioKIAkgKiBSZXR1cm5zIHRydWUgaWYgdGhlIGFyZ3VtZW50IHR5
+cGUgc2F0aXNmaWVzIGFsbCBib3VuZHMgb2YgdGhlIHR5cGUgcGFyYW1ldGVyCiAJICovCi0JcHVi
+bGljIGludCBib3VuZENoZWNrKFN1YnN0aXR1dGlvbiBzdWJzdGl0dXRpb24sIFR5cGVCaW5kaW5n
+IGFyZ3VtZW50VHlwZSkgeworCXB1YmxpYyBpbnQgYm91bmRDaGVjayhTdWJzdGl0dXRpb24gc3Vi
+c3RpdHV0aW9uLCBUeXBlQmluZGluZyBhcmd1bWVudFR5cGUsIFNjb3BlIHNjb3BlKSB7CisJCWlu
+dCBjb2RlID0gaW50ZXJuYWxCb3VuZENoZWNrKHN1YnN0aXR1dGlvbiwgYXJndW1lbnRUeXBlLCBz
+Y29wZSk7CisJCWlmIChjb2RlID09IFR5cGVDb25zdGFudHMuTUlTTUFUQ0gpIHsKKwkJCWlmIChh
+cmd1bWVudFR5cGUgaW5zdGFuY2VvZiBUeXBlVmFyaWFibGVCaW5kaW5nICYmIHNjb3BlICE9IG51
+bGwpIHsKKwkJCQlUeXBlQmluZGluZyBib3VuZCA9ICgoVHlwZVZhcmlhYmxlQmluZGluZylhcmd1
+bWVudFR5cGUpLmZpcnN0Qm91bmQ7CisJCQkJaWYgKGJvdW5kICE9IG51bGwpIHsKKwkJCQkJaW50
+IGNvZGUyID0gYm91bmRDaGVjayhzdWJzdGl0dXRpb24sIGJvdW5kLmNhcHR1cmUoc2NvcGUsIC0x
+KSwgc2NvcGUpOyAvLyBubyBwb3NpdGlvbiBuZWVkZWQgYXMgdGhpcyBjYXB0dXJlIHdpbGwgbmV2
+ZXIgZXNjYXBlIHRoaXMgY29udGV4dAorCQkJCQlyZXR1cm4gTWF0aC5taW4oY29kZSwgY29kZTIp
+OworCQkJCX0KKwkJCX0KKwkJfQorCQlyZXR1cm4gY29kZTsKKwl9CisJcHJpdmF0ZSBpbnQgaW50
+ZXJuYWxCb3VuZENoZWNrKFN1YnN0aXR1dGlvbiBzdWJzdGl0dXRpb24sIFR5cGVCaW5kaW5nIGFy
+Z3VtZW50VHlwZSwgU2NvcGUgc2NvcGUpIHsKIAkJaWYgKGFyZ3VtZW50VHlwZSA9PSBUeXBlQmlu
+ZGluZy5OVUxMIHx8IGFyZ3VtZW50VHlwZSA9PSB0aGlzKSB7CiAJCQlyZXR1cm4gVHlwZUNvbnN0
+YW50cy5PSzsKIAkJfQpAQCAtMTIzLDcgKzEzNiw3IEBACiAJCQkJCS8vIGlmIHRoZSB3aWxkY2Fy
+ZCBpcyBsb3dlci1ib3VuZGVkIGJ5IGEgdHlwZSB2YXJpYWJsZSB0aGF0IGhhcyBubyByZWxldmFu
+dCB1cHBlciBib3VuZCB0aGVyZSdzIG5vdGhpbmcgdG8gY2hlY2sgaGVyZSAoYnVnIDI4MjE1Mik6
+CiAJCQkJCWlmICh3aWxkY2FyZC5ib3VuZC5pc1R5cGVWYXJpYWJsZSgpICYmICgoVHlwZVZhcmlh
+YmxlQmluZGluZyl3aWxkY2FyZC5ib3VuZCkuc3VwZXJjbGFzcy5pZCA9PSBUeXBlSWRzLlRfSmF2
+YUxhbmdPYmplY3QpCiAJCQkJCQlicmVhazsKLQkJCQkJcmV0dXJuIGJvdW5kQ2hlY2soc3Vic3Rp
+dHV0aW9uLCB3aWxkY2FyZC5ib3VuZCk7CisJCQkJCXJldHVybiBib3VuZENoZWNrKHN1YnN0aXR1
+dGlvbiwgd2lsZGNhcmQuYm91bmQsIHNjb3BlKTsKIAogCQkJCWNhc2UgV2lsZGNhcmQuVU5CT1VO
+RCA6CiAJCQkJCWJyZWFrOw==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

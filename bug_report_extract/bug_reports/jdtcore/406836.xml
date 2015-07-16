@@ -1,0 +1,802 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>406836</bug_id>
+          
+          <creation_ts>2013-04-29 14:51:00 -0400</creation_ts>
+          <short_desc>IField#getConstant() returns null when it shouldn&apos;t</short_desc>
+          <delta_ts>2013-08-06 07:21:18 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M1</target_milestone>
+          
+          <blocked>216098</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Markus Keller">markus_keller</reporter>
+          <assigned_to name="shankha banerjee">shankhba</assigned_to>
+          <cc>anchakrk</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>mauromol</cc>
+    
+    <cc>shankhba</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2250042</commentid>
+    <comment_count>0</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-04-29 14:51:05 -0400</bug_when>
+    <thetext>Clean up APIs IField#getConstant() and IVariableBinding#getConstantValue().
+
+These APIs are supposed to implement JLS7 4.12.4 and should return a non-null value iff the field is a constant variable.
+
+Unfortunately, there&apos;s a bug in JLS7: It would also allow an instance field to be a constant variable. But this contradicts the JVMS7. I&apos;ve sent a mail to the JLS maintainers to fix this.
+
+
+Once the definition of &quot;constant variable&quot; is clear, our implementations and Javadocs should be adapted. Bugs I saw:
+- IVariableBinding#getConstantValue(): should return null for final instance fields
+- IField#getConstant(): should not return null for non-trivial initializers like &quot;1&lt;&lt;8&quot;
+
+
+Test class:
+
+package p;
+
+public class B {
+    public static final int SFC = 1, SFC2 = 1&lt;&lt;8;
+    public final int IFC = 2;
+
+    public static final int SF = Integer.valueOf(-1).intValue();
+    public final int IF = Integer.valueOf(-2).intValue();
+
+    public static int SC = 3;
+    public int IC = 4;
+
+    public static int S = Integer.valueOf(-3).intValue();
+    public int I = Integer.valueOf(-4).intValue();
+
+    public static void main(String[] args) {
+        print(SFC);
+        print(SFC2);
+        print(SC);
+
+        print(SF);
+        print(S);
+
+        foo(new B());
+    }
+
+    private static void foo(B b) {
+        print(b.IFC);
+        print(b.IC);
+
+        print(b.IF);
+        print(b.I);
+    }
+
+    private static void print(int i) {
+        final int fi = i;
+        System.out.println(fi);
+    }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250336</commentid>
+    <comment_count>1</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-04-30 06:41:45 -0400</bug_when>
+    <thetext>I got a confirmation from Alex that this is a bug in JLS7 and that only a static field can be a &quot;constant variable&quot;.
+
+JLS1 13.1 said: &quot;References to fields that are static, final, and initialized with compile-time constant expressions are resolved at compile time to the constant value that is denoted.&quot; As the spec evolved and the term &quot;constant variable&quot; was introduced, the &quot;static&quot; got lost somewhere.
+
+&gt; - IField#getConstant(): should not return null for non-trivial initializers
+&gt; like &quot;1&lt;&lt;8&quot;
+
+If this cannot be implemented, then it at least needs to be documented.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2272490</commentid>
+    <comment_count>2</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-06-13 12:02:21 -0400</bug_when>
+    <thetext>Hi Markus,
+I am not clear as to what are the requirements of this bug.
+As per what I understood. A &quot;constant&quot; variable is one which has declared as final and is initialized. 
+
+----------------------------------
+As per the description:
+----------------------------------
+- IVariableBinding#getConstantValue(): should return null for final instance fields
+
+I assume it means for fields which are final but have yet not been initialized. 
+From what I understand every final unintialized variable (&quot;BLANK VVARIABLE&quot;) needs to be initialized through the constructor. Therefore I do not get the meaning of &quot;should return null for final instance fields&quot;.
+
+- IField#getConstant(): should not return null for non-trivial initializers like &quot;1&lt;&lt;8&quot;
+
+I tried debugging the code which you have posted. 
+The function getConstant didn&apos;t (Implemented for classes which implement the interface IField)  get hit. The output is 256 as it should be. 
+
+So it does not return non-null.  
+
+The output from the example is as expected:
+
+ public static void main(String[] args) {
+        print(SFC);  //1
+        print(SFC2); //256
+        print(SC);   //3
+
+        print(SF);  //-1
+        print(S);   //-3
+
+        foo(new B());   
+    }
+
+    private static void foo(B b) {
+        print(b.IFC); //2
+        print(b.IC);  //4
+
+        print(b.IF);  //-2
+        print(b.I);   //-4
+    }
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2272627</commentid>
+    <comment_count>3</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-06-13 18:10:48 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+Sorry, these results were wrong. Non-static fields can indeed be constant.
+
+JLS7 8.3.2.1&apos;s usage of &quot;constants&quot; for static constants only is highly confusing.
+JVMS7 4.7.2 is wrong, since not every client must ignore the ConstantValue attribute for non-static fields.
+JLS7 13.1. point 3. is wrong, since it mixes statements about static and non-static constant fields.
+
+Luckily this bug doesn&apos;t have to care about most of these issues.
+
+IVariableBinding#getConstantValue()&apos;s Javadoc and implementation is fine.
+
+The second sentence of IField#getConstant()&apos;s Javadoc should be: &quot;To have a constant value, the field needs to be final and its initializer must be a compile-time constant expression.&quot;
+
+&gt; IField#getConstant(): should not return null for non-trivial initializers like &quot;1&lt;&lt;8&quot;
+This is one issue that should be fixed by this bug.
+
+The second issue is that also returns null for the non-static field IFC here, but it should return 2:
+    public final int IFC = 2;
+
+
+The test class I posted only shows many different field declarations and does not show the bug in the IField#getConstant() API (how should it, given that it doesn&apos;t even refer to any class outside of java.lang...).
+
+To see the bug, you have to call IField#getConstant(). You can either do that in a JDT Core test case that creates an IField, or you can also use the 
+http://www.eclipse.org/jdt/ui/jeview/ 
+(see the value of &quot;IField &gt; constant&quot; in the Properties view).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2272695</commentid>
+    <comment_count>4</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-06-14 04:11:45 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; (In reply to comment #1)
+
+&gt; JLS7 13.1. point 3. is wrong, since it mixes statements about static and
+&gt; non-static constant fields.
+
+I did not understand which part of point3 in JLS7 13.1  is wrong? Section 4.12.4 (no confusion between static and final) clearly specifies what is a constant variable.  
+ 
+Thanks for the explanation. 
+
+Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2272752</commentid>
+    <comment_count>5</comment_count>
+      <attachid>232377</attachid>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-06-14 06:57:09 -0400</bug_when>
+    <thetext>Created attachment 232377
+A test class that shows some effects
+
+(In reply to comment #4)
+&gt; I did not understand which part of point3 in JLS7 13.1  is wrong?
+
+Extract from the spec:
+&gt; References to fields that are constant variables (4.12.4) are resolved at
+&gt; compile time to the constant value that is denoted.
+Correct; declares that the context is &quot;constant variables&quot; (static &amp; non-static)
+
+&gt; No reference to such a field should be present in the code in a binary file
+&gt; (except in the class or interface containing the field, which will have code
+&gt; to initialize it).
+The &quot;(except ...)&quot; only applies to non-static constant fields; it is wrong for static constant fields, since those are initialized by the VM.
+
+&gt; Such a field must always appear to have been initialized (12.4.2); the
+&gt; default initial value for the type of such a field must never be observed.
+Only applies to static constant fields; wrong for constant fields.
+
+&gt; See 13.4.9 for a discussion.
+Correct; the non-final &lt;-&gt; final transitions affect pre-compiled binaries in the same way for static and non-static fields. Only the last paragraph of that section refers to static constant fields, and this restriction is correctly stated.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2272755</commentid>
+    <comment_count>6</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-06-14 07:16:22 -0400</bug_when>
+    <thetext>Thanks for the test case. I have the following test case:
+
+public void test406836() throws CoreException {
+		String cuSource =
+				&quot;package p;\n&quot; +
+				&quot;class A{\n&quot; +
+				&quot;    public final int x = 2;\n&quot; +
+				&quot;    public final int y = 1&lt;&lt;8;\n&quot; +
+				&quot;    public static final int z = 3;\n&quot; +
+				&quot;    public static int a = 4;\n&quot; +
+				&quot;    }\n&quot; +
+				&quot;}&quot;;
+		createFile(&quot;/P/p/A.java&quot;, cuSource);
+		IType type = getCompilationUnit(&quot;/P/p/A.java&quot;).getType(&quot;A&quot;);
+
+		Object constant = type.getField(&quot;x&quot;).getConstant();
+		System.out.println(constant);
+
+		constant = type.getField(&quot;z&quot;).getConstant();
+		System.out.println(constant);
+
+		constant = type.getField(&quot;y&quot;).getConstant();
+		System.out.println(constant);
+
+		deleteFile(&quot;/P/p/A.java&quot;);
+}
+
+I will check if I am missing something. 
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2273318</commentid>
+    <comment_count>7</comment_count>
+      <attachid>232439</attachid>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-06-17 09:51:13 -0400</bug_when>
+    <thetext>Created attachment 232439
+WIP: Patch
+
+1) The second issue has been resolved through this patch. 
+&gt; &quot;The second issue is that also returns null for the non-static field IFC 
+&gt;  here, but it should return 2:
+&gt;    public final int IFC = 2;&quot;
+
+2) I have to still 
+&gt; IField#getConstant(): should not return null for non-trivial initializers like &quot;1&lt;&lt;8&quot;
+
+3) I have added a test case. Please let me know if this is the correct place to add and if more tests are needed other than what I have mentioned in the test case. If a case is irrelevant do let me know that as well. 
+
+
+RunAllJDTCore results are fine. 
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2273341</commentid>
+    <comment_count>8</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-06-17 10:28:31 -0400</bug_when>
+    <thetext>Shankha, the process doesn&apos;t require you to request for review from two committers, unless it&apos;s a very late in the game. Of course, this is unless you think the fix is complicated enough to warrant review from two committers/experts.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2273346</commentid>
+    <comment_count>9</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-06-17 10:34:21 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; The second sentence of IField#getConstant()&apos;s Javadoc should be: &quot;To have a
+&gt; constant value, the field needs to be final and its initializer must be a
+&gt; compile-time constant expression.&quot;
+
+Please read again carefully and then fix the Javadoc correctly.
+
+&gt; GetSourceTests
+
+That&apos;s the right test suite, but note that most of this is already tested by the testFieldConstant*() methods. Please add new tests for new examples, but don&apos;t add new tests for examples that are equivalent to existing examples. It also wouldn&apos;t hurt to have some tests for constants in interfaces.
+
+(In reply to comment #1)
+&gt; &gt; - IField#getConstant(): should not return null for non-trivial initializers
+&gt; &gt; like &quot;1&lt;&lt;8&quot;
+&gt; 
+&gt; If this cannot be implemented, then it at least needs to be documented.
+
+I don&apos;t think we have the infrastructure to compute the correct result for all possible constant expressions (e.g. if the expression refers to another constant field). Just explaining the problem in Javadoc is good enough for now.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2273820</commentid>
+    <comment_count>10</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-06-18 07:12:05 -0400</bug_when>
+    <thetext>Hi Markus,
+
+public interface B{
+	static long STATIC_NOT_CONST = 3;
+}
+
+constant = type.getField(&quot;STATIC_NOT_CONST&quot;).getConstant();
+assertNull(&quot;Should not be a constant&quot;, constant);
+
+We fail the assert.  Is it a bug?
+
+I checked the compiler. For the corresponding .class file:
+
+// Field descriptor #6 J
+  public static final long STATIC_NOT_CONST = 3L;
+
+Are we wrong in case of both the model and compiler ?
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2273934</commentid>
+    <comment_count>11</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-06-18 10:40:52 -0400</bug_when>
+    <thetext>(In reply to comment #10)
+For this example, getConstant() should return Long 3, so the assertNull is incorrect.
+
+Note that fields in interfaces are implicitly static and final (JLS7 9.3), so the modifiers should not matter. The generated .class file is correct.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2276108</commentid>
+    <comment_count>12</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-06-24 05:10:32 -0400</bug_when>
+    <thetext>Shankha, for model Jay is the expert, so please route review requests
+in that area to him, thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2281484</commentid>
+    <comment_count>13</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-07-08 02:23:26 -0400</bug_when>
+    <thetext>Hi,
+I need some help on this bug. 
+
+For the below mentioned test case I was trying to figure out where are the constants are evaluated.
+
+	public void test() {
+		String contents =
+				&quot;package p;\n&quot; +
+				&quot;class X{\n&quot; +
+				&quot;    public final long CONST = 1;\n&quot; +
+				&quot;    public final long CONST_NON_TRIVIAL_INITIALIZER = 2&lt;&lt;8;\n&quot; +
+				&quot;    public static final long STATIC_CONST = 3;\n&quot; +
+				&quot;    public static long STATIC_NOT_CONST = 4;\n&quot; +
+				&quot;    public final int NON_COMPILE_TIME_CONSTANT = new Integer(30).intValue();\n&quot; +
+				&quot;    }\n&quot; +
+				&quot;}&quot;;
+		ASTNode node = runConversion(JLS3_INTERNAL, contents, true, true, true, &quot;p/X.java&quot;);
+		assertTrue(&quot;Should be a compilation unit&quot;, node instanceof CompilationUnit);
+		CompilationUnit unit = (CompilationUnit) node;
+		List types = unit.types();
+        TypeDeclaration typeDeclaration  = (TypeDeclaration) types.get(0);
+
+        FieldDeclaration fieldDeclaration = (FieldDeclaration)typeDeclaration.bodyDeclarations().get(1);
+        VariableDeclarationFragment fragment = (VariableDeclarationFragment) fieldDeclaration.fragments().get(0);
+        IVariableBinding variableBinding = fragment.resolveBinding();
+        Object constant = variableBinding.getConstantValue();
+        Long value = (Long) constant;
+        assertEquals(&quot;Wrong value&quot;, 512, value.intValue());
+
+You can have this test case under StandAloneASTParserTest.java
+
+I was hoping it would be done in CompilationUniteResolver.java:683
+
+			boolean analyzeAndGenerateCode = !ignoreMethodBodies;
+			unit =
+				resolver.resolve(
+					null, // no existing compilation unit declaration
+					sourceUnit,
+					nodeSearcher,
+					true, // method verification
+					analyzeAndGenerateCode, // analyze code
+					analyzeAndGenerateCode); // generate code
+
+I think the constants are evaluated much before that. Could you please point me in the correct direction. 
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2281491</commentid>
+    <comment_count>14</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-07-08 03:01:26 -0400</bug_when>
+    <thetext>(In reply to comment #13)
+&gt; Hi,
+&gt; I need some help on this bug. 
+&gt; 
+&gt; For the below mentioned test case I was trying to figure out where are the
+&gt; constants are evaluated.
+&gt; 
+&gt; 	public void test() {
+&gt; 		String contents =
+&gt; 				&quot;package p;\n&quot; +
+&gt; 				&quot;class X{\n&quot; +
+&gt; 				&quot;    public final long CONST = 1;\n&quot; +
+&gt; 				&quot;    public final long CONST_NON_TRIVIAL_INITIALIZER = 2&lt;&lt;8;\n&quot; +
+&gt; 				&quot;    public static final long STATIC_CONST = 3;\n&quot; +
+&gt; 				&quot;    public static long STATIC_NOT_CONST = 4;\n&quot; +
+&gt; 				&quot;    public final int NON_COMPILE_TIME_CONSTANT = new
+&gt; Integer(30).intValue();\n&quot; +
+&gt; 				&quot;    }\n&quot; +
+&gt; 				&quot;}&quot;;
+&gt; 		ASTNode node = runConversion(JLS3_INTERNAL, contents, true, true, true,
+&gt; &quot;p/X.java&quot;);
+&gt; 		assertTrue(&quot;Should be a compilation unit&quot;, node instanceof
+&gt; CompilationUnit);
+&gt; 		CompilationUnit unit = (CompilationUnit) node;
+&gt; 		List types = unit.types();
+&gt;         TypeDeclaration typeDeclaration  = (TypeDeclaration) types.get(0);
+&gt; 
+&gt;         FieldDeclaration fieldDeclaration =
+&gt; (FieldDeclaration)typeDeclaration.bodyDeclarations().get(1);
+&gt;         VariableDeclarationFragment fragment = (VariableDeclarationFragment)
+&gt; fieldDeclaration.fragments().get(0);
+&gt;         IVariableBinding variableBinding = fragment.resolveBinding();
+&gt;         Object constant = variableBinding.getConstantValue();
+&gt;         Long value = (Long) constant;
+&gt;         assertEquals(&quot;Wrong value&quot;, 512, value.intValue());
+&gt; 
+&gt; You can have this test case under StandAloneASTParserTest.java
+&gt; 
+&gt; I was hoping it would be done in CompilationUniteResolver.java:683
+&gt; 
+&gt; 			boolean analyzeAndGenerateCode = !ignoreMethodBodies;
+&gt; 			unit =
+&gt; 				resolver.resolve(
+&gt; 					null, // no existing compilation unit declaration
+&gt; 					sourceUnit,
+&gt; 					nodeSearcher,
+&gt; 					true, // method verification
+&gt; 					analyzeAndGenerateCode, // analyze code
+&gt; 					analyzeAndGenerateCode); // generate code
+&gt; 
+&gt; I think the constants are evaluated much before that. Could you please point
+&gt; me in the correct direction. 
+&gt; 
+&gt; Thanks
+
+Please ignore Comment 13.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2281541</commentid>
+    <comment_count>15</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-07-08 05:47:07 -0400</bug_when>
+    <thetext>Hi,
+To evaluate the constant initializers:
+public final long CONST_NON_TRIVIAL_INITIALIZER = 2&lt;&lt;8;
+
+We need to find a way to access VariableBinding (one of it&apos;s functions GetConstant) from SourceField. 
+
+I do not think there is a simple enough way to do that. 
+
+Please correct me if I am wrong. I will go ahead with just the doc changes.
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2281559</commentid>
+    <comment_count>16</comment_count>
+      <attachid>233205</attachid>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-07-08 06:53:41 -0400</bug_when>
+    <thetext>Created attachment 233205
+Patch
+
+Submitting the patch for review.
+The patch contains the required doc changes as well. 
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2286789</commentid>
+    <comment_count>17</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-07-22 08:14:59 -0400</bug_when>
+    <thetext>Fixed with http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=002377a0c081bad20cf24753616b65ca91f33618
+
+I&apos;ve moved the test right after the other testFieldConstant*() tests and gave it a better name. I&apos;ve also clarified the API to tell that this is just a current restriction, and that it only applies for source fields.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2291763</commentid>
+    <comment_count>18</comment_count>
+    <who name="ANIRBAN CHAKRABORTY">anchakrk</who>
+    <bug_when>2013-08-06 05:54:24 -0400</bug_when>
+    <thetext>Verified for I20130805-0800</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2291789</commentid>
+    <comment_count>19</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2013-08-06 07:21:18 -0400</bug_when>
+    <thetext>(In reply to comment #18)
+&gt; Verified for I20130805-0800
+
+ie Eclipse Luna 4.4 M1</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>232377</attachid>
+            <date>2013-06-14 06:57:00 -0400</date>
+            <delta_ts>2013-06-14 06:57:09 -0400</delta_ts>
+            <desc>A test class that shows some effects</desc>
+            <filename>Constants.java</filename>
+            <type>text/plain</type>
+            <size>1578</size>
+            <attacher name="Markus Keller">markus_keller</attacher>
+            
+              <data encoding="base64">cGFja2FnZSBwOw0KDQppbXBvcnQgamF2YS5sYW5nLnJlZmxlY3QuRmllbGQ7DQoNCmNsYXNzIE90
+aGVyIHsNCglzdGF0aWMgew0KCQlDb25zdGFudHMudGVzdFN0YXRpYygpOw0KCX0NCglwdWJsaWMg
+c3RhdGljIGZpbmFsIGludCBPVEhFUl9TVEFUSUMgPSAgICAgICAgICAgIC0xOw0KCQ0KCXB1Ymxp
+YyBzdGF0aWMgdm9pZCB4eCgpIHsNCgkJU3lzdGVtLm91dC5wcmludGxuKCJ4eCIpOw0KCX0gDQp9
+DQoNCnB1YmxpYyBjbGFzcyBDb25zdGFudHMgIHsNCglwdWJsaWMgc3RhdGljIGZpbmFsIGludCBT
+VEFUSUMgPSAgICAgICAgICAgIDEwOw0KCXsNCgkJdGVzdEluc3RhbmNlKHRoaXMpOw0KCX0NCglw
+dWJsaWMgZmluYWwgaW50IE5PTl9TVEFUSUMgPSAgICAgICAgICAgICAgIDIwICogU1RBVElDOw0K
+CXB1YmxpYyBmaW5hbCBpbnQgTk9OX0NPTlNUQU5UID0gbmV3IEludGVnZXIoMzApLmludFZhbHVl
+KCk7DQoJcHVibGljIGludCBOT05fRklOQUwgPSAgICAgICAgICAgICAgICAgICAgICA0MDsNCglw
+dWJsaWMgdm9pZCBwcmludCgpIHsNCgkJU3lzdGVtLm91dC5wcmludGxuKCJOT05fU1RBVElDOiAi
+ICsgTk9OX1NUQVRJQyk7DQoJfQ0KCXB1YmxpYyBzdGF0aWMgdm9pZCBtYWluKFN0cmluZ1tdIGFy
+Z3MpIHsNCgkJT3RoZXIueHgoKTsNCgkJQ29uc3RhbnRzIGNvbnN0YW50cyA9IG5ldyBDb25zdGFu
+dHMoKTsNCgkJU3lzdGVtLm91dC5wcmludGxuKCItLS0gZXZlcnl0aGluZyBpbml0aWFsaXplZDoi
+KTsNCgkJdGVzdEluc3RhbmNlKGNvbnN0YW50cyk7DQoJfQ0KCXB1YmxpYyBzdGF0aWMgdm9pZCB0
+ZXN0SW5zdGFuY2UoQ29uc3RhbnRzIGMpIHsNCgkJU3lzdGVtLm91dC5wcmludGxuKCItIHRlc3RJ
+bnN0YW5jZToiKTsNCgkJU3lzdGVtLm91dC5wcmludGxuKENvbnN0YW50cy5TVEFUSUMpOw0KCQlT
+eXN0ZW0ub3V0LnByaW50bG4oYy5OT05fU1RBVElDKTsNCgkJU3lzdGVtLm91dC5wcmludGxuKGMu
+Tk9OX0NPTlNUQU5UKTsNCgkJU3lzdGVtLm91dC5wcmludGxuKGMuTk9OX0ZJTkFMKTsNCgkJDQoJ
+CXRyeSB7DQoJCQlTeXN0ZW0ub3V0LnByaW50bG4oIi0gcmVmbGVjdGlvbjoiKTsNCgkJCUZpZWxk
+IGZpZWxkID0gQ29uc3RhbnRzLmNsYXNzLmdldEZpZWxkKCJOT05fU1RBVElDIik7DQoJCQlTeXN0
+ZW0ub3V0LnByaW50bG4oZmllbGQuZ2V0KGMpKTsNCgkJCWZpZWxkID0gQ29uc3RhbnRzLmNsYXNz
+LmdldEZpZWxkKCJTVEFUSUMiKTsNCgkJCVN5c3RlbS5vdXQucHJpbnRsbihmaWVsZC5nZXQobnVs
+bCkpOw0KCQl9IGNhdGNoIChFeGNlcHRpb24gZSkgew0KCQkJZS5wcmludFN0YWNrVHJhY2UoKTsN
+CgkJfQ0KCX0NCgkNCglwdWJsaWMgc3RhdGljIHZvaWQgdGVzdFN0YXRpYygpIHsNCgkJdHJ5IHsN
+CgkJCVN5c3RlbS5vdXQucHJpbnRsbigiLSBzdGF0aWMgcmVmbGVjdGlvbjoiKTsNCgkJCUZpZWxk
+IGZpZWxkID0gT3RoZXIuY2xhc3MuZ2V0RmllbGQoIk9USEVSX1NUQVRJQyIpOw0KCQkJU3lzdGVt
+Lm91dC5wcmludGxuKGZpZWxkLmdldChudWxsKSk7DQoJCX0gY2F0Y2ggKEV4Y2VwdGlvbiBlKSB7
+DQoJCQllLnByaW50U3RhY2tUcmFjZSgpOw0KCQl9DQoJfQ0KfQ0K
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>232439</attachid>
+            <date>2013-06-17 09:51:00 -0400</date>
+            <delta_ts>2013-07-08 06:53:41 -0400</delta_ts>
+            <desc>WIP: Patch</desc>
+            <filename>patch.patch</filename>
+            <type>text/plain</type>
+            <size>4401</size>
+            <attacher name="shankha banerjee">shankhba</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9tb2RlbC9HZXRTb3VyY2VUZXN0cy5qYXZhIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21v
+ZGVsL0dldFNvdXJjZVRlc3RzLmphdmEKaW5kZXggOTY0MWVmYi4uZjI0YWM1YiAxMDA2NDQKLS0t
+IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9j
+b3JlL3Rlc3RzL21vZGVsL0dldFNvdXJjZVRlc3RzLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21vZGVsL0dl
+dFNvdXJjZVRlc3RzLmphdmEKQEAgLTEsNSArMSw1IEBACiAvKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KgotICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDEwIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJz
+LgorICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDEzIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJz
+LgogICogQWxsIHJpZ2h0cyByZXNlcnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55
+aW5nIG1hdGVyaWFscwogICogYXJlIG1hZGUgYXZhaWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0
+aGUgRWNsaXBzZSBQdWJsaWMgTGljZW5zZSB2MS4wCiAgKiB3aGljaCBhY2NvbXBhbmllcyB0aGlz
+IGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2YWlsYWJsZSBhdApAQCAtNjg4LDQgKzY4OCw0MSBAQCBw
+dWJsaWMgY2xhc3MgR2V0U291cmNlVGVzdHMgZXh0ZW5kcyBNb2RpZnlpbmdSZXNvdXJjZVRlc3Rz
+IHsKIAkJCSIgIH0iOwogCQlhc3NlcnRTb3VyY2VFcXVhbHMoIlVuZXhwZWN0ZWQgc291cmNlIiwg
+ZXhwZWN0ZWRTb3VyY2UsIGFjdHVhbFNvdXJjZSk7CiAJfQorCisJLy9odHRwczovL2J1Z3MuZWNs
+aXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9NDA2ODM2CisJcHVibGljIHZvaWQgdGVzdDQw
+NjgzNigpIHRocm93cyBDb3JlRXhjZXB0aW9uIHsKKwkJU3RyaW5nIGN1U291cmNlID0KKwkJCQki
+cGFja2FnZSBwO1xuIiArCisJCQkJImNsYXNzIEF7XG4iICsKKwkJCQkiICAgIHB1YmxpYyBmaW5h
+bCBsb25nIENPTlNUID0gMTtcbiIgKworCQkJCSIgICAgcHVibGljIGZpbmFsIGxvbmcgQ09OU1Rf
+Tk9OX1RSSVZJQUxfSU5JVElBTElaRVIgPSAyPDw4O1xuIiArCisJCQkJIiAgICBwdWJsaWMgc3Rh
+dGljIGZpbmFsIGxvbmcgU1RBVElDX0NPTlNUID0gMztcbiIgKworCQkJCSIgICAgcHVibGljIHN0
+YXRpYyBsb25nIFNUQVRJQ19OT1RfQ09OU1QgPSA0O1xuIiArCisJCQkJIiAgICBwdWJsaWMgZmlu
+YWwgaW50IE5PTl9DT01QSUxFX1RJTUVfQ09OU1RBTlQgPSBuZXcgSW50ZWdlcigzMCkuaW50VmFs
+dWUoKTtcbiIgKworCQkJCSIgICAgfVxuIiArCisJCQkJIn0iOworCQljcmVhdGVGaWxlKCIvUC9w
+L0EuamF2YSIsIGN1U291cmNlKTsKKwkJSVR5cGUgdHlwZSA9IGdldENvbXBpbGF0aW9uVW5pdCgi
+L1AvcC9BLmphdmEiKS5nZXRUeXBlKCJBIik7CisKKwkJT2JqZWN0IGNvbnN0YW50ID0gdHlwZS5n
+ZXRGaWVsZCgiQ09OU1QiKS5nZXRDb25zdGFudCgpOworCQlMb25nIHZhbHVlID0gKExvbmcpIGNv
+bnN0YW50OworCQlhc3NlcnRFcXVhbHMoIldyb25nIHZhbHVlIiwgMSwgdmFsdWUuaW50VmFsdWUo
+KSk7CisKKwkJY29uc3RhbnQgPSB0eXBlLmdldEZpZWxkKCJDT05TVF9OT05fVFJJVklBTF9JTklU
+SUFMSVpFUiIpLmdldENvbnN0YW50KCk7CisJCXZhbHVlID0gKExvbmcpIGNvbnN0YW50OworCQkv
+L1N5c3RlbS5vdXQucHJpbnRsbih2YWx1ZSk7CisJCS8vYXNzZXJ0RXF1YWxzKCJXcm9uZyB2YWx1
+ZSIsIDI1NiwgdmFsdWUuaW50VmFsdWUoKSk7CisKKwkJY29uc3RhbnQgPSB0eXBlLmdldEZpZWxk
+KCJTVEFUSUNfQ09OU1QiKS5nZXRDb25zdGFudCgpOworCQl2YWx1ZSA9IChMb25nKSBjb25zdGFu
+dDsKKwkJYXNzZXJ0RXF1YWxzKCJXcm9uZyB2YWx1ZSIsIDMsIHZhbHVlLmludFZhbHVlKCkpOwor
+CisJCWNvbnN0YW50ID0gdHlwZS5nZXRGaWVsZCgiU1RBVElDX05PVF9DT05TVCIpLmdldENvbnN0
+YW50KCk7CisJCWFzc2VydE51bGwoY29uc3RhbnQpOworCisJCWNvbnN0YW50ID0gdHlwZS5nZXRG
+aWVsZCgiTk9OX0NPTVBJTEVfVElNRV9DT05TVEFOVCIpLmdldENvbnN0YW50KCk7CisJCWFzc2Vy
+dE51bGwoY29uc3RhbnQpOworCisJCWRlbGV0ZUZpbGUoIi9QL3AvQS5qYXZhIik7CisJfQogfQpk
+aWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2Nv
+cmUvSUZpZWxkLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9q
+ZHQvY29yZS9JRmllbGQuamF2YQppbmRleCAxNWNmMTY3Li40NDdkZjIxIDEwMDY0NAotLS0gYS9v
+cmcuZWNsaXBzZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvY29yZS9JRmllbGQuamF2
+YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvY29yZS9J
+RmllbGQuamF2YQpAQCAtMSw1ICsxLDUgQEAKIC8qKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqCi0gKiBD
+b3B5cmlnaHQgKGMpIDIwMDAsIDIwMTAgSUJNIENvcnBvcmF0aW9uIGFuZCBvdGhlcnMuCisgKiBD
+b3B5cmlnaHQgKGMpIDIwMDAsIDIwMTMgSUJNIENvcnBvcmF0aW9uIGFuZCBvdGhlcnMuCiAgKiBB
+bGwgcmlnaHRzIHJlc2VydmVkLiBUaGlzIHByb2dyYW0gYW5kIHRoZSBhY2NvbXBhbnlpbmcgbWF0
+ZXJpYWxzCiAgKiBhcmUgbWFkZSBhdmFpbGFibGUgdW5kZXIgdGhlIHRlcm1zIG9mIHRoZSBFY2xp
+cHNlIFB1YmxpYyBMaWNlbnNlIHYxLjAKICAqIHdoaWNoIGFjY29tcGFuaWVzIHRoaXMgZGlzdHJp
+YnV0aW9uLCBhbmQgaXMgYXZhaWxhYmxlIGF0CkBAIC0yMyw2ICsyMyw4IEBAIHB1YmxpYyBpbnRl
+cmZhY2UgSUZpZWxkIGV4dGVuZHMgSU1lbWJlciwgSUFubm90YXRhYmxlIHsKICAqIG9yIDxjb2Rl
+Pm51bGw8L2NvZGU+IGlmIHRoaXMgZmllbGQgaGFzIG5vbmUuIFRoZSBmaWVsZCBuZWVkcyB0byBi
+ZSBzdGF0aWMgYW5kIGZpbmFsIHRvIGhhdmUKICAqIGEgY29uc3RhbnQgdmFsdWUuCiAgKiBSZXR1
+cm5zIGFuIGluc3RhbmNlIG9mIHRoZSB3cmFwcGVyIHR5cGUgY29ycmVzcG9uZGluZyB0byB0aGUg
+dGhlIHR5cGUgb2YgdGhlIGZpZWxkLgorICogVG8gaGF2ZSBhIGNvbnN0YW50IHZhbHVlLCB0aGUg
+ZmllbGQgbmVlZHMgdG8gYmUgZmluYWwgYW5kIGl0cyBpbml0aWFsaXplciBtdXN0IGJlCisgKiBh
+IGNvbXBpbGUtdGltZSBjb25zdGFudCBleHByZXNzaW9uLgogICogPHRhYmxlIGJvcmRlcj0iMSI+
+CiAgKiA8dHI+CiAgKiA8dGg+ZmllbGQgdHlwZTwvdGg+CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBz
+ZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29yZS9Db21waWxhdGlv
+blVuaXRTdHJ1Y3R1cmVSZXF1ZXN0b3IuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVs
+L29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NvbXBpbGF0aW9uVW5pdFN0cnVjdHVyZVJl
+cXVlc3Rvci5qYXZhCmluZGV4IDVhNzg3MzcuLjJkMDg0MTEgMTAwNjQ0Ci0tLSBhL29yZy5lY2xp
+cHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NvbXBpbGF0
+aW9uVW5pdFN0cnVjdHVyZVJlcXVlc3Rvci5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+L21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NvbXBpbGF0aW9uVW5pdFN0cnVj
+dHVyZVJlcXVlc3Rvci5qYXZhCkBAIC02MzUsNyArNjM1LDcgQEAgcHVibGljIHZvaWQgZXhpdEZp
+ZWxkKGludCBpbml0aWFsaXphdGlvblN0YXJ0LCBpbnQgZGVjbGFyYXRpb25FbmQsIGludCBkZWNs
+YXJhdGkKIAlpZiAoaW5pdGlhbGl6YXRpb25TdGFydCAhPSAtMSkgewogCQlpbnQgZmxhZ3MgPSBp
+bmZvLmZsYWdzOwogCQlPYmplY3QgdHlwZUluZm87Ci0JCWlmIChGbGFncy5pc1N0YXRpYyhmbGFn
+cykgJiYgRmxhZ3MuaXNGaW5hbChmbGFncykKKwkJaWYgKEZsYWdzLmlzRmluYWwoZmxhZ3MpCiAJ
+CQkJfHwgKCh0eXBlSW5mbyA9IHRoaXMuaW5mb1N0YWNrLnBlZWsoKSkgaW5zdGFuY2VvZiBUeXBl
+SW5mbwogCQkJCQkgJiYgKEZsYWdzLmlzSW50ZXJmYWNlKCgoVHlwZUluZm8pdHlwZUluZm8pLm1v
+ZGlmaWVycykpKSkgewogCQkJaW50IGxlbmd0aCA9IGRlY2xhcmF0aW9uRW5kIC0gaW5pdGlhbGl6
+YXRpb25TdGFydDsK
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>233205</attachid>
+            <date>2013-07-08 06:53:00 -0400</date>
+            <delta_ts>2013-07-08 06:53:41 -0400</delta_ts>
+            <desc>Patch</desc>
+            <filename>patch.patch</filename>
+            <type>text/plain</type>
+            <size>5156</size>
+            <attacher name="shankha banerjee">shankhba</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9tb2RlbC9HZXRTb3VyY2VUZXN0cy5qYXZhIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21v
+ZGVsL0dldFNvdXJjZVRlc3RzLmphdmEKaW5kZXggOTY0MWVmYi4uMGE4YjJmMSAxMDA2NDQKLS0t
+IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9j
+b3JlL3Rlc3RzL21vZGVsL0dldFNvdXJjZVRlc3RzLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21vZGVsL0dl
+dFNvdXJjZVRlc3RzLmphdmEKQEAgLTEsNSArMSw1IEBACiAvKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KgotICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDEwIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJz
+LgorICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDEzIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJz
+LgogICogQWxsIHJpZ2h0cyByZXNlcnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55
+aW5nIG1hdGVyaWFscwogICogYXJlIG1hZGUgYXZhaWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0
+aGUgRWNsaXBzZSBQdWJsaWMgTGljZW5zZSB2MS4wCiAgKiB3aGljaCBhY2NvbXBhbmllcyB0aGlz
+IGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2YWlsYWJsZSBhdApAQCAtNjg4LDQgKzY4OCw1NSBAQCBw
+dWJsaWMgY2xhc3MgR2V0U291cmNlVGVzdHMgZXh0ZW5kcyBNb2RpZnlpbmdSZXNvdXJjZVRlc3Rz
+IHsKIAkJCSIgIH0iOwogCQlhc3NlcnRTb3VyY2VFcXVhbHMoIlVuZXhwZWN0ZWQgc291cmNlIiwg
+ZXhwZWN0ZWRTb3VyY2UsIGFjdHVhbFNvdXJjZSk7CiAJfQorCisJLy9odHRwczovL2J1Z3MuZWNs
+aXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9NDA2ODM2CisJcHVibGljIHZvaWQgdGVzdDQw
+NjgzNigpIHRocm93cyBDb3JlRXhjZXB0aW9uIHsKKwkJU3RyaW5nIGN1U291cmNlID0KKwkJCQki
+cGFja2FnZSBwO1xuIiArCisJCQkJInB1YmxpYyBjbGFzcyBBe1xuIiArCisJCQkJIiAgICBmaW5h
+bCBsb25nIENPTlNUID0gMTtcbiIgKworCQkJCSIgICAgZmluYWwgbG9uZyBOT05fVFJJVklBTF9J
+TklUSUFMSVpFUl9OT05fQ09OU1QgPSAyPDw4O1xuIiArCisJCQkJIiAgICBzdGF0aWMgbG9uZyBT
+VEFUSUNfTk9UX0NPTlNUID0gMztcbiIgKworCQkJCSIgICAgZmluYWwgaW50IE5PTl9DT01QSUxF
+X1RJTUVfQ09OU1RBTlQgPSBuZXcgSW50ZWdlcig0KS5pbnRWYWx1ZSgpO1xuIiArCisJCQkJIn1c
+biIgKworCQkJCSJpbnRlcmZhY2UgQntcbiIgKworCQkJCSIJZmluYWwgbG9uZyBDT05TVCA9IDE7
+XG4iICsKKwkJCQkiCWZpbmFsIGxvbmcgTk9OX1RSSVZJQUxfSU5JVElBTElaRVJfTk9OX0NPTlNU
+ID0gMjw8ODtcbiIgKworCQkJCSIJc3RhdGljIGxvbmcgU1RBVElDX05PVF9DT05TVCA9IDM7XG4i
+ICsKKwkJCQkiCWZpbmFsIGludCBOT05fQ09NUElMRV9USU1FX0NPTlNUQU5UID0gbmV3IEludGVn
+ZXIoNCkuaW50VmFsdWUoKTtcbiIgKworCQkJCSJ9XG4iOworCQljcmVhdGVGaWxlKCIvUC9wL0Eu
+amF2YSIsIGN1U291cmNlKTsKKwkJSVR5cGUgdHlwZSA9IGdldENvbXBpbGF0aW9uVW5pdCgiL1Av
+cC9BLmphdmEiKS5nZXRUeXBlKCJBIik7CisKKwkJT2JqZWN0IGNvbnN0YW50ID0gdHlwZS5nZXRG
+aWVsZCgiQ09OU1QiKS5nZXRDb25zdGFudCgpOworCQlMb25nIHZhbHVlID0gKExvbmcpIGNvbnN0
+YW50OworCQlhc3NlcnRFcXVhbHMoIldyb25nIHZhbHVlIiwgMSwgdmFsdWUuaW50VmFsdWUoKSk7
+CisKKwkJY29uc3RhbnQgPSB0eXBlLmdldEZpZWxkKCJOT05fVFJJVklBTF9JTklUSUFMSVpFUl9O
+T05fQ09OU1QiKS5nZXRDb25zdGFudCgpOworCQlhc3NlcnROdWxsKCJTaG91bGQgbm90IGJlIGEg
+Y29uc3RhbnQiLCBjb25zdGFudCk7CisKKwkJY29uc3RhbnQgPSB0eXBlLmdldEZpZWxkKCJTVEFU
+SUNfTk9UX0NPTlNUIikuZ2V0Q29uc3RhbnQoKTsKKwkJYXNzZXJ0TnVsbCgiU2hvdWxkIG5vdCBi
+ZSBhIGNvbnN0YW50IiwgY29uc3RhbnQpOworCisJCWNvbnN0YW50ID0gdHlwZS5nZXRGaWVsZCgi
+Tk9OX0NPTVBJTEVfVElNRV9DT05TVEFOVCIpLmdldENvbnN0YW50KCk7CisJCWFzc2VydE51bGwo
+IlNob3VsZCBub3QgYmUgYSBjb25zdGFudCIsIGNvbnN0YW50KTsKKworCQl0eXBlID0gZ2V0Q29t
+cGlsYXRpb25Vbml0KCIvUC9wL0EuamF2YSIpLmdldFR5cGUoIkIiKTsKKworCQljb25zdGFudCA9
+IHR5cGUuZ2V0RmllbGQoIkNPTlNUIikuZ2V0Q29uc3RhbnQoKTsKKwkJdmFsdWUgPSAoTG9uZykg
+Y29uc3RhbnQ7CisJCWFzc2VydEVxdWFscygiV3JvbmcgdmFsdWUiLCAxLCB2YWx1ZS5pbnRWYWx1
+ZSgpKTsKKworCQljb25zdGFudCA9IHR5cGUuZ2V0RmllbGQoIk5PTl9UUklWSUFMX0lOSVRJQUxJ
+WkVSX05PTl9DT05TVCIpLmdldENvbnN0YW50KCk7CisJCWFzc2VydE51bGwoIlNob3VsZCBub3Qg
+YmUgYSBjb25zdGFudCIsIGNvbnN0YW50KTsKKworCQljb25zdGFudCA9IHR5cGUuZ2V0RmllbGQo
+IlNUQVRJQ19OT1RfQ09OU1QiKS5nZXRDb25zdGFudCgpOworCQl2YWx1ZSA9IChMb25nKSBjb25z
+dGFudDsKKwkJYXNzZXJ0RXF1YWxzKCJXcm9uZyB2YWx1ZSIsIDMsIHZhbHVlLmludFZhbHVlKCkp
+OworCisJCWNvbnN0YW50ID0gdHlwZS5nZXRGaWVsZCgiTk9OX0NPTVBJTEVfVElNRV9DT05TVEFO
+VCIpLmdldENvbnN0YW50KCk7CisJCWFzc2VydE51bGwoIlNob3VsZCBub3QgYmUgYSBjb25zdGFu
+dCIsIGNvbnN0YW50KTsKKworCQlkZWxldGVGaWxlKCIvUC9wL0EuamF2YSIpOworCX0KIH0KZGlm
+ZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9jb3Jl
+L0lGaWVsZC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0
+L2NvcmUvSUZpZWxkLmphdmEKaW5kZXggMTVjZjE2Ny4uMWMzZjY0NCAxMDA2NDQKLS0tIGEvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2NvcmUvSUZpZWxkLmphdmEK
+KysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2NvcmUvSUZp
+ZWxkLmphdmEKQEAgLTEsNSArMSw1IEBACiAvKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKgotICogQ29w
+eXJpZ2h0IChjKSAyMDAwLCAyMDEwIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgorICogQ29w
+eXJpZ2h0IChjKSAyMDAwLCAyMDEzIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgogICogQWxs
+IHJpZ2h0cyByZXNlcnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVy
+aWFscwogICogYXJlIG1hZGUgYXZhaWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0aGUgRWNsaXBz
+ZSBQdWJsaWMgTGljZW5zZSB2MS4wCiAgKiB3aGljaCBhY2NvbXBhbmllcyB0aGlzIGRpc3RyaWJ1
+dGlvbiwgYW5kIGlzIGF2YWlsYWJsZSBhdApAQCAtMjAsOCArMjAsOSBAQCBwdWJsaWMgaW50ZXJm
+YWNlIElGaWVsZCBleHRlbmRzIElNZW1iZXIsIElBbm5vdGF0YWJsZSB7CiAKIC8qKgogICogUmV0
+dXJucyB0aGUgY29uc3RhbnQgdmFsdWUgYXNzb2NpYXRlZCB3aXRoIHRoaXMgZmllbGQKLSAqIG9y
+IDxjb2RlPm51bGw8L2NvZGU+IGlmIHRoaXMgZmllbGQgaGFzIG5vbmUuIFRoZSBmaWVsZCBuZWVk
+cyB0byBiZSBzdGF0aWMgYW5kIGZpbmFsIHRvIGhhdmUKLSAqIGEgY29uc3RhbnQgdmFsdWUuCisg
+KiBvciA8Y29kZT5udWxsPC9jb2RlPiBpZiB0aGlzIGZpZWxkIGhhcyBub25lLiBUaGUgZmllbGQg
+bmVlZHMgdG8gYmUgZmluYWwuCisgKiBUaGUgaW5pdGlhbGl6ZXIgdG8gdGhlIGZpZWxkIGhhcyB0
+byBiZSBhIGxpdGVyYWwuIElmIHRoZSBpbml0aWFsaXplciBpcyBub24tbGl0ZXJhbAorICogdGhl
+IHJldHVybiB2YWx1ZSB3b3VsZCBiZSA8Y29kZT5udWxsPC9jb2RlPi4KICAqIFJldHVybnMgYW4g
+aW5zdGFuY2Ugb2YgdGhlIHdyYXBwZXIgdHlwZSBjb3JyZXNwb25kaW5nIHRvIHRoZSB0aGUgdHlw
+ZSBvZiB0aGUgZmllbGQuCiAgKiA8dGFibGUgYm9yZGVyPSIxIj4KICAqIDx0cj4KZGlmZiAtLWdp
+dCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9j
+b3JlL0NvbXBpbGF0aW9uVW5pdFN0cnVjdHVyZVJlcXVlc3Rvci5qYXZhIGIvb3JnLmVjbGlwc2Uu
+amR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvQ29tcGlsYXRpb25V
+bml0U3RydWN0dXJlUmVxdWVzdG9yLmphdmEKaW5kZXggNWE3ODczNy4uMmQwODQxMSAxMDA2NDQK
+LS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFs
+L2NvcmUvQ29tcGlsYXRpb25Vbml0U3RydWN0dXJlUmVxdWVzdG9yLmphdmEKKysrIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvQ29tcGls
+YXRpb25Vbml0U3RydWN0dXJlUmVxdWVzdG9yLmphdmEKQEAgLTYzNSw3ICs2MzUsNyBAQCBwdWJs
+aWMgdm9pZCBleGl0RmllbGQoaW50IGluaXRpYWxpemF0aW9uU3RhcnQsIGludCBkZWNsYXJhdGlv
+bkVuZCwgaW50IGRlY2xhcmF0aQogCWlmIChpbml0aWFsaXphdGlvblN0YXJ0ICE9IC0xKSB7CiAJ
+CWludCBmbGFncyA9IGluZm8uZmxhZ3M7CiAJCU9iamVjdCB0eXBlSW5mbzsKLQkJaWYgKEZsYWdz
+LmlzU3RhdGljKGZsYWdzKSAmJiBGbGFncy5pc0ZpbmFsKGZsYWdzKQorCQlpZiAoRmxhZ3MuaXNG
+aW5hbChmbGFncykKIAkJCQl8fCAoKHR5cGVJbmZvID0gdGhpcy5pbmZvU3RhY2sucGVlaygpKSBp
+bnN0YW5jZW9mIFR5cGVJbmZvCiAJCQkJCSAmJiAoRmxhZ3MuaXNJbnRlcmZhY2UoKChUeXBlSW5m
+byl0eXBlSW5mbykubW9kaWZpZXJzKSkpKSB7CiAJCQlpbnQgbGVuZ3RoID0gZGVjbGFyYXRpb25F
+bmQgLSBpbml0aWFsaXphdGlvblN0YXJ0Owo=
+</data>
+<flag name="review"
+          id="58878"
+          type_id="6"
+          status="?"
+          setter="shankhba"
+    />
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

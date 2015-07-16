@@ -1,0 +1,570 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>440477</bug_id>
+          
+          <creation_ts>2014-07-26 06:03:00 -0400</creation_ts>
+          <short_desc>[null] Infrastructure for feeding external annotations into compilation</short_desc>
+          <delta_ts>2015-03-18 10:27:23 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://bugs.eclipse.org/bugs/show_bug.cgi?id=459753</see_also>
+    
+    <see_also>https://git.eclipse.org/r/41870</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=0b6f06d77f121375ae3494c8c329aad2cfc0a1a4</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>4.5 M6</target_milestone>
+          
+          <blocked>331651</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>chris</cc>
+    
+    <cc>jal</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>markus_keller</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2432221</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-26 06:03:40 -0400</bug_when>
+    <thetext>To support external null annotations (bug 331651) we need some infrastructure that supports:
+(1) defining a per-library location for external annotations
+(2) retrieving the external annotations during type lookup
+(3) feeding external annotations into the compilation
+
+
+Ad (1): 
+For the IDE case this can be handled in analogy to source or javadoc  attachments. 
+
+For the batch compiler no precedent exists. Here I could imagine several strategies:
+- let the user specify alternating entries on the classpath:
+    -cp lib1;lib1annots;lib2;lib2annots ...
+- use a new command line argument (list of paths):
+  - let each external annotation bundle identify itself as to which library
+    it is annotating (how are libraries identified?)
+  - consider the list of paths as a flat search path just like classpath:
+    each type is searched front-to-tail until annotations are found (if any)
+
+Should overlapping between sets of external annotations be detected / reported?
+
+
+Ad (3):
+At this interface we could either
+- pass the unprocessed string of annotations for one class
+- pass an IAnnotationProvider that hides the actual annotation format
+
+While the second option has its merits, it must be carefully selected which design decisions should be exposed at this interface. 
+
+Internally, I will need functionality to obtain a TypeAnnotationWalker per method (as identified by name and signature). Defining an API using a new abstraction IAnnotationProvider would imply to also expose an interface ITypeAnnotationWalker.
+
+BTW: speaking of 1.8-specific TypeAnnotationWalker: I do expect that SE5 null annotations can be handled as a special reduced case of 1.8 annotations for the sake of external null annotations.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2432272</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-26 20:18:37 -0400</bug_when>
+    <thetext>I pushed my first draft of the infra structure work to http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/log/?h=sherrmann/ExternalAnnotations
+
+I introduced a new (optional) attribute for classpath entries, like:
+
+&lt;classpathentry kind=&quot;con&quot; 
+    path=&quot;org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.8&quot;
+    annotationpath=&quot;myJREAnnotations&quot;/&gt;
+
+Currently, this annotation path must point to a folder (relative to the current project, or absolute in the file system). Support for zip files will be added later.
+
+
+This attribute is passed along via these places:
+- org.eclipse.jdt.internal.core.ClasspathEntry
+- org.eclipse.jdt.internal.core.builder.ClasspathJar
+- org.eclipse.jdt.internal.core.builder.NameEnvironment
+- org.eclipse.jdt.internal.core.PackageFragmentRoot
+- org.eclipse.jdt.internal.core.ClassFile
+
+Also involved:
+- JavaCore.new{Library,Variable,Container}Entry()
+- State.{read,write}() (VERSION has been incremented accordingly)
+
+Final destination is:
+- org.eclipse.jdt.internal.compiler.classfmt.ClassFileReader
+
+When passing the path into the ClassFileReader this guy tries to instantiate an org.eclipse.jdt.internal.compiler.classfmt.ExternalAnnotationProvider, which reads the textual annotation file, if it exists.
+
+Later, during BinaryTypeBinding.createMethod() the ClassFileReader can be asked to provide an ITypeAnnotationWalker for the given method (if the method has no real type annotations). From here on, everything automagically works already :)
+
+(ITypeAnnotationWalker has been extracted from the existing TypeAnnotationWalker for this purpose).
+
+
+Responsibilities:
+=================
+
+The &apos;model&apos; part just reads the new classpath attribute and resolves it to an absolute path.
+
+
+ClassFileReader locates an annotation file per class, if it exists. It internally uses an ExternalAnnotationProvider, to provide one ITypeAnnotationWalker for each annotated method or field.
+
+
+Each ExternalAnnotationProvider reads the file for exactly one class. It reads a file header (currently: skips :) ) and splits each line as a key-value pair:
+ - key: method selector &amp; descriptor as used for matching to binary method
+ - value: the annotation payload
+
+
+ExternalAnnotationProvider$MethodAnnotationWalker locates type annotations in all possible locations of a field or method signature. This is only a strawman, currently, it only detects an annotation on the method return, but using the ITypeAnnotationWalker protocol, filling in the details should be straight-forward.
+
+
+
+
+New API:
+========
+
+- classpath entry attribute &quot;annotationpath&quot;
+
+- IClasspathEntry#getExternalAnnotationPath()
+
+- IPackageFragmentRoot#getExternalAnnotationPath()
+
+- JavaCore, new overloads of
+  - newContainerEntry(), newLibraryEntry(), newVariableEntry()
+    all with a new parameter &apos;externalAnnotationPath&apos;
+
+- New element in persisted org.eclipse.jdt.internal.core.builder.State
+
+
+
+Not yet done:
+=============
+JavaModelManager.VariablesAndContainersSaveHelper &amp; ...LoadHelper
+
+Cannot use a classpath variable for the annotation location
+
+Pick a nice file extension (working draft: Eclipse External Annotations: .eea)
+
+Integration in org.eclipse.jdt.internal.compiler.batch.ClasspathJar
+
+
+
+What works:
+===========
+
+Minimal new JUnit tests for different build scenarii.
+
+In a runtime workbench, after manually adding the classpath entry attribute, some close/open project may be required, but once the path has been picked up, the compiler correctly uses any .eea files placed in the specified location.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2432273</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-26 20:32:39 -0400</bug_when>
+    <thetext>Jay, for all new API in this feature branch [1] and for all changes in Java Model I&apos;d like to ask your opinion.
+
+In particular all the caching and notification business in this area is beyond my expertise :)
+
+I made an early start, early in the Mars cycle, so we have sufficient time to iron out the concepts and new API. Obviously, I&apos;m not in a hurry (yet), so feel free to schedule at your convenience. TIA.
+
+
+[1] http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/log/?h=sherrmann/ExternalAnnotations</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2432294</commentid>
+    <comment_count>3</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-07-27 05:04:33 -0400</bug_when>
+    <thetext>Well, this was the part that I had finished, including UI. It becomes clear that help is not wanted.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2432300</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-27 07:37:52 -0400</bug_when>
+    <thetext>(In reply to Frits Jalvingh from comment #3)
+&gt; Well, this was the part that I had finished, including UI. It becomes clear
+&gt; that help is not wanted.
+
+Frits, just now I realize that I had always looked in the wrong place when I browsed your project on github: I saw your initial commits in master, where I didn&apos;t see any overlap with the things I&apos;ve done via this bug. I didn&apos;t realise that you&apos;ve moved away from &apos;master&apos; some time ago ... :(
+That&apos;s a pity.
+
+Given the experience you gained while working on this, I see several options how you could help, indeed:
+- review my feature branch, look for omissions, bugs ...
+- look at items marked &quot;Not yet done&quot; in comment 1
+
+The following two areas I will *not* address (in near future):
+- UI
+- parsing Java source signatures
+
+If you are willing to contribute code for the UI, please coordinate with Markus Keller (JDT/UI lead). For this direction I recommend filing a new bug against JDT/UI, with link back here, and clearly indicate that you are willing to contribute an implementation (and put me on Cc:).
+
+In preparation for any future contributions, you may want to start by signing the Eclipse CLA, see http://wiki.eclipse.org/Development_Resources/Contributing_via_Git#Eclipse_Foundation_Contributor_License_Agreement
+After that we can directly accept patches from you back into our git repo.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2432547</commentid>
+    <comment_count>5</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-07-28 08:50:01 -0400</bug_when>
+    <thetext>I&apos;m happy to hear that it&apos;s a misunderstanding ;) I will need to look at your contribution in more detail and see where it differs, and I will check the rest of my code against your comment 1.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2433326</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-29 16:34:10 -0400</bug_when>
+    <thetext>I&apos;ve pushed minimal integration with the batch compiler to http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=sherrmann/ExternalAnnotations&amp;id=b27b4e2fd0df743e5d08fdae93367655079d74ec
+
+Since this is inferior to the IDE approach based on classpath attributes, I&apos;ve filed bug 440687 to make this smarter at some future point in time.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501529</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-02 08:50:16 -0500</bug_when>
+    <thetext>At the moment when the compiler reads an external annotations file, it is not in a perfect situation for reporting errors.
+
+I&apos;m leaning towards silently ignoring errors during compilation, and providing a separate command for validating external annotations. Perhaps such validation should be integrated with the UI where external annotations are selected in the first place. Still this doesn&apos;t account for problems occurring when only the content is changed later, but not its location. Mh....</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2502715</commentid>
+    <comment_count>8</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2015-01-07 05:32:29 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #1)
+&gt; I introduced a new (optional) attribute for classpath entries, like:
+&gt; 
+&gt; &lt;classpathentry kind=&quot;con&quot; 
+&gt;    path=&quot;org.eclipse.jdt.launching.JRE_CONTAINER/.../JavaSE-1.8&quot;
+&gt;    annotationpath=&quot;myJREAnnotations&quot;/&gt;
+
+Please change this to an &quot;extra attribute&quot; (IClasspathAttribute). This is the way forward for adding new attributes in a way that doesn&apos;t require every client to know about and adapt to new attributes.
+
+The only new API should be a new constant in IClasspathAttribute ( la JAVADOC_LOCATION_ATTRIBUTE_NAME).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2503384</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-08 10:36:55 -0500</bug_when>
+    <thetext>(In reply to comment #8)
+&gt; (In reply to Stephan Herrmann from comment #1)
+&gt; &gt; I introduced a new (optional) attribute for classpath entries, like:
+&gt; &gt;
+&gt; &gt; &lt;classpathentry kind=&quot;con&quot;
+&gt; &gt;    path=&quot;org.eclipse.jdt.launching.JRE_CONTAINER/.../JavaSE-1.8&quot;
+&gt; &gt;    annotationpath=&quot;myJREAnnotations&quot;/&gt;
+&gt; 
+&gt; Please change this to an &quot;extra attribute&quot; (IClasspathAttribute). This is the
+&gt; way forward for adding new attributes in a way that doesn&apos;t require every client
+&gt; to know about and adapt to new attributes.
+&gt; 
+&gt; The only new API should be a new constant in IClasspathAttribute ( la
+&gt; JAVADOC_LOCATION_ATTRIBUTE_NAME).
+
+Thanks for the hint.
+I&apos;ve updated the implementation and pushed it to the feature branch (sherrmann/ExternalAnnotations).
+
+The corresponding .classpath entry now looks like this:
+	&lt;classpathentry kind=&quot;con&quot; 
+			path=&quot;org.eclipse.jdt.launching.JRE_CONTAINER/.../JavaSE-1.8&quot;&gt;
+		&lt;attributes&gt;
+			&lt;attribute name=&quot;annotationpath&quot; value=&quot;myJREAnnotations&quot;/&gt;
+		&lt;/attributes&gt;
+	&lt;/classpathentry&gt; 
+
+Indeed, the only new API is now org.eclipse.jdt.core.IClasspathAttribute.EXTERNAL_ANNOTATION_PATH.
+This reduces the footprint of the change, and would also facilitate supporting two locations (zip &amp; directory), should we opt for approach (2) from bug 440815 comment 5.
+
+
+While making these changes I came across two open issues:
+
+Should org.eclipse.jdt.internal.core.ClassFile see the external annotations?
+There seem to be code paths towards creating a ClassFileReader without any IClasspathEntry in scope, but this might be obtainable via JavaProject.getClasspathEntryFor(). If this will enable JDT/UI to show external annotations in hovers etc. this should be well worth the effort.
+
+Should we resolve variables in the definition of the external annotation location?
+I think we should. I have two TODOs for this in JavaModelManager.resolveVariableEntry(IClasspathEntry, boolean), just I wasn&apos;t sure, what would be the best location to trigger resolving, on every access to this attribute?
+
+
+I did *not* change the additions to State.{read,write}(), since at this level we don&apos;t see any extraAttributes, but the annotation path should still be persisted.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2503506</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-08 13:15:16 -0500</bug_when>
+    <thetext>(In reply to comment #9)
+&gt; Should we resolve variables in the definition of the external annotation
+&gt; location?
+&gt; I think we should. I have two TODOs for this in
+&gt; JavaModelManager.resolveVariableEntry(IClasspathEntry, boolean), just I wasn&apos;t
+&gt; sure, what would be the best location to trigger resolving, on every access to
+&gt; this attribute?
+
+Fixed via commit 6356a66726f387c5bc6fd155308ed92b2b343178 (in sherrmann/ExternalAnnotations).
+Implementation assumes that a variable name can only appear at the start of a path, hope that&apos;s OK (this helps to avoid resolving when a path is already absolute).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2503538</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-08 14:33:09 -0500</bug_when>
+    <thetext>In commit 0ba711e8864a93b9c58d7b36dfa38ead902586b0 I added test infrastructure to make the host JRE available to model tests (in absence of classpath containers provided by o.e.jdt.launching). With this we now have a successful Hudson build from this feature branch (https://hudson.eclipse.org/platform/job/eclipse.jdt.core-Gerrit/48/).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2509209</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-22 16:03:57 -0500</bug_when>
+    <thetext>In commit 99bec92f1ac6ff884cdad5f25560e0ce597a135b (in sherrmann/ExternalAnnotations) I pushed an initial utility API for manipulating an eea file as needed for bug 458186.
+
+Also merged with latest from master.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2509942</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-25 11:07:06 -0500</bug_when>
+    <thetext>I&apos;ve pushed some changes for better integration with Java Model change notifications (to the feature branch sherrmann/ExternalAnnotations).
+
+Let me specifically callout the main changes made so far that relate to the Java Model:
+
+The main data flow is just to feed information from an IClasspathEntry into each created ClassFileReader, to initialize an ExternalAnnotationProvider either from a directory tree holding text files, or from a zip holding the same structure. From here we go into compiler land and I&apos;m on terra firma.
+In particular see the new internal API ClasspathEntry#getExternalAnnotationPath(), for the 4 kinds of paths supported (variable, project-relative, absolute workspace, absolute filesystem).
+
+For the case of a zip file, both variants of ClasspathJar (batch &amp; builder) hold on to the ZipFile with the same lifecycle as for the main jar. I hope this is efficient both performance- and memory-wise.
+
+Next, I added a few things for change propagation:
+- A ClassFile with an attached annotation file (plain file, not zipEntry) listens to resource changes of that annotation file in order to close() itself to force re-reading (incl. setup of a new ExternalAnnotationProvider). That resource listener is one-shot, i.e., removes itself as soon as it fires. QUESTION: would one global listener be better? We&apos;d be listening to changes in any .eea files, look-up the corresponding ClassFile and close() it. If that&apos;s better, where would such a global listener best be allocated &amp; registered?
+- When a ClassFile is being close()&apos;d it also removes its BinaryType from the JavaModelCache#jarTypeCache (via JavaModelManager), again to force re-reading.
+
+I finally added a new utility API, org.eclipse.jdt.core.util.ExternalAnnotationUtil, which I use in draft extensions of existing quick fixes: support for reading and manipulating annotation files.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2510466</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-26 18:02:20 -0500</bug_when>
+    <thetext>(In reply to comment #0)
+&gt; ...
+&gt; BTW: speaking of 1.8-specific TypeAnnotationWalker: I do expect that SE5 null
+&gt; annotations can be handled as a special reduced case of 1.8 annotations for the
+&gt; sake of external null annotations.
+
+Latest change in the feature branch (38173c1f1576ed067cf9975a83e3e8cdde58d632) implements exactly that.
+External annotations can now be used at 1.7-, too.
+We can actually use the same external annotation file for 1.7 and 1.8 versions of the same library (if semantics haven&apos;t changed).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2512827</commentid>
+    <comment_count>15</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-31 18:27:48 -0500</bug_when>
+    <thetext>I&apos;ve pushed an update with a much overhauled caching / updating story using a new ExternalAnnotationTracker integrated with things like ClasspathChange and JavaModelManager. The following changes are now correctly handled:
+
+- Classpath change affecting the external annotation attachment:
+  Treat like a regular classpath change, triggering the jar to be re-read,
+  thus taking the new (or removed) annotation attachment into account.
+
+- Opening a ClassFile with attached external annotations:
+  Remember for updates triggered on the external annotation file.
+
+- Adding / changing / removing an external annotation file will trigger
+  reloading of the affected ClassFile(s).
+
+- Closing a ClassFile will discard the internal tracking structures.
+
+That internal structure has been designed for minimal footprint during resource change events.
+
+(commit 201cf9c2eb11ce7ae348436cd3a3b55863b9eb2f and commit 7adc4be42de020f31e61b2e8855ca7245c998b79).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2513864</commentid>
+    <comment_count>16</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-03 14:20:53 -0500</bug_when>
+    <thetext>Here&apos;s another challenge:
+
+How can external annotations be superimposed over PDE&apos;s RequiredPluginsClasspathContainer?
+
+
+==Poor man&apos;s solution (works already):==
+
+Define an &quot;annotationpath&quot; attribute on the &quot;org.eclipse.pde.core.requiredPlugins&quot; container. This will be used to look-up external annotations for *any* required plugins of the current project.
+
+
+==More sophisticated solution:==
+
+If attaching individual annotation packages for individual required plugins is desired, we&apos;ll need a little cooperation from PDE.
+
+
+We may try to borrow from the approaches around javadoc location attachment and source attachment for required plugins. There&apos;s one decisive difference, however: javadoc and source attachments are content supposed to be provided either by the plugin itself (javadoc), or by a companion plugin (source). By contrast, external annotations are provided from s.o. else. One particular purpose is of course to superimpose editable annotation files over jared libraries. I.e., we cannot assume colocation of plugin &amp; annotations.
+
+
+Technically, we&apos;d want the following two methods to collaborate to figure out the effective annotation attachment per plugin:
+- JavaProject.resolveClasspath()
+- RequiredPluginsClasspathContainer.computePluginEntries()
+
+Since the communication between these methods (JDT/Core vs. PDE/Core) is strictly limited, and to prepare for other kinds of classpath containers, I&apos;m envisioning a two step definition:
+
+
+The classpath container should (internally) add an extra attribute &quot;artifactID&quot; that identifies the plugin (e.g., by symbolic name plus version).
+Then in JDT/Core we should support a placeholder in the value for the &quot;annotationpath&quot; attribute, e.g., &quot;/Annotations/${artifactID}&quot;.
+
+Then ClasspathEntry.combineWith() will try to substitute the placeholder in the referring entry with a value provided by the resolved entry to yield the full location per plugin. If substitution finds no match, the &quot;annotationpath&quot; attribute will be deleted from the resolved entry.
+
+Note, that all this only happens at runtime and in memory. The only persisted configuration would look like this:
+
+&lt;classpathentry kind=&quot;con&quot; path=&quot;org.eclipse.pde.core.requiredPlugins&quot;&gt;
+  &lt;attributes&gt;
+    &lt;attribute name=&quot;annotationpath&quot; value=&quot;/Annotations/${artifactID}&quot;/&gt;
+  &lt;/attributes&gt;
+&lt;/classpathentry&gt;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2517800</commentid>
+    <comment_count>17</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-12 06:06:45 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #16)
+&gt; Here&apos;s another challenge:
+&gt; 
+&gt; How can external annotations be superimposed over PDE&apos;s
+&gt; RequiredPluginsClasspathContainer?
+
+I gave that issue a new home in bug 459753, because on this current bug I&apos;m preparing for the merge into master during the next days, and don&apos;t want to be blocked by the other issue.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518215</commentid>
+    <comment_count>18</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-12 14:07:54 -0500</bug_when>
+    <thetext>In https://git.eclipse.org/r/41769 you can see a warm-up build of all changes from sherrmann/ExternalAnnotations that pertain to this bug and to bug 440474 - squashed into a single commit.
+
+While the feature branch will stay on the server, here&apos;s a condensed list of changes / features:
+
+Supported scenarii:
+- fuild build
+- reconciler
+- batch compiler
+- individual libraries as well as containers (like JRE)
+- persist &amp; restore annotation path in State (&amp; incremented VERSION)
+
+Locations:
+- all 1.7 as well as 1.8 locations for null annotations
+
+Tests:
+- inline and with prepared workspace
+- using jclMin as well as real JRE
+
+Optimization:
+- avoid creating unnecessary annotation walkers
+- lazy initialization of internal storage of walkers
+
+New public API
+- one constant, one utility class, file format
+  (for details see bug 331651 comment 57)
+
+Kinds of annotation packages &amp; paths:
+- directory with individual text files
+- zip file
+- path: prj-relative, ws-absolute, variable-relative, fs-absolute
+
+Functionality:
+- analysis during compilation
+- fully participate in Java Model change notification
+- API for manipulation of .eea text files (coarse &amp; fine grained)
+
+This covers all JDT/Core contributions for the functionality described in https://wiki.eclipse.org/JDT_Core/Null_Analysis/External_Annotations (unless marked as unimplemented in the wiki).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518955</commentid>
+    <comment_count>19</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-14 15:54:34 -0500</bug_when>
+    <thetext>Released for 4.5 M6 together with bug 440474.
+
+Further improvement will be tracked via other/new children of bug 331651</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2524227</commentid>
+    <comment_count>20</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-26 07:55:47 -0500</bug_when>
+    <thetext>During work on bug 458200 I found that one scenario is not handled correctly:
+
+ExternalAnnotationUtil.annotateMethodReturnType when no annotation file exists.
+
+I missed to assemble the annotatedSignature in this case.
+
+Fix released via commit db786a60645f0738c3e4c93c03142c921978dbe9</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2526243</commentid>
+    <comment_count>21</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-03 12:51:26 -0500</bug_when>
+    <thetext>More enhancements to support bug 458200:
+- support parameter rewriting
+- bug fix for keeping existing annotation
+
+Released via commit 80e31481d0d6262559c156b1e1d04936f3ab697a</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2526302</commentid>
+    <comment_count>22</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-03 16:16:10 -0500</bug_when>
+    <thetext>More enhancements to support bug 458200:
+- fix reading of signatures already containing external annotations
+- avoid dependency from ecj to model (ExternalAnnotationUtil)
+- provide more API for reading and applying external annotations
+
+Released via commit a071cbdaf211a260b8aa9c61822ac5501cee9c5c</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2528069</commentid>
+    <comment_count>23</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-08 12:50:23 -0400</bug_when>
+    <thetext>More enhancements to support bug 458200:
+
+- fix handling of two-line entry (lacking an annotated signature) (r/w)
+- fix scanning of types like &quot;[I&quot;
+- systematically throw IAE on structural mismatch &amp; document this
+- handle case of lonely selector at EOF
+
+Released via commit 6aa15157c4a89778b30fbac85a8e1c76029da034</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2529573</commentid>
+    <comment_count>24</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-10 13:53:58 -0400</bug_when>
+    <thetext>More enhancements to support bug 458200:
+
+- support manipulation of field types
+- fix annotation removal in cases like List&lt;Object @NonNull[]&gt;
+
+Released via commit 9b49fc6edec0d13e82a14df97219e6ae294f74cc</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2533669</commentid>
+    <comment_count>25</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-03-18 10:27:23 -0400</bug_when>
+    <thetext>Verified for 4.5 M6 with build I20150317-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

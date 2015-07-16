@@ -1,0 +1,303 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>411423</bug_id>
+          
+          <creation_ts>2013-06-21 19:34:00 -0400</creation_ts>
+          <short_desc>JavaProject.resolveClasspath is spending more than 90% time on ExternalFoldersManager.isExternalFolderPath</short_desc>
+          <delta_ts>2013-08-06 04:45:23 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Thirumala Reddy Mutchukota">thirumala</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>bugs.eclipse.org</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>lars.vogel</cc>
+    
+    <cc>manpalat</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="58747"
+          type_id="1"
+          status="+"
+          setter="jarthana"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2275874</commentid>
+    <comment_count>0</comment_count>
+    <who name="Thirumala Reddy Mutchukota">thirumala</who>
+    <bug_when>2013-06-21 19:34:42 -0400</bug_when>
+    <thetext>In a project with 12000 jars in the classpath, resolveClasspath is taking more than 8 secs and in that more than 90% of time is spent on checking whether each library entry and it&apos;s source attachment is a file or directory.
+
+Here is the call tree I captured with jProfiler.
+
+8,836 ms org.eclipse.jdt.internal.core.JavaProject.resolveClasspath
+ 8,836 ms org.eclipse.jdt.internal.core.JavaProject.resolveClasspath
+  8,836 ms org.eclipse.jdt.internal.core.JavaProject.resolveClasspath
+   8,548 ms org.eclipse.jdt.internal.core.JavaProject.addToResult
+    8,195 ms org.eclipse.jdt.internal.core.ExternalFoldersManager.isExternalFolderPath
+     7,548 ms java.io.File.isFile
+      7,548 ms java.io.UnixFileSystem.getBooleanAttributes
+       7,141 ms java.io.UnixFileSystem.getBooleanAttributes0
+
+It&apos;s hitting us very badly, because we also use a classpath container to hold our jars and container classpath is resolved 8 to 10 times on UI thread while constructing the package explorer tree.
+
+I am working on a patch to cache the external archives list (similar to nonChaineedJars) in JavaModelManager to avoid this repetitive I/O in resolve classpath and will soon attach it to the bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2277548</commentid>
+    <comment_count>1</comment_count>
+    <who name="Thirumala Reddy Mutchukota">thirumala</who>
+    <bug_when>2013-06-26 14:59:08 -0400</bug_when>
+    <thetext>I pushed the patch (https://git.eclipse.org/r/#/c/14082/) to Gerrit along with it&apos;s functional and performance tests. I added Stephan as reviewer to the change, please let me know if I need to add anyone else too.
+
+Here are the newly added resolve classpath performance test results.
+
+===Without Patch====
+
+Scenario &apos;org.eclipse.jdt.core.tests.performance.FullSourceWorkspaceModelTests#testResolveClasspath()&apos; (average over 10 samples):
+  System Time:              30ms        (95% in [26ms, 34ms])          Measurable effect: 6ms (1.3 SDs) (required sample size for an effect of 5% of mean: 212)
+  Used Java Heap:         3.57M         (95% in [3.45M, 3.7M])         Measurable effect: 229.01K (1.3 SDs) (required sample size for an effect of 5% of mean: 16)
+  Working Set:            26.4K         (95% in [-33.32K, 86.12K])     Measurable effect: 105.6K (1.3 SDs) (required sample size for an effect of 5% of stdev: 6400)
+  Elapsed Process:          30ms        (95% in [26ms, 34ms])          Measurable effect: 6ms (1.3 SDs) (required sample size for an effect of 5% of mean: 212)
+  Kernel time:              10ms        (95% in [4ms, 15ms])           Measurable effect: 10ms (1.3 SDs) (required sample size for an effect of 5% of mean: 4267)
+  CPU Time:                 36ms        (95% in [26ms, 45ms])          Measurable effect: 16ms (1.3 SDs) (required sample size for an effect of 5% of mean: 791)
+  Hard Page Faults:          0          (95% in [0, 0])               
+  Soft Page Faults:         63          (95% in [-80, 207])            Measurable effect: 254 (1.3 SDs) (required sample size for an effect of 5% of stdev: 6400)
+  Text Size:                 0          (95% in [0, 0])               
+  Data Size:                 0          (95% in [0, 0])               
+  Library Size:              0          (95% in [0, 0])      
+
+===With Path===
+
+Scenario &apos;org.eclipse.jdt.core.tests.performance.FullSourceWorkspaceModelTests#testResolveClasspath&apos; (average over 10 samples):
+  System Time:               8ms        (95% in [7ms, 10ms])           Measurable effect: 2ms (1.3 SDs) (required sample size for an effect of 5% of mean: 456)
+  Used Java Heap:       135.17K         (95% in [-170.61K, 440.94K])   Measurable effect: 540.67K (1.3 SDs) (required sample size for an effect of 5% of stdev: 6400)
+  Working Set:               0          (95% in [0, 0])               
+  Elapsed Process:           8ms        (95% in [7ms, 10ms])           Measurable effect: 2ms (1.3 SDs) (required sample size for an effect of 5% of mean: 456)
+  Kernel time:               0ms        (95% in [0ms, 0ms])           
+  CPU Time:                 11ms        (95% in [5ms, 16ms])           Measurable effect: 9ms (1.3 SDs) (required sample size for an effect of 5% of mean: 2880)
+  Hard Page Faults:          0          (95% in [0, 0])               
+  Soft Page Faults:          0          (95% in [0, 0])               
+  Text Size:                 0          (95% in [0, 0])               
+  Data Size:                 0          (95% in [0, 0])               
+  Library Size:              0          (95% in [0, 0])</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2277897</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-06-27 03:42:50 -0400</bug_when>
+    <thetext>I will review this patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2277902</commentid>
+    <comment_count>3</comment_count>
+    <who name="Thirumala Reddy Mutchukota">thirumala</who>
+    <bug_when>2013-06-27 03:52:15 -0400</bug_when>
+    <thetext>Thanks Jayaprakash, I added you as reviewer to the patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2278305</commentid>
+    <comment_count>4</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-06-27 12:37:33 -0400</bug_when>
+    <thetext>Yes, I do see significant performance improvement, not just by running the test, but also when a workspace is opened (in my case, the JDT/Core development workspace. Since it involves JREs, which contribute to the external JARs, the improvements should be useful to almost everyone.
+
+I will take a close look at the change itself once again and release.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2279255</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-07-01 02:58:06 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; I pushed the patch (https://git.eclipse.org/r/#/c/14082/) to Gerrit along
+&gt; with it&apos;s functional and performance tests. I added Stephan as reviewer to
+&gt; the change, please let me know if I need to add anyone else too.
+
+The only problem I see with the patch is that it uses the existing classpath list cache infrastructure for storing the paths marked as external. This cache gets cleared every time there is a classpath change (in any of the projects) of when any of the projects is removed from the workspace. It&apos;s a problem for other existing caches as well, but it would affect this one more because the external JAR, mostly being the ones from JDK, will get removed and added back again every time there is a classpath change, which is far from ideal.
+
+Thirumala, can you see if there&apos;s a way to improve this?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2279565</commentid>
+    <comment_count>6</comment_count>
+    <who name="Thirumala Reddy Mutchukota">thirumala</who>
+    <bug_when>2013-07-01 17:06:10 -0400</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; (In reply to comment #1)
+&gt; &gt; I pushed the patch (https://git.eclipse.org/r/#/c/14082/) to Gerrit along
+&gt; &gt; with it&apos;s functional and performance tests. I added Stephan as reviewer to
+&gt; &gt; the change, please let me know if I need to add anyone else too.
+&gt; 
+&gt; The only problem I see with the patch is that it uses the existing classpath
+&gt; list cache infrastructure for storing the paths marked as external. This
+&gt; cache gets cleared every time there is a classpath change (in any of the
+&gt; projects) of when any of the projects is removed from the workspace. It&apos;s a
+&gt; problem for other existing caches as well, but it would affect this one more
+&gt; because the external JAR, mostly being the ones from JDK, will get removed
+&gt; and added back again every time there is a classpath change, which is far
+&gt; from ideal.
+&gt; 
+&gt; Thirumala, can you see if there&apos;s a way to improve this?
+
+I agree that this caching is not perfect, but I think it&apos;s on par with other caches in classpath list cache. For ex, a non-chaining jar changing into a chaining jar is very rare, but still we are throwing out the non-chaining jars cache every time there is a classpath change (in any of the projects) or when any of the projects is removed from the workspace. 
+
+We can definitely do a better job with these classpath list caches, but the main intention of this patch is to avoid the repetitive I/O operations on the resolve classpath and I think this patch is addressing that to a major extent. We are looking into better ways to manage (populate, invalidate etc) the caches in JavaModelManager and avoid populating any of those classes on UI thread.
+
+Couple of thoughts around classpath list caches are ...
+
+(1) Store them per project basis instead of at workspace level so that classpath changes in (or deletion of) one project will not affect all other projects. But, that will result in data duplication as many external jars like JRE jars are reused across projects and caching them with each project is not a effective solution.
+
+(2) Instead of having three different sets to store non-chaining, invalid and external jars information, have a single map from jar path to jar file info object with information like last modified time stamp, list of projects referencing this jar, is non-chaining jar, is invalid jar, is external jar etc. If we have this kind of cache we can perform the cache eviction operation more intelligently and avoid frequent repopulation of the cache.
+
+I would look into option (2) some time soon but may not be part of this bug. Please let me know if you have some thoughts to address these problems in more simpler way.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2279588</commentid>
+    <comment_count>7</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-07-01 23:59:32 -0400</bug_when>
+    <thetext>By the way, can you sign the new CLA, which we need to take in your contribution. You can find more here on CLA:
+
+http://wiki.eclipse.org/Development_Resources/Handling_Git_Contributions</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2279594</commentid>
+    <comment_count>8</comment_count>
+    <who name="Thirumala Reddy Mutchukota">thirumala</who>
+    <bug_when>2013-07-02 01:21:47 -0400</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; By the way, can you sign the new CLA, which we need to take in your
+&gt; contribution. You can find more here on CLA:
+&gt; 
+&gt; http://wiki.eclipse.org/Development_Resources/Handling_Git_Contributions
+
+Done.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2279897</commentid>
+    <comment_count>9</comment_count>
+    <who name="Thirumala Reddy Mutchukota">thirumala</who>
+    <bug_when>2013-07-02 13:47:23 -0400</bug_when>
+    <thetext>(In reply to comment #8)
+&gt; (In reply to comment #7)
+&gt; &gt; By the way, can you sign the new CLA, which we need to take in your
+&gt; &gt; contribution. You can find more here on CLA:
+&gt; &gt; 
+&gt; &gt; http://wiki.eclipse.org/Development_Resources/Handling_Git_Contributions
+&gt; 
+&gt; Done.
+
+Hi Jayaprakash,
+
+I signed the CLA in my account at http://projects.eclipse.org/. Should I resend the patch to Gerrit with sign-off message? Please let me know.
+
+Thanks,
+Thirumal.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2279998</commentid>
+    <comment_count>10</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-07-02 23:41:27 -0400</bug_when>
+    <thetext>(In reply to comment #9)
+&gt; I signed the CLA in my account at http://projects.eclipse.org/. Should I
+&gt; resend the patch to Gerrit with sign-off message? Please let me know.
+
+That won&apos;t be necessary as the branch is already present and I can cherry-pick without any problem.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2280017</commentid>
+    <comment_count>11</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-07-03 02:39:19 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; I pushed the patch (https://git.eclipse.org/r/#/c/14082/) to Gerrit along
+&gt; with it&apos;s functional and performance tests. I added Stephan as reviewer to
+&gt; the change, please let me know if I need to add anyone else too.
+
+Patch largely looks good to me. Some minor comments:
+
+1. The method name isExternalArchive() is not appropriate, because it only tells us whether a path represents an external folder or not. We can&apos;t be sure about the &apos;archive&apos; part, can we. So, this is better renamed to isExternalFile().
+
+2. ClasspathTests - The new test must be added to the suite like other tests are in the suite() method and better be added at the end of ClasspathTests class.
+
+3. As you are posting a new patch, please also update the copyright year in FullSourceWorkspaceModelTests.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2280474</commentid>
+    <comment_count>12</comment_count>
+    <who name="Thirumala Reddy Mutchukota">thirumala</who>
+    <bug_when>2013-07-03 22:49:06 -0400</bug_when>
+    <thetext>&gt; Patch largely looks good to me. Some minor comments:
+&gt; 
+&gt; 1. The method name isExternalArchive() is not appropriate, because it only
+&gt; tells us whether a path represents an external folder or not. We can&apos;t be
+&gt; sure about the &apos;archive&apos; part, can we. So, this is better renamed to
+&gt; isExternalFile().
+&gt; 
+&gt; 2. ClasspathTests - The new test must be added to the suite like other tests
+&gt; are in the suite() method and better be added at the end of ClasspathTests
+&gt; class.
+&gt; 
+&gt; 3. As you are posting a new patch, please also update the copyright year in
+&gt; FullSourceWorkspaceModelTests.
+
+Done. Please have another look at the updated files in Patch Set 3.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2281628</commentid>
+    <comment_count>13</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-07-08 09:09:17 -0400</bug_when>
+    <thetext>The patch has been released in master via commit:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=4bd3e6b0c5202bbe675a35ff5ce6eef56daecdd0
+
+Thanks for the contribution.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2282075</commentid>
+    <comment_count>14</comment_count>
+    <who name="Thirumala Reddy Mutchukota">thirumala</who>
+    <bug_when>2013-07-08 17:41:07 -0400</bug_when>
+    <thetext>Thanks Jayaprakash for the quick review.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2291730</commentid>
+    <comment_count>15</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2013-08-06 04:45:23 -0400</bug_when>
+    <thetext>
+Verified for Eclipse Version: 4.4 M1 Build id: I20130805-0800</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,353 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>432977</bug_id>
+          
+          <creation_ts>2014-04-17 03:42:00 -0400</creation_ts>
+          <short_desc>[1.8][null] Incorrect &apos;type is not visible&apos; compiler error</short_desc>
+          <delta_ts>2015-01-19 10:24:14 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4.2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Tom van den Berge">tom.vandenberge</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>awang060843</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2390084</commentid>
+    <comment_count>0</comment_count>
+    <who name="Tom van den Berge">tom.vandenberge</who>
+    <bug_when>2014-04-17 03:42:30 -0400</bug_when>
+    <thetext>My project is using java 1.8 and null annotations. In some of my classes, whenever I make any change to the code, the compiler gives one or more &quot;The type ... is not visible&quot; errors, on places where this is not correct (in some cases, the &apos;invisible&apos; type is String!).
+
+I&apos;ve also seen the error &quot;The method ... is undefined for the type ...&quot; appear.
+
+The errors disappear when rebuilding the entire project (Project -&gt; Clean...).
+
+These errors only appear if &quot;annotation-based null analysis&quot; is enabled.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2390100</commentid>
+    <comment_count>1</comment_count>
+    <who name="Tom van den Berge">tom.vandenberge</who>
+    <bug_when>2014-04-17 04:04:39 -0400</bug_when>
+    <thetext>I managed to isolate the problem. Create two separate class files:
+
+public class Fu {
+	private Bar fubar = new Bar();
+	
+	public void method() {
+		fubar.getProp().equals(&quot;&quot;);
+	}	
+}
+
+@NonNullByDefault
+public class Bar {
+	private String prop = &quot;&quot;;
+
+	public String getProp() {
+		return prop;
+	}
+}
+
+Making any change to Fu results in the error &quot;The type String is not visible&quot; on &quot;fubar.getProp()&quot;.
+
+Essential is the @NonNullByDefault annotation on Bar.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2390137</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-17 06:27:20 -0400</bug_when>
+    <thetext>I&apos;ll take a look</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2391167</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-22 05:09:34 -0400</bug_when>
+    <thetext>Reproduced, thanks for the test!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2391186</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-22 05:51:54 -0400</bug_when>
+    <thetext>@Srikanth, here&apos;s a question for you regarding (Annotatable)TypeSystem:
+(sorry for long text, but I don&apos;t want to break any principles in ATS).
+
+
+The internal reason in this bug: an unresolved annotated type binding escapes into type checking.
+
+Here&apos;s the call chain that initially brought the unresolved annotated type binding into TypeSystem&apos;s cache:
+
+AnnotatableTypeSystem(TypeSystem).cacheDerivedType(TypeBinding, TypeBinding) line: 267	
+AnnotatableTypeSystem(TypeSystem).cacheDerivedType(TypeBinding, TypeBinding, TypeBinding) line: 298	
+AnnotatableTypeSystem.getAnnotatedType(TypeBinding, TypeBinding, AnnotationBinding[]) line: 349	
+AnnotatableTypeSystem.getAnnotatedType(TypeBinding, AnnotationBinding[][]) line: 264	
+LookupEnvironment.createAnnotatedType(TypeBinding, AnnotationBinding[]) line: 988	
+BinaryTypeBinding.scanFieldForNullAnnotation(IBinaryField, FieldBinding, boolean) line: 1475	
+BinaryTypeBinding.cachePartsFrom(IBinaryType, boolean) line: 492	
+LookupEnvironment.createBinaryTypeFrom(IBinaryType, PackageBinding, boolean, AccessRestriction) line: 695	
+
+Details bottom-to-top:
+- creating BinaryTypeBinding for Bar
+- scanning field &quot;prop&quot; for null type annotations
+- adding @NonNull to the yet unresolved field type String
+- hence the type &quot;@NonNull String(unresolved)&quot; is cached.
+
+
+Here&apos;s what retrieves the unresolved type from the cache:
+
+AnnotatableTypeSystem.getAnnotatedType(TypeBinding, TypeBinding, AnnotationBinding[]) line: 321	
+AnnotatableTypeSystem.getAnnotatedType(TypeBinding, AnnotationBinding[][]) line: 264	
+LookupEnvironment.createAnnotatedType(TypeBinding, AnnotationBinding[]) line: 988	
+MethodBinding.fillInDefaultNonNullness18(AbstractMethodDeclaration, LookupEnvironment) line: 538	
+ImplicitNullAnnotationVerifier.checkImplicitNullAnnotations(MethodBinding, AbstractMethodDeclaration, boolean, Scope) line: 152	
+MessageSend.resolveType(BlockScope) line: 754	
+MessageSend.resolveType(BlockScope) line: 602	
+
+Bottom-to-top:
+- resolving &quot;fubar.getProp().equals(&quot;&quot;)&quot;
+- resolving &quot;fubar.getProp()&quot;
+- fill-in nonnull-default for method getProp()
+- lookup a cached type for String(resolved!) with annotation @NonNull
+- find &quot;@NonNull String(unresolved)&quot; in the cache and return it
+
+
+
+The question is: what is the intended contract wrt unresolved types in the type system? 
+- It appears to be legal to add unresolved types to the cache
+  (cf. method TS.updateCaches(UnresolvedReferenceBinding,ReferenceBinding)
+- Clients of TypeSystem.getAnnotatedType(TypeBinding, AnnotationBinding[][])
+  seem to assume that results are resolved
+- I see a few calls to resolve() inside (A)TS, but not consistently. 
+So: what should be our rule here?
+
+The current bug *could* be fixed by adding a resolve() call in ATS:321 (&quot;return derivedType;&quot;), but that seems a bit unmotivated to me.
+
+Would the following rule help: always ensure answers from getAnnotatedType() are resolved IFF the input type is resolved, too?
+
+
+The final ingredient to this bug: UnresolvedReferenceBinding answers false for isPublic(), hence the &quot;is not visible&quot; error message, but I don&apos;t believe we want to keep unresolved types all the way through &quot;resolveType&quot;.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2391189</commentid>
+    <comment_count>5</comment_count>
+      <attachid>242175</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-22 05:58:52 -0400</bug_when>
+    <thetext>Created attachment 242175
+draft patch
+
+For illustration: test &amp; a minimal fix</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2392371</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-04-24 05:57:34 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; @Srikanth, here&apos;s a question for you regarding (Annotatable)TypeSystem:
+&gt; (sorry for long text, but I don&apos;t want to break any principles in ATS).
+
+
+Thanks for CCing me. I will study this before end of tomorrow and share
+my findings.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2392985</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-04-25 06:11:49 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #5)
+&gt; Created attachment 242175 [details]
+&gt; draft patch
+&gt; 
+&gt; For illustration: test &amp; a minimal fix
+
+Hi Stephan, I suggest you release this fix for now and leave the bug open
+and assign it to me for longer term fix (which should be based on changes
+to TypeSystem.updateCaches(UnresolvedReferenceBinding, ReferenceBinding)
+(after adjusting the target), Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2393219</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-25 12:25:20 -0400</bug_when>
+    <thetext>Thanks, will do so, probably on Monday ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394329</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-28 17:37:00 -0400</bug_when>
+    <thetext>Point-fix released for 4.4M7 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=220cfdcea7bcdf14f7b578cffa489f3aeae3828a
+
+Over to you, Srikanth :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2420718</commentid>
+    <comment_count>10</comment_count>
+    <who name="Tom van den Berge">tom.vandenberge</who>
+    <bug_when>2014-06-26 03:27:20 -0400</bug_when>
+    <thetext>I can confirm that this bug is solved in 4.4 now.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2443476</commentid>
+    <comment_count>11</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-08-26 06:18:40 -0400</bug_when>
+    <thetext>Something looks fishy - I see two URBs with different ids. Looking into it. I&apos;ll close this for M2.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2443960</commentid>
+    <comment_count>12</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-08-27 02:37:37 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #9)
+&gt; Point-fix released for 4.4M7 via
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/
+&gt; ?id=220cfdcea7bcdf14f7b578cffa489f3aeae3828a
+&gt; 
+&gt; Over to you, Srikanth :)
+
+Sorry for the delay. I backed out this interim point fix and released final fix
+here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=97ffd5d9f10b645b867987b89ee09e9ee483a6d1 along the lines of the change outlined
+in comment#7. Please take a look. Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2447671</commentid>
+    <comment_count>13</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-09-04 10:26:24 -0400</bug_when>
+    <thetext>*** Bug 434579 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2452858</commentid>
+    <comment_count>14</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-09-17 01:58:53 -0400</bug_when>
+    <thetext>Verified fixed for 4.5 M2 using I20140916-2000 build</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2473921</commentid>
+    <comment_count>15</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-10-30 03:02:44 -0400</bug_when>
+    <thetext>+1 for back porting, reopening.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2477773</commentid>
+    <comment_count>16</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-06 05:28:46 -0500</bug_when>
+    <thetext>Jay, not sure if you are going by the white board content or bug status.
+This one is not yet there on 4.4 maintenance. Just updated the white
+board.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2478113</commentid>
+    <comment_count>17</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-11-06 09:13:43 -0500</bug_when>
+    <thetext>Back ported in R4_4_maintenance:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=R4_4_maintenance&amp;id=f3cf8629a67fe471a2d6479bdd442c44a68682ed</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2490176</commentid>
+    <comment_count>18</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-11-28 07:22:42 -0500</bug_when>
+    <thetext>*** Bug 445630 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2507363</commentid>
+    <comment_count>19</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-19 10:24:14 -0500</bug_when>
+    <thetext>Verified for 4.4.2 RC1 with build M20150114-1500.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>242175</attachid>
+            <date>2014-04-22 05:58:00 -0400</date>
+            <delta_ts>2014-04-22 05:58:52 -0400</delta_ts>
+            <desc>draft patch</desc>
+            <filename>Bug-432977--18null-Incorrect-type-is-not-visible-com.patch</filename>
+            <type>text/plain</type>
+            <size>2045</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5ub3Rh
+dGlvblRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5u
+b3RhdGlvblRlc3QuamF2YQppbmRleCA2MTk3N2Q1Li5jODBiYzVkIDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsVHlwZUFubm90YXRpb25UZXN0LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbFR5cGVBbm5vdGF0aW9uVGVzdC5q
+YXZhCkBAIC00OTMxLDUgKzQ5MzEsMzQgQEAKIAkJZ2V0Q29tcGlsZXJPcHRpb25zKCksCiAJCSIi
+KTsKIH0KLQorcHVibGljIHZvaWQgdGVzdEJ1ZzQzMjk3NygpIHsKKwlydW5Db25mb3JtVGVzdFdp
+dGhMaWJzKAorCQluZXcgU3RyaW5nW10geworCQkJIkJhci5qYXZhIiwKKwkJCSJpbXBvcnQgb3Jn
+LmVjbGlwc2UuamR0LmFubm90YXRpb24uKjtcbiIgKworCQkJIkBOb25OdWxsQnlEZWZhdWx0XG4i
+ICsgCisJCQkicHVibGljIGNsYXNzIEJhciB7XG4iICsgCisJCQkiCXByaXZhdGUgU3RyaW5nIHBy
+b3AgPSBcIlwiO1xuIiArIAorCQkJIlxuIiArIAorCQkJIglwdWJsaWMgU3RyaW5nIGdldFByb3Ao
+KSB7XG4iICsgCisJCQkiCQlyZXR1cm4gcHJvcDtcbiIgKyAKKwkJCSIJfVxuIiArIAorCQkJIn1c
+biIKKwkJfSwKKwkJZ2V0Q29tcGlsZXJPcHRpb25zKCksCisJCSIiKTsKKwlydW5Db25mb3JtVGVz
+dFdpdGhMaWJzKAorCQluZXcgU3RyaW5nW10geworCQkJIkZ1LmphdmEiLAorCQkJInB1YmxpYyBj
+bGFzcyBGdSB7XG4iICsgCisJCQkiCXByaXZhdGUgQmFyIGZ1YmFyID0gbmV3IEJhcigpO1xuIiAr
+IAorCQkJIglcbiIgKyAKKwkJCSIJcHVibGljIHZvaWQgbWV0aG9kKCkge1xuIiArIAorCQkJIgkJ
+ZnViYXIuZ2V0UHJvcCgpLmVxdWFscyhcIlwiKTtcbiIgKyAKKwkJCSIJfQlcbiIgKyAKKwkJCSJ9
+XG4iCisJCX0sCisJCWdldENvbXBpbGVyT3B0aW9ucygpLAorCQkiIik7Cit9CiB9CmRpZmYgLS1n
+aXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvbG9va3VwL0Fubm90YXRhYmxlVHlwZVN5c3RlbS5qYXZhIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xv
+b2t1cC9Bbm5vdGF0YWJsZVR5cGVTeXN0ZW0uamF2YQppbmRleCA3YTQwODZiLi42MzBmM2I2IDEw
+MDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQv
+aW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL0Fubm90YXRhYmxlVHlwZVN5c3RlbS5qYXZhCisrKyBi
+L29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9j
+b21waWxlci9sb29rdXAvQW5ub3RhdGFibGVUeXBlU3lzdGVtLmphdmEKQEAgLTMxOCw2ICszMTgs
+OCBAQAogCQkJCQlicmVhazsKIAkJCX0KIAkJCWlmIChVdGlsLmVmZmVjdGl2ZWx5RXF1YWwoZGVy
+aXZlZFR5cGUuZ2V0VHlwZUFubm90YXRpb25zKCksIGFubm90YXRpb25zKSkgeworCQkJCWlmICgh
+dHlwZS5pc1VucmVzb2x2ZWRUeXBlKCkgJiYgZGVyaXZlZFR5cGUuaXNVbnJlc29sdmVkVHlwZSgp
+KQorCQkJCQlyZXR1cm4gKChVbnJlc29sdmVkUmVmZXJlbmNlQmluZGluZylkZXJpdmVkVHlwZSku
+cmVzb2x2ZSh0aGlzLmVudmlyb25tZW50LCBmYWxzZSk7CiAJCQkJcmV0dXJuIGRlcml2ZWRUeXBl
+OwogCQkJfQogCQkJaWYgKCFkZXJpdmVkVHlwZS5oYXNUeXBlQW5ub3RhdGlvbnMoKSk=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

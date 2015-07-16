@@ -1,0 +1,423 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>428220</bug_id>
+          
+          <creation_ts>2014-02-14 13:50:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler] Javadoc processing interferes with type inference.</short_desc>
+          <delta_ts>2014-02-21 04:07:20 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>427787</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>noopur_gupta</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="61657"
+          type_id="1"
+          status="+"
+          setter="stephan.herrmann"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2363596</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-14 13:50:32 -0500</bug_when>
+    <thetext>From https://bugs.eclipse.org/bugs/show_bug.cgi?id=427787#c26
+
+Here&apos;s an interesting case from the list:
+
+public class HashMap&lt;K, V&gt; {
+	static class Node&lt;K, V&gt; {
+		Node(int hash, K key, V value, Node&lt;K, V&gt; next) {}
+	}
+	/** @see #put(Object, Object) */
+	public V put(K key, V value) {	return null; }
+
+	Node&lt;K, V&gt; newNode(int hash, K key, V value, Node&lt;K, V&gt; next) {
+		return new Node&lt;&gt;(hash, key, value, next); // Error
+	}
+}
+
+But the error goes away if I get rid of either the put() method or the javadoc above that.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363731</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-14 21:28:29 -0500</bug_when>
+    <thetext>I am looking into this - the static factory mechanism&apos;s handling of enclosing
+type&apos;s type variables seems suspect -</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363738</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-15 00:50:33 -0500</bug_when>
+    <thetext>I have a fix under test that also fixes 17/37 diamond inference problems.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363849</commentid>
+    <comment_count>3</comment_count>
+      <attachid>239986</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-15 20:46:12 -0500</bug_when>
+    <thetext>Created attachment 239986
+Project causing similar grief
+
+Srikanth, here&apos;s a project that causes a bogus 
+  Type mismatch: cannot convert from Collector&lt;capture#1-of ? super T,capture#3-of ?,Map&lt;capture#2-of ? extends K,Object&gt;&gt; to Collector&lt;T,?,Map&lt;K,List&lt;T&gt;&gt;&gt;
+
+to be reported, but only on full build, apparently, because javadoc processing on file MyMap.java causes the error in Test.java.
+
+Is it the same issue?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363853</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-15 20:55:32 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #3)
+&gt; Project causing similar grief
+
+On re-testing I see that the problem cannot be demonstrated on HEAD but only with the patch from bug 426537. I&apos;ve updated the patch in that bug for experimentation.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363884</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-16 02:50:30 -0500</bug_when>
+    <thetext>In org.eclipse.jdt.internal.compiler.lookup.ConstraintTypeFormula.reduceSubType(Scope, TypeBinding, TypeBinding)
+
+I see this line: 
+
+while (superCandidate instanceof ParameterizedTypeBinding &amp;&amp; subCandidate != null)  {
+						if (!addConstraintsFromTypeParamters(subCandidate, (ParameterizedTypeBinding) superCandidate, constraints))
+							return FALSE;
+
+
+Thing is raw types answer true to instanceof ParameterizedTypeBinding check.
+
+If I change it to 
+
+while (superCandidate.kind() == Binding.PARAMETERIZED_TYPE &amp;&amp; subCandidate != null)  {
+
+the test passes. 
+
+Now the curious thing is: 
+
+the first few lines in
+	boolean addConstraintsFromTypeParamters(TypeBinding subCandidate, ParameterizedTypeBinding ca, List&lt;ConstraintFormula&gt; constraints) {
+		TypeBinding[] ai = ca.arguments;								// C&lt;A1,A2,...&gt;
+		if (ai == null)
+			return true; // no arguments here means nothing to check
+
+We apparently somehow create a RawTypeBinding with type arguments - will check
+where.
+
+It is still an unsolved mystery as to why this would show
+up only when Javadoc processing is enabled - it is likely that the bogus
+raw type with type arguments gets created during javadoc processing and
+gets reused by the TypeSystem to preserve type identity - checking now.
+
+Stephan, we need to look at all places where such instanceof checks allow
+raw types to sneak in a parameterized types. Not sure if this code pattern
+is contributing to come of the woes we have been having with raw types.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363885</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-16 02:52:24 -0500</bug_when>
+    <thetext>BTW, as Stephan&apos;s comment in getStaticFactory() viz:
+
+// make sure to use the original enclosing, so we don&apos;t loose the outer type information, which we already have
+			// (I saw unbound type variables from enclosing enter type inference, which cannot handle such &apos;alien&apos; type variables).
+			
+
+indicates, there are some open issues in getStaticFactory implementation.
+
+These are also contributing to the problems we see in JRE build. I am in the
+process of rewriting this method.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363886</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-16 03:05:19 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #5)
+
+&gt; We apparently somehow create a RawTypeBinding with type arguments - will
+&gt; check
+&gt; where.
+
+In this call stack:
+
+RawTypeBinding.initializeArguments() line: 195	
+RawTypeBinding(ParameterizedTypeBinding).substitute(TypeVariableBinding) line: 1164	
+Scope$Substitutor.substitute(Substitution, TypeBinding) line: 487	
+Scope.substitute(Substitution, TypeBinding) line: 432	
+ParameterizedMethodBinding.&lt;init&gt;(ParameterizedTypeBinding, MethodBinding) line: 125	
+RawTypeBinding(ParameterizedTypeBinding).createParameterizedMethod(MethodBinding) line: 357	
+RawTypeBinding.createParameterizedMethod(MethodBinding) line: 91	
+RawTypeBinding(ParameterizedTypeBinding).getMethods(char[]) line: 662	
+RawTypeBinding(ParameterizedTypeBinding).getExactMethod(char[], TypeBinding[], CompilationUnitScope) line: 573	
+MethodScope(Scope).findExactMethod(ReferenceBinding, char[], TypeBinding[], InvocationSite) line: 1327	
+MethodScope(Scope).getMethod(TypeBinding, char[], TypeBinding[], InvocationSite) line: 2905	
+JavadocMessageSend.internalResolveType(Scope) line: 92	
+JavadocMessageSend.resolveType(BlockScope) line: 203	
+Javadoc.resolveReference(Expression, Scope) line: 389	
+Javadoc.resolve(MethodScope) line: 284	
+MethodDeclaration(AbstractMethodDeclaration).resolveJavadoc() line: 595	
+MethodDeclaration(AbstractMethodDeclaration).resolve(ClassScope) line: 526	
+TypeDeclaration.resolve() line: 1211	
+
+
+we initialize the &quot;type arguments&quot; of the raw type.
+
+The comment in ParameterizedTypeBinding.initializeArguments reads:
+
+protected void initializeArguments() {
+	    // do nothing for true parameterized types (only for raw types)
+}
+
+So this piece is an intentional hack. The only recourse to ensure that
+in type inference, we don&apos;t add constraints based of the type arguments
+of raw types.
+
+I&apos;ll work on a fix.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363890</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-16 04:02:46 -0500</bug_when>
+    <thetext>Fix and tests released here. I used this bug for just the point fix to the
+present problem. Scope.getStaticFactory() cleanup/rewrite will follow in a 
+separate CR.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363901</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-16 05:59:04 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #5)
+&gt; In
+&gt; org.eclipse.jdt.internal.compiler.lookup.ConstraintTypeFormula.
+&gt; reduceSubType(Scope, TypeBinding, TypeBinding)
+&gt; 
+&gt; I see this line: 
+&gt; 
+&gt; while (superCandidate instanceof ParameterizedTypeBinding &amp;&amp; subCandidate !=
+&gt; null)  {
+&gt; 						if (!addConstraintsFromTypeParamters(subCandidate,
+&gt; (ParameterizedTypeBinding) superCandidate, constraints))
+&gt; 							return FALSE;
+&gt; 
+&gt; 
+&gt; Thing is raw types answer true to instanceof ParameterizedTypeBinding check.
+
+This is intentional, see the check isRaw() inside that method which needs special care for javac bug compatibility.
+
+
+&gt; Now the curious thing is: 
+&gt; 
+&gt; the first few lines in
+&gt; 	boolean addConstraintsFromTypeParamters(TypeBinding subCandidate,
+&gt; ParameterizedTypeBinding ca, List&lt;ConstraintFormula&gt; constraints) {
+&gt; 		TypeBinding[] ai = ca.arguments;								// C&lt;A1,A2,...&gt;
+&gt; 		if (ai == null)
+&gt; 			return true; // no arguments here means nothing to check
+&gt; 
+&gt; We apparently somehow create a RawTypeBinding with type arguments - will
+&gt; check
+&gt; where.
+
+Could that be a parameterized inner of a raw enclosing type?
+
+
+&gt; It is still an unsolved mystery as to why this would show
+&gt; up only when Javadoc processing is enabled - it is likely that the bogus
+&gt; raw type with type arguments gets created during javadoc processing and
+&gt; gets reused by the TypeSystem to preserve type identity - checking now.
+
+I hope it&apos;s not the asRawMethod() call which I inserted in Javadoc.resolve()</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363902</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-16 06:01:26 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #6)
+&gt; BTW, as Stephan&apos;s comment in getStaticFactory() viz:
+&gt; 
+&gt; // make sure to use the original enclosing, so we don&apos;t loose the outer type
+&gt; information, which we already have
+&gt; 			// (I saw unbound type variables from enclosing enter type inference,
+&gt; which cannot handle such &apos;alien&apos; type variables).
+&gt; 			
+&gt; 
+&gt; indicates, there are some open issues in getStaticFactory implementation.
+&gt; 
+&gt; These are also contributing to the problems we see in JRE build. I am in the
+&gt; process of rewriting this method.
+
+If that&apos;s on your plate right now, I&apos;d be happy to consume a new version for bug 428275 where a myriad of method bindings representing the same (diamond) constructor causes grief.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363904</commentid>
+    <comment_count>11</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-16 06:15:57 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #9)
+
+&gt; &gt; Thing is raw types answer true to instanceof ParameterizedTypeBinding check.
+&gt; 
+&gt; This is intentional, see the check isRaw() inside that method which needs
+&gt; special care for javac bug compatibility.
+
+Stephan, could you the review the (tiny) commit already released here:
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=78640ac1ea71100d69059b2d80bebfd974c6462e
+
+to make sure I didn&apos;t inadvertently cause some issues in the special compatibility
+mode you have inserted ? (Tests were all green) TIA.
+
+
+&gt; I hope it&apos;s not the asRawMethod() call which I inserted in Javadoc.resolve()
+
+No, see comment#7 for the call stack which was the same as you pointed out in
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=427736#c12</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363905</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-16 06:23:59 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #9)
+&gt; (In reply to Srikanth Sankaran from comment #5)
+&gt; &gt; In
+&gt; &gt; org.eclipse.jdt.internal.compiler.lookup.ConstraintTypeFormula.
+&gt; &gt; reduceSubType(Scope, TypeBinding, TypeBinding)
+&gt; &gt; 
+&gt; &gt; I see this line: 
+&gt; &gt; 
+&gt; &gt; while (superCandidate instanceof ParameterizedTypeBinding &amp;&amp; subCandidate !=
+&gt; &gt; null)  {
+&gt; &gt; 						if (!addConstraintsFromTypeParamters(subCandidate,
+&gt; &gt; (ParameterizedTypeBinding) superCandidate, constraints))
+&gt; &gt; 							return FALSE;
+&gt; &gt; 
+&gt; &gt; 
+&gt; &gt; Thing is raw types answer true to instanceof ParameterizedTypeBinding check.
+&gt; 
+&gt; This is intentional, see the check isRaw() inside that method which needs
+&gt; special care for javac bug compatibility.
+
+
+Sorry, I spoke to soon. Seeing your fix and debugging some notorious tests I see you&apos;re right. For superCandidate we&apos;re interested only in true PARAMETERIZED_TYPEs, it&apos;s the subCandidate whose raw individuals we need to scrutinze.
+
+And for inner / enclosing type business I added the explicit loop (not originally call for in the spec).
+
+So, yes: fix looks good. Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363910</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-16 06:36:24 -0500</bug_when>
+    <thetext>As per prev. comment (mid-air collision :) ), the change in ConstraintTypeFormula is good, because its the other type whose raw individuals we need.
+
+The change in BoundSet is good because we definitely want only those types that have &apos;real&apos; type arguments.
+
+Marking review +1 :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366552</commentid>
+    <comment_count>14</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2014-02-21 04:07:20 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC1 using Kepler SR2(RC4) +   
+Eclipse Java Development Tools Patch for Java 8 Support (BETA)	
+1.0.0.v20140220-2054</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>239986</attachid>
+            <date>2014-02-15 20:46:00 -0500</date>
+            <delta_ts>2014-02-15 20:46:12 -0500</delta_ts>
+            <desc>Project causing similar grief</desc>
+            <filename>JavadocCausesCompileError.zip</filename>
+            <type>application/zip</type>
+            <size>1852</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">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
+cC5qYXZhUEsFBgAAAAAFAAUAYQEAAMUFAAAAAA==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

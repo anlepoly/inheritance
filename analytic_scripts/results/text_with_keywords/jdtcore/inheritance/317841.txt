@@ -1,0 +1,70 @@
+BUG REPORT COMMENTS:
+Build Identifier: 20100218-1602
+
+Any Java Class that is rebuild by the IncrementalImageBuilder is falsely assumed to have structurally changed if it features an Annotation with a String Parameter (e.g. @org.hibernate.annotations.AccessType(value="field") ).
+
+* true even if the Java Class hasn't changed at all.
+* also true for other Types of Annotation Parameters.
+* may lead to unnecessary build loops up to MaxCompileLoop (=5) triggering a full build (which hurts)
+
+Reproducible: Always
+
+Steps to Reproduce:
+1. Insert a whitespace into a java file that has a Class-Annotation with a String parameter 
+2. Trigger an incremental build by saving the java file
+3. Breakpoint at org.eclipse.jdt.internal.compiler.classfmt.ClassFileReader:973 (last 'return true' in 'hasStructuralAnnotationChanges')
+I'll investigate.
+Here is my suspicion:
+
+In the method
+
+org.eclipse.jdt.internal.compiler.classfmt.ClassFileReader#hasStructuralAnnotationChanges(...)
+
+the values of annotation parameters are compared via 'equals'. Values are instances of subclasses of 'Constant', e.g. 'StringConstant' or in case of multivalued parameters of 'Object[]'. Neither do override the 'equals'-Method, so an identiy-comparison is performed which is wrong here.
+
+Proposal:
+
+Compare the String-Representation of the key / value - Pair (ElementValuePairInfo). That seems to work even for nested Annotation-Parameters.
+
+ if (!currentPairs[j].toString().equals(otherPairs[j].toString()))
+    return true;
+You are right concerning the missing equals methods on the different constants.
+However I cannot get a recompilation of dependents.
+The actual bytes are identical if you just add a space into the .class file.
+
+So we only dump the new bytes to override the existing bytes even if we think thet are identical (I will investigate that part to see why we are doing this), but we don't actually recompile dependent types.
+
+Do you have a test case that shows recompilation of dependents ?
+(In reply to comment #3)
+> So we only dump the new bytes to override the existing bytes even if we think
+> thet are identical (I will investigate that part to see why we are doing this),
+> but we don't actually recompile dependent types.
+It seems that this is done to make sure the timestamps of the class files are newer than the timestamps of the source files.
+
+> Do you have a test case that shows recompilation of dependents ?
+Using the debug mode, I could not see that dependents are recompiled. How did you notice that dependent types are recompiled by the incremental builder ?
+Created an attachment (id=172798)
+Three dependent Java Classes with Annotations
+
+A non structural change to class A (Newline or change inside the Constructor) will lead to a second, unnecessary build loop.
+
+But no recompilation of dependents will occur.
+
+Breakpoints:
+* IncrementalImageBuilder:120 (first line in the while-loop inside 'build')
+* ClassFileReader:973 (as mentioned above)
+I see clearer now:
+
+* Inserting a space indeed doesn't change the class file. Inserting a Newline (which i did) will, if debug-information for line numbers is written to the class file.
+* Doing this with the submitted test project, i can provoke an additional, unecessary build loop due to falsely detected structural changes, but as you already found out, no further propagation will occur because the compiled dependents are byte-identical to their previous class files.
+
+So here comes the speciality in our real life project:
+
+We introduced hibernate bytecode enhancement via a second Builder a while ago. So there are some Classes that will never be byte-identical to their previous, enhanced class files, when recompiled.
+If such an enhanced class is a direct dependent of the initially changed class, then there will be at least a third build loop, potentially more if the enhanced classes form a dependency chain.
+
+So i have to admit that the reported bug is only responsible for the first of our unnecessary build loops.
+Nevertheless it would help us to have it fixed in situations where non-structural changes are performed on non-enhanced classes, which does occur often.
+
+Any hint about how to use bytecode enhancement without the compile time punishment would be appreciated.
+

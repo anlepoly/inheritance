@@ -1,0 +1,340 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>438971</bug_id>
+          
+          <creation_ts>2014-07-06 05:17:00 -0400</creation_ts>
+          <short_desc>[1.8][null] @NonNullByDefault/@Nullable on parameter of generic interface</short_desc>
+          <delta_ts>2014-10-22 02:06:30 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>ASSIGNED</bug_status>
+          <resolution></resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>4.5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Siegmar Alber">siegmaralber</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>stephan.herrmann</cc>
+          
+          <votes>1</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2424781</commentid>
+    <comment_count>0</comment_count>
+    <who name="Siegmar Alber">siegmaralber</who>
+    <bug_when>2014-07-06 05:17:42 -0400</bug_when>
+    <thetext>I found some problems when using an interface like this if @NonNullByDefualt is in place:
+public interface Interface&lt;T&gt; {
+	void doSomething(@Nullable T value);
+}
+
+Version: Luna Release (4.4.0)
+Build id: 20140612-0600
+
+Steps to reproduce:
+1. Create a new Java project targeting JavaSE-1.8.
+2. Create a package called test
+3. Create the 3 files listed at the end of this comment in the test package directory
+4. Modify the project settings to enable annotation based null analysis
+5. Fix the project by adding org.eclipse.jdt.annotation_2.0.0.v20140415-1436.jar to the class path (I used a quick fix).
+
+
+
+Problems (referring to lines marked with comments in Class.java):
+
+== Problem 1 ==
+Compilation fails on
+   implementation.doSomething(&quot;Hello World!&quot;);
+with
+&quot;Contradictory null annotations: method was inferred as &apos;void doSomething(@NonNull @Nullable String)&apos;, but only one of &apos;@NonNull&apos; and &apos;@Nullable&apos; can be effective at any location&quot;
+
+
+== Problem 2 ==
+The exact same code as in Problem 1 compiles if it is externalized into a generic method. But running it results in the following exception (because of Problem 3):
+Exception in thread &quot;main&quot; java.lang.AbstractMethodError: test.Class$1.doSomething(Ljava/lang/Object;)V
+
+
+== Problem 3 ==
+The compiler does not generate a synthetic delegate method from doSomething(Object) to doSomething(String) (verified with javap). It does, however, compile the anonymous inner class without warnings or errors.
+
+
+
+Expected result:
+Code compiles and runs without exception.
+
+
+Notes:
+* Switching to Java 7 (and using org.eclipse.jdt.annotation_1.1.0.v20140129-1625.jar instead) solves the problems and runs as expected.
+* Removing both @Nullable annotations (in the interface and its anonymous implementation) solves the problems. However it is not possible to call &quot;implementation.doSomething(null)&quot; in this case. IMO it should be possible to allow null as method parameter in any case, i.e. even if the parameters type is generic.
+
+
+
+======
+File 1: package-info.java
+@org.eclipse.jdt.annotation.NonNullByDefault
+package test;
+======
+File 2: Interface.java
+package test;
+
+import org.eclipse.jdt.annotation.Nullable;
+
+public interface Interface&lt;T&gt;
+{
+	void doSomething(@Nullable T value);
+}
+======
+File 3: Class.java
+package test;
+
+import org.eclipse.jdt.annotation.Nullable;
+
+public class Class
+{
+	public static void main(String[] args)
+	{
+		final Interface&lt;String&gt; implementation = getImplementation();
+
+		// Problem 1: Does not compile:
+		// implementation.doSomething(&quot;Hello World!&quot;);
+		// implementation.doSomething(null);
+
+		runDoSomething(implementation, &quot;Hello World!&quot;);
+	}
+
+	private static &lt;T&gt; void runDoSomething(Interface&lt;T&gt; implementation, T value)
+	{
+		// Problem 2: Does compile but throws exception at runtime:
+		implementation.doSomething(value);
+		implementation.doSomething(null);
+	}
+
+	private static Interface&lt;String&gt; getImplementation()
+	{
+		return new Interface&lt;String&gt;()
+		{
+			// Problem 3: Does compile but does not generate synthetic
+			// doSomething(Object)
+			@Override
+			public void doSomething(@Nullable String value)
+			{
+				System.out.println(value);
+			}
+		};
+	}
+}
+======</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2424793</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-06 11:51:10 -0400</bug_when>
+    <thetext>Thanks for the report. 
+
+Problem 1 is related to bug 438458, I made a note in that bug.
+
+The other problems need closer investigation.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2426188</commentid>
+    <comment_count>2</comment_count>
+    <who name="Siegmar Alber">siegmaralber</who>
+    <bug_when>2014-07-09 11:45:51 -0400</bug_when>
+    <thetext>After writing and thinking about the issues in this bug report another question came to my mind. Don&apos;t know if it&apos;s interesting, stupid or if it belongs here, so feel free to not answer it ;-)
+
+Imagine a list interface not caring about null elements, i.e. clients should be able to define a List&lt;@Nullable String&gt; or a List&lt;@NonNull String&gt;. The interface looks like the following:
+
+public interface List&lt;T&gt; {
+    // Should allow/disallow returning null depending on T being @Nullable/@NonNull
+    T get(int index) throws IndexOutOfBoundsException;
+
+    // Can always return null, even if T is @NonNull
+    @Nullable T getOrNullOnIndexOutOfBounds(int index)
+
+    // Never returns null and never allows to pass null, even if T is @Nullable
+    @NonNull T getOrDefaultIfNull(int index, @NonNull T default)
+}
+
+Would it be possible to define an interface with this semantics? What if @NonNullByDefault is enabled? I would expect @NonNullByDefault causes get(int) to return @NonNull T implicitly, even if a client defines a variable with List&lt;@Nullable String&gt;...
+
+Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2427158</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-12 06:35:35 -0400</bug_when>
+    <thetext>(In reply to Siegmar Alber from comment #2)
+&gt; After writing and thinking about the issues in this bug report another
+&gt; question came to my mind. Don&apos;t know if it&apos;s interesting, stupid or if it
+&gt; belongs here, so feel free to not answer it ;-)
+&gt; 
+&gt; Imagine a list interface not caring about null elements, i.e. clients should
+&gt; be able to define a List&lt;@Nullable String&gt; or a List&lt;@NonNull String&gt;. The
+&gt; interface looks like the following:
+&gt; 
+&gt; public interface List&lt;T&gt; {
+&gt;     // Should allow/disallow returning null depending on T being
+&gt; @Nullable/@NonNull
+&gt;     T get(int index) throws IndexOutOfBoundsException;
+&gt; 
+&gt;     // Can always return null, even if T is @NonNull
+&gt;     @Nullable T getOrNullOnIndexOutOfBounds(int index)
+&gt; 
+&gt;     // Never returns null and never allows to pass null, even if T is
+&gt; @Nullable
+&gt;     @NonNull T getOrDefaultIfNull(int index, @NonNull T default)
+&gt; }
+&gt; 
+&gt; Would it be possible to define an interface with this semantics? What if
+&gt; @NonNullByDefault is enabled? I would expect @NonNullByDefault causes
+&gt; get(int) to return @NonNull T implicitly, even if a client defines a
+&gt; variable with List&lt;@Nullable String&gt;...
+&gt; 
+&gt; Thanks!
+
+Have you seen the new section on &quot;Using null type annotations&quot; in the Luna help?
+
+I would hope that this answers your question, and if not, please let me know, so we can improve the help. TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2430263</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-22 10:18:18 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #1)
+&gt; Thanks for the report. 
+&gt; 
+&gt; Problem 1 is related to bug 438458, I made a note in that bug.
+
+I&apos;m adding a test for this problem, which indeed passes with pending changes in the other bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2430382</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-22 12:00:28 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; (In reply to Stephan Herrmann from comment #1)
+&gt; &gt; Thanks for the report. 
+&gt; &gt; 
+&gt; &gt; Problem 1 is related to bug 438458, I made a note in that bug.
+&gt; 
+&gt; I&apos;m adding a test for this problem, which indeed passes with pending changes
+&gt; in the other bug.
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=41321e271ce9d99e44edf867f5f75e8abc4a221f</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2437318</commentid>
+    <comment_count>6</comment_count>
+    <who name="Siegmar Alber">siegmaralber</who>
+    <bug_when>2014-08-09 11:58:28 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #3)
+&gt; (In reply to Siegmar Alber from comment #2)
+&gt; &gt; Imagine a list interface not caring about null elements, i.e. clients should
+&gt; &gt; be able to define a List&lt;@Nullable String&gt; or a List&lt;@NonNull String&gt;. The
+&gt; &gt; interface looks like the following:
+&gt; &gt; 
+&gt; &gt; public interface List&lt;T&gt; {
+&gt; &gt;     // Should allow/disallow returning null depending on T being
+&gt; &gt; @Nullable/@NonNull
+&gt; &gt;     T get(int index) throws IndexOutOfBoundsException;
+&gt; &gt; 
+&gt; &gt;     // Can always return null, even if T is @NonNull
+&gt; &gt;     @Nullable T getOrNullOnIndexOutOfBounds(int index)
+&gt; &gt; 
+&gt; &gt;     // Never returns null and never allows to pass null, even if T is
+&gt; &gt; @Nullable
+&gt; &gt;     @NonNull T getOrDefaultIfNull(int index, @NonNull T default)
+&gt; &gt; }
+&gt; &gt; 
+&gt; &gt; Would it be possible to define an interface with this semantics? What if
+&gt; &gt; @NonNullByDefault is enabled? I would expect @NonNullByDefault causes
+&gt; &gt; get(int) to return @NonNull T implicitly, even if a client defines a
+&gt; &gt; variable with List&lt;@Nullable String&gt;...
+&gt; 
+&gt; Have you seen the new section on &quot;Using null type annotations&quot; in the Luna
+&gt; help?
+&gt; 
+&gt; I would hope that this answers your question, and if not, please let me
+&gt; know, so we can improve the help. TIA.
+
+Thanks for your answer and sorry for the delay... I&apos;ve now read this new section (I guess you mean the page [1]). I&apos;m afraid it does not really answer my question. I&apos;ve got a better understanding of the whole topic but I still don&apos;t know how to correctly achieve the desired result.
+
+Could you please have a look and point me to the right direction? Thank you! :-)
+
+
+[1] http://help.eclipse.org/luna/index.jsp?topic=%2Forg.eclipse.jdt.doc.user%2Ftasks%2Ftask-using_null_type_annotations.htm&amp;cp=1_3_9_1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2437320</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-09 12:23:20 -0400</bug_when>
+    <thetext>Will it be clearer if we more prominently explain the following sentence (from javadoc of DefaultLocation)?
+
+  &quot;Wildcards and the use of type variables are always excluded from
+   NonNullByDefault.&quot;
+
+I should admit that this wasn&apos;t fully implemented until bug 440759, so the wrong implementation in Luna is certainly misleading here. Sorry. You might want to play with a recent I-Build ( &gt;= I20140803-2000) to better understand what *is* intended.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2437321</commentid>
+    <comment_count>8</comment_count>
+    <who name="Siegmar Alber">siegmaralber</who>
+    <bug_when>2014-08-09 12:43:35 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #7)
+&gt; Will it be clearer if we more prominently explain the following sentence
+&gt; (from javadoc of DefaultLocation)?
+&gt; 
+&gt;   &quot;Wildcards and the use of type variables are always excluded from
+&gt;    NonNullByDefault.&quot;
+
+I suspected it could have something to do with this but wasn&apos;t sure. I think some more elaboration on this sentence is certainly helpful :-)
+
+
+&gt; I should admit that this wasn&apos;t fully implemented until bug 440759, so the
+&gt; wrong implementation in Luna is certainly misleading here. Sorry. You might
+&gt; want to play with a recent I-Build ( &gt;= I20140803-2000) to better understand
+&gt; what *is* intended.
+
+Good to know, thank you. I&apos;ll have a look but probably not anytime soon...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2469091</commentid>
+    <comment_count>9</comment_count>
+    <who name="Siegmar Alber">siegmaralber</who>
+    <bug_when>2014-10-22 02:06:30 -0400</bug_when>
+    <thetext>Just tried to reproduce it with Luna Service Release 1 (4.4.1, Build id: 20140925-1800): It works without compile errors, warnings or exceptions at runtime.
+
+For my part this bug can be closed. Thanks for all your work!</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

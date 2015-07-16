@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>413124</bug_id>
+          
+          <creation_ts>2013-07-16 18:38:00 -0400</creation_ts>
+          <short_desc>Deadlock when opening editor</short_desc>
+          <delta_ts>2013-07-17 16:06:11 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>14</classification_id>
+          <classification>Mylyn</classification>
+          <product>Mylyn Reviews</product>
+          <component>Framework</component>
+          <version>unspecified</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>blocker</bug_severity>
+          <target_milestone>2.0.1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Miles Parker">milesparker</reporter>
+          <assigned_to name="Miles Parker">milesparker</assigned_to>
+          
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2285259</commentid>
+    <comment_count>0</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-07-16 18:38:29 -0400</bug_when>
+    <thetext>After starting up Eclipse with an open review, I got a deadlock. See next comment for relevant traces. I&apos;m pretty certain that this was introduced by https://git.eclipse.org/r/#/c/14571/2/org.eclipse.mylyn.reviews.core/src/org/eclipse/mylyn/reviews/core/spi/remote/emf/RemoteEmfConsumer.java. I guess there was a reason that I hadn&apos;t wrapped that call before, but I should have noted it. We need a strategy for adding these adapters in a thread-safe way w/o causing this deadlock. But we should back the initial change out before going any further.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2285263</commentid>
+    <comment_count>1</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-07-16 18:52:45 -0400</bug_when>
+    <thetext>Reverted bad change in: https://git.eclipse.org/r/#/c/14604/</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2285392</commentid>
+    <comment_count>2</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-07-17 05:38:45 -0400</bug_when>
+    <thetext>Miles, please post a stack trace next time you encounter a dead lock.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2285596</commentid>
+    <comment_count>3</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-07-17 12:42:54 -0400</bug_when>
+    <thetext>Yep, I meant to. But for the record, the call is from the RemoteEmfConsumer constructor, when we attempt to add the eadapters w/in a modelExec. (That could deadlock in a number of different scenarios.)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2285648</commentid>
+    <comment_count>4</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-07-17 14:07:36 -0400</bug_when>
+    <thetext>Sure, but that&apos;s the interesting part here what the context of the dead lock is.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2285664</commentid>
+    <comment_count>5</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-07-17 14:50:11 -0400</bug_when>
+    <thetext>For posterity. :) It&apos;s a bit complex. The immediate issue is that we&apos;re synchronizing against AbstractRemoteEmfFactory#consumerForLocalKey in two UI waiting threads. In the scenario below, Thread A [UI] is opening the editor and blocking on AbstractRemoteEmfFactory#consumerForLocalKey. But Thread B needs [UI] to complete, and it has already acquired AbstractRemoteEmfFactory#consumerForLocalKey.
+
+Thread A:
+[snip]
+Thread [main] (Suspended)	
+	owns: ArrayList&lt;E&gt;  (id=3951)	
+	owns: RunnableLock  (id=3952)	
+	waiting for: HashMap&lt;K,V&gt;  (id=3953)	
+	GerritReviewRemoteFactory(AbstractRemoteEmfFactory&lt;EParentObjectType,EObjectType,LocalKeyType,RemoteType,RemoteKeyType,ObjectCurrentType&gt;).getConsumerForModel(EParentObjectType, EObjectType) line: 247	
+	PublishUiFactory(AbstractPatchSetUiFactory).getChange() line: 78	
+	PublishUiFactory(AbstractPatchSetUiFactory).isExecutableStateKnown() line: 141	
+	PublishUiFactory(AbstractUiFactory&lt;EObjectType&gt;).createControl(IUiContext, Composite, FormToolkit) line: 75	
+	PatchSetUiFactoryProvider(AbstractUiFactoryProvider&lt;EObjectType&gt;).createControls(IUiContext, Composite, FormToolkit, EObjectType) line: 39	
+	ReviewSetContentSection.createButtons() line: 333	
+	ReviewSetContentSection$2.updated(IRepository, IReview, boolean) line: 139	
+	ReviewSetContentSection$2.updated(EObject, Object, boolean) line: 1	
+	RemoteEmfConsumer$ConsumerAdapter.notifyChanged(Notification) line: 92	
+	Review(BasicNotifierImpl).eNotify(Notification) line: 374	
+	NotificationChainImpl.dispatch(Notification) line: 98	
+	NotificationChainImpl.dispatch() line: 86	
+	RemoteEmfConsumer&lt;EParentObjectType,EObjectType,LocalKeyType,RemoteType,RemoteKeyType,ObjectCurrentType&gt;.applyModel(boolean) line: 252	
+	JobRemoteService$2$1.run() line: 77	
+	RunnableLock.run() line: 35	
+	UISynchronizer(Synchronizer).runAsyncMessages(boolean) line: 135	
+	Display.runAsyncMessages(boolean) line: 3946	
+	Display.observerProc(long, long, long) line: 3536	
+	OS.objc_msgSend(long, long, long, long, long) line: not available [native method]	
+	NSMenu.popUpContextMenu(NSMenu, NSEvent, NSView) line: 77	
+	Menu._setVisible(boolean) line: 278	
+	Display.runPopups() line: 4059	
+	Display.readAndDispatch() line: 3614	
+	Workbench.runEventLoop(Window$IExceptionHandler, Display) line: 2701	
+	Workbench.runUI() line: 2665	
+	Workbench.access$4(Workbench) line: 2499	
+	Workbench$7.run() line: 679	
+	Realm.runWithDefault(Realm, Runnable) line: 332	
+	Workbench.createAndRunWorkbench(Display, WorkbenchAdvisor) line: 668	
+	PlatformUI.createAndRunWorkbench(Display, WorkbenchAdvisor) line: 149	
+	IDEApplication.start(IApplicationContext) line: 124	
+	EclipseAppHandle.run(Object) line: 196	
+	EclipseAppLauncher.runApplication(Object) line: 110	
+	EclipseAppLauncher.start(Object) line: 79	
+	EclipseStarter.run(Object) line: 353	
+	EclipseStarter.run(String[], Runnable) line: 180	
+	NativeMethodAccessorImpl.invoke0(Method, Object, Object[]) line: not available [native method]	
+	NativeMethodAccessorImpl.invoke(Object, Object[]) line: 57	
+	DelegatingMethodAccessorImpl.invoke(Object, Object[]) line: 43	
+	Method.invoke(Object, Object...) line: 601	
+	Main.invokeFramework(String[], URL[]) line: 629	
+	Main.basicRun(String[]) line: 584	
+	Main.run(String[]) line: 1438	
+	Main.main(String[]) line: 1414	
+
+
+Thread B:
+	owns: HashMap&lt;K,V&gt;  (id=3953)	
+	waiting for: Semaphore  (id=3967)	
+	Object.wait(long) line: not available [native method]	
+	Semaphore.acquire(long) line: 43	
+	UISynchronizer.syncExec(Runnable) line: 168	
+	Display.syncExec(Runnable) line: 4607	
+	RemoteUiService.modelExec(Runnable, boolean) line: 41	
+	RemoteUiService(AbstractRemoteService).modelExec(Runnable) line: 70	
+	RemoteEmfConsumer&lt;EParentObjectType,EObjectType,LocalKeyType,RemoteType,RemoteKeyType,ObjectCurrentType&gt;.&lt;init&gt;(AbstractRemoteEmfFactory&lt;EParentObjectType,EObjectType,LocalKeyType,RemoteType,RemoteKeyType,ObjectCurrentType&gt;, EParentObjectType, EObjectType, LocalKeyType, RemoteType, RemoteKeyType) line: 124	
+	GerritReviewRemoteFactory(AbstractRemoteEmfFactory&lt;EParentObjectType,EObjectType,LocalKeyType,RemoteType,RemoteKeyType,ObjectCurrentType&gt;).getConsumerForLocalKey(EParentObjectType, LocalKeyType) line: 183	
+	GerritTaskDataHandler.updateModelData(TaskRepository, TaskData, ReviewObserver, IProgressMonitor) line: 130	
+	GerritTaskDataHandler.getTaskData(TaskRepository, String, IProgressMonitor) line: 107	
+	GerritConnector.getTaskData(TaskRepository, String, IProgressMonitor) line: 157	
+	SynchronizeTasksJob.synchronizeTask(IProgressMonitor, ITask) line: 245	
+	SynchronizeTasksJob.runInternal(Set&lt;ITask&gt;, IProgressMonitor) line: 218	
+	SynchronizeTasksJob.run(Set&lt;ITask&gt;, IProgressMonitor) line: 153	
+	SynchronizeTasksJob.run(IProgressMonitor) line: 135	
+	SynchronizeRepositoriesJob$1(SynchronizeQueriesJob).run(IProgressMonitor) line: 225	
+	SynchronizeRepositoriesJob.updateQueries(TaskRepository, AbstractRepositoryConnector, Set&lt;RepositoryQuery&gt;, IProgressMonitor) line: 186	
+	SynchronizeRepositoriesJob.run(IProgressMonitor) line: 142	
+	Worker.run() line: 54</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2285688</commentid>
+    <comment_count>6</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-07-17 15:22:52 -0400</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; For posterity. :) It&apos;s a bit complex. The immediate issue is that we&apos;re
+&gt; synchronizing against AbstractRemoteEmfFactory#consumerForLocalKey in two UI
+&gt; waiting threads. In the scenario below, Thread A [UI] is opening the editor and
+&gt; blocking on AbstractRemoteEmfFactory#consumerForLocalKey. But Thread B needs
+&gt; [UI] to complete, and it has already acquired
+
+Why would we hold that lock? To prevent more than one consumer for the same key?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2285722</commentid>
+    <comment_count>7</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-07-17 16:06:11 -0400</bug_when>
+    <thetext>(In reply to comment #6)
+&gt; &gt; blocking on AbstractRemoteEmfFactory#consumerForLocalKey. But Thread B needs
+&gt; &gt; [UI] to complete, and it has already acquired
+&gt; 
+&gt; Why would we hold that lock? To prevent more than one consumer for the same key?
+
+Exactly. There should be 0..1 consumer for any given review/domain_object.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

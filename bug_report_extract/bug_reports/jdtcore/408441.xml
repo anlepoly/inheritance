@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>408441</bug_id>
+          
+          <creation_ts>2013-05-18 15:43:00 -0400</creation_ts>
+          <short_desc>Type mismatch using Arrays.asList with 3 or more implementations of an interface with the interface type as the last parameter</short_desc>
+          <delta_ts>2013-08-05 06:31:14 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.2.2</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>4.4 M1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Larry Conly">lconly</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2259185</commentid>
+    <comment_count>0</comment_count>
+    <who name="Larry Conly">lconly</who>
+    <bug_when>2013-05-18 15:43:54 -0400</bug_when>
+    <thetext>import java.util.Arrays;
+import java.util.List;
+
+
+public class TypeMistmatchIssue {
+	static interface A {
+	}
+	static class B implements A {
+	}
+	static class C implements A {
+	}
+	static class D implements A {
+	}
+	
+	void illustrate() {
+		List&lt;Class&lt;? extends A&gt;&gt; no1= Arrays.asList(B.class, A.class);						// compiles
+		List&lt;Class&lt;? extends A&gt;&gt; no2= Arrays.asList(C.class, B.class, A.class);				// compiles
+		List&lt;Class&lt;? extends A&gt;&gt; no3= Arrays.asList(D.class, B.class, A.class);				// compiles
+		
+		List&lt;Class&lt;? extends A&gt;&gt; no4= Arrays.asList(D.class, C.class, B.class, A.class);	// cannot convert error !!!
+
+		List&lt;Class&lt;? extends A&gt;&gt; no5= Arrays.asList(A.class, B.class, C.class, D.class);	// compiles
+		List&lt;Class&lt;? extends A&gt;&gt; no6= Arrays.asList(A.class, D.class, C.class, B.class);	// compiles
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2259361</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-05-20 01:53:15 -0400</bug_when>
+    <thetext>Can reproduce. Stephan, can you please take a look?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2282340</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-07-09 11:24:09 -0400</bug_when>
+    <thetext>Reproduced and found the following:
+
+The problem occurs while computing the lowest upper bound (lub) for
+  Class&lt;? extends TypeMismatchIssue.D&gt;
+  Class&lt;? extends TypeMismatchIssue.C&gt;
+  Class&lt;? extends TypeMismatchIssue.B&gt;
+  Class&lt;? extends TypeMismatchIssue.A&gt;
+
+during each invocation of leastContainingTypeArgument() we add a subset of the
+above type arguments to lubStack.
+- Checking D vs. C we push {D,C} on the lub stack and get A as the result
+- Checking B vs. A we push {A,B} on the lub stack and get A as the result
+When we finally come to computing the lub of {A,A}, we already find an {A,B} slice on 
+the lub stack and think that this indicates a cyclic dependency.
+In reality stack entries {D,C}, {A,B} and {A,A} do not signal a cycle because those
+are sibling computations, rather than recursive applications.
+When detecting a cycle we fall back to using an unbounded wildcard as the result.
+(This cycle detection was introduced in bug 83225, so this bug probable exists
+since JDT 3.1)
+
+
+The fact that this bug only occurs with 4 or more types, with the common supertype
+coming after the subtypes, is an artifact of how entries in the lubStack accumulate.
+
+
+This can be fixed by passing a *copy* of the stack into leastContainingTypeArgument,
+so that sibling computations cannot influence each other. First batch of tests was
+happy, full test still pending.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2282349</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-07-09 11:41:02 -0400</bug_when>
+    <thetext>Running the test suite in the debugger I could observe that cycle detection
+still works with my patch, e.g., in cases like lub(String,Integer),
+where we recurse into checking
+  Comparable&lt;String&gt; vs. Comparable&lt;Integer&gt; ...
+Instead of entering infinite recursion we still find the correct solution:
+  Comparable&lt;?&gt;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2282416</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-07-09 13:55:02 -0400</bug_when>
+    <thetext>Test &amp; fix released for 4.4 M1 via commit f9e9347d6997c4c27eb7e36ed44c76f0701d7ce2</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2291474</commentid>
+    <comment_count>5</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-08-05 06:29:42 -0400</bug_when>
+    <thetext>Verified for 4.4M1 using I20130730-0800 build.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

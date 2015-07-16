@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>419351</bug_id>
+          
+          <creation_ts>2013-10-14 07:36:00 -0400</creation_ts>
+          <short_desc>org.eclipse.jdt.internal.compiler.batch.Main mixes up JVM and endorsed libraries in classpath ordering</short_desc>
+          <delta_ts>2014-03-04 09:12:46 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows Server 2008</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M6</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Fabian Schlier">mail</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2317783</commentid>
+    <comment_count>0</comment_count>
+      <attachid>236449</attachid>
+    <who name="Fabian Schlier">mail</who>
+    <bug_when>2013-10-14 07:36:46 -0400</bug_when>
+    <thetext>Created attachment 236449
+Patch changing the ordering of boot and endorsed libs
+
+The org.eclipse.jdt.internal.compiler.batch.Main used in a standalone environment has problems with initializing the classpath in the correct ordering. The relevant elements are:
+* The bootclasspaths containing the JVM libraries
+* The endorsedDirClasspaths containing the endorsed libs (http://docs.oracle.com/javase/6/docs/technotes/guides/standards/)
+
+The endorsed libs need to overrule the JVM bootclasspath to fulfill it&apos;s purpose. In the current implementation the bootclasspath is added first and the endorsed are added later. This causes, that the compiler loads the JVM classes prior the classes contained in endorsed directory, which makes them useless.
+
+The wrong ordering is initialized in the setPaths(..) method of the org.eclipse.jdt.internal.compiler.batch.Main class. In line 4533 the assembling of the final classpath starts with the bootclasspaths and adds the endorsedDirClasspaths in the first step, which causes the wrong ordering. A attached a patch which corrects the ordering.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2318081</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-10-15 01:12:54 -0400</bug_when>
+    <thetext>Thanks for the patch. Tentatively targeting Luna. But quite likely I will get to this for M3 or M4.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2369153</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-27 01:09:45 -0500</bug_when>
+    <thetext>Thanks for the patch again, but the simpler fix would be to just add the endorsed paths at &apos;0&apos;, like below:
+
+bootclasspaths.addAll(0, endorsedDirClasspaths);
+
+I will release the fix shortly.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2369182</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-27 03:52:33 -0500</bug_when>
+    <thetext>Added a test and released the fix via:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=16e4e54fbc1c2e9d6c024cb4c8b73196c3a27dde</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2371079</commentid>
+    <comment_count>4</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-03-04 06:23:32 -0500</bug_when>
+    <thetext>Steps to test the problem.
+
+1) Have the following source code.
+
+package java.lang;
+public class String {
+ public String(java.lang.Object obj) {}
+}
+
+Create a jar file put the jar file in a separate folder.
+Let us call it lib.
+
+2) Create a second file:
+X.java
+
+public class X {
+  public void foo(Object obj) {
+	java.lang.String str = new java.lang.String(obj);
+  }
+} 
+
+3) Create/get  the ecj.jar .
+
+4) Use the following command line:
+
+java -jar ecj_all.jar -endorseddirs lib X.java
+
+You should see the following output:
+----------
+1. WARNING in C:\Work\4.4M6\tmp\bug\X.java (at line 3)
+        java.lang.String str = new java.lang.String(obj);
+                         ^^^
+The value of the local variable str is not used
+----------
+1 problem (1 warning)
+
+5) Remove the jar from lib and you should see that the constructor is not found.
+
+----------
+1. ERROR in C:\Work\4.4M6\tmp\bug\X.java (at line 3)
+        java.lang.String str = new java.lang.String(obj);
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^
+The constructor String(Object) is undefined
+----------
+
+6) Without the fix even with the jar present in lib one would see the error at step 5.
+
+==================================================
+
+Verified that the problem is resolved with the fix and
+the problem is reproducible without the fix.
+
+The problem is resolved with ecj-I20140303-1130.jar.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2371080</commentid>
+    <comment_count>5</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-03-04 06:23:54 -0500</bug_when>
+    <thetext>Verified for 4.4 M6 using build I20140303-1130.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>236449</attachid>
+            <date>2013-10-14 07:36:00 -0400</date>
+            <delta_ts>2013-10-15 00:54:23 -0400</delta_ts>
+            <desc>Patch changing the ordering of boot and endorsed libs</desc>
+            <filename>jdt-core-batch-main-endorsed.patch</filename>
+            <type>text/plain</type>
+            <size>1659</size>
+            <attacher name="Fabian Schlier">mail</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL3BhdGNoZXMvZ3Jvb3Z5LWVjbGlwc2UtYmF0Y2gtMi4xLjUtMDMvc3JjL21h
+aW4vYXNwZWN0L29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9iYXRjaC9NYWluLmph
+dmEgYi9wYXRjaGVzL2dyb292eS1lY2xpcHNlLWJhdGNoLTIuMS41LTAzL3NyYy9tYWluL2FzcGVj
+dC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYmF0Y2gvTWFpbi5qYXZhCmluZGV4
+IDUyMTk4MmMuLjU4YWYyYmYgMTAwNjQ0Ci0tLSBhL3BhdGNoZXMvZ3Jvb3Z5LWVjbGlwc2UtYmF0
+Y2gtMi4xLjUtMDMvc3JjL21haW4vYXNwZWN0L29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21w
+aWxlci9iYXRjaC9NYWluLmphdmEKKysrIGIvcGF0Y2hlcy9ncm9vdnktZWNsaXBzZS1iYXRjaC0y
+LjEuNS0wMy9zcmMvbWFpbi9hc3BlY3Qvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L2JhdGNoL01haW4uamF2YQpAQCAtNDUzMCwxNCArNDUzMCwxNSBAQAogCSAqIGVudHJpZXMgYXJl
+IHNlYXJjaGVkIGZvciBib3RoIHNvdXJjZXMgYW5kIGJpbmFyaWVzIGV4Y2VwdAogCSAqIHRoZSBz
+b3VyY2VwYXRoIGVudHJpZXMgd2hpY2ggYXJlIHNlYXJjaGVkIGZvciBzb3VyY2VzIG9ubHkuCiAJ
+ICovCi0JYm9vdGNsYXNzcGF0aHMuYWRkQWxsKGVuZG9yc2VkRGlyQ2xhc3NwYXRocyk7Ci0JYm9v
+dGNsYXNzcGF0aHMuYWRkQWxsKGV4dGRpcnNDbGFzc3BhdGhzKTsKLQlib290Y2xhc3NwYXRocy5h
+ZGRBbGwoc291cmNlcGF0aENsYXNzcGF0aHMpOwotCWJvb3RjbGFzc3BhdGhzLmFkZEFsbChjbGFz
+c3BhdGhzKTsKLQljbGFzc3BhdGhzID0gYm9vdGNsYXNzcGF0aHM7Ci0JY2xhc3NwYXRocyA9IEZp
+bGVTeXN0ZW0uQ2xhc3NwYXRoTm9ybWFsaXplci5ub3JtYWxpemUoY2xhc3NwYXRocyk7Ci0JdGhp
+cy5jaGVja2VkQ2xhc3NwYXRocyA9IG5ldyBGaWxlU3lzdGVtLkNsYXNzcGF0aFtjbGFzc3BhdGhz
+LnNpemUoKV07Ci0JY2xhc3NwYXRocy50b0FycmF5KHRoaXMuY2hlY2tlZENsYXNzcGF0aHMpOwor
+CUFycmF5TGlzdCBjcmVhdGVkQ2xhc3NwYXRoID0gbmV3IEFycmF5TGlzdCgpOworCWNyZWF0ZWRD
+bGFzc3BhdGguYWRkQWxsKGVuZG9yc2VkRGlyQ2xhc3NwYXRocyk7CisJY3JlYXRlZENsYXNzcGF0
+aC5hZGRBbGwoYm9vdGNsYXNzcGF0aHMpOworCWNyZWF0ZWRDbGFzc3BhdGguYWRkQWxsKGV4dGRp
+cnNDbGFzc3BhdGhzKTsKKwljcmVhdGVkQ2xhc3NwYXRoLmFkZEFsbChzb3VyY2VwYXRoQ2xhc3Nw
+YXRocyk7CisJY3JlYXRlZENsYXNzcGF0aC5hZGRBbGwoY2xhc3NwYXRocyk7CisJY3JlYXRlZENs
+YXNzcGF0aCA9IEZpbGVTeXN0ZW0uQ2xhc3NwYXRoTm9ybWFsaXplci5ub3JtYWxpemUoY3JlYXRl
+ZENsYXNzcGF0aCk7CisJdGhpcy5jaGVja2VkQ2xhc3NwYXRocyA9IG5ldyBGaWxlU3lzdGVtLkNs
+YXNzcGF0aFtjcmVhdGVkQ2xhc3NwYXRoLnNpemUoKV07CisJY3JlYXRlZENsYXNzcGF0aC50b0Fy
+cmF5KHRoaXMuY2hlY2tlZENsYXNzcGF0aHMpOwogCXRoaXMubG9nZ2VyLmxvZ0NsYXNzcGF0aCh0
+aGlzLmNoZWNrZWRDbGFzc3BhdGhzKTsKIH0KIHByaXZhdGUgc3RhdGljIGJvb2xlYW4gc2hvdWxk
+SWdub3JlT3B0aW9uYWxQcm9ibGVtcyhjaGFyW11bXSBmb2xkZXJOYW1lcywgY2hhcltdIGZpbGVO
+YW1lKSB7
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

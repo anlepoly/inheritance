@@ -1,0 +1,680 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>393192</bug_id>
+          
+          <creation_ts>2012-10-30 15:52:00 -0400</creation_ts>
+          <short_desc>Incomplete type hierarchy with &gt; 10 annotations</short_desc>
+          <delta_ts>2014-01-08 15:31:06 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.2.1</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords>greatbug</keywords>
+          <priority>P2</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>4.3 M6</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Milos Gligoric">milos.gligoric</reporter>
+          <assigned_to name="Jesper Moller">jesper</assigned_to>
+          <cc>anchakrk</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>doug.simon</cc>
+    
+    <cc>gilwooden</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>jim.mayer</cc>
+    
+    <cc>markus.duft</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>maxime.goguillon</cc>
+    
+    <cc>pwebster</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+    
+    <cc>stepper</cc>
+    
+    <cc>tparker</cc>
+          
+          <votes>2</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="55946"
+          type_id="1"
+          status="+"
+          setter="srikanth_sankaran"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2177706</commentid>
+    <comment_count>0</comment_count>
+    <who name="Milos Gligoric">milos.gligoric</who>
+    <bug_when>2012-10-30 15:52:31 -0400</bug_when>
+    <thetext>Pull Up Method refactoring does not delete method from the original class.
+
+Steps to reproduce:
+0. Include three files below in a project in &quot;pullup&quot; package.
+1. Invoke Pull Up refactoring on &quot;pullUp&quot; method in class &quot;PullUpBug&quot; shown below.
+2. The method &quot;pullUp&quot; will not be deleted from &quot;PullUpBug&quot;, which leads to a compilation error.
+3. Note that the method &quot;pullUp&quot; is not deleted from &quot;PullUpBug&quot; even if method &quot;mb&quot; is removed (although there will be no compilation error).
+
+Note the following is relevant (on  my machine): (1) two classes (see below) must be in separate files; (2) there must be 11 methods with annotations (any annotation will be sufficient to reproduce the bug), (3) package-info.java must exist, (4) comment with &quot;@param&quot; must exist on one of the methods.
+
+
+package-info.java
+----------
+package pullup;
+----------
+
+
+PullUpBug.java
+----------
+package pullup;
+
+class PullUpBug extends A {
+
+    void mb() {
+        pullUp();
+    }
+
+    // INVOKE Pull Up REFACTORING ON &quot;pullUp&quot;
+    private void pullUp() {
+    }
+}
+----------
+
+
+A.java
+----------
+package pullup;
+
+class A {
+    @Deprecated
+    void m0() {
+    }
+
+    @Deprecated
+    void m1() {
+    }
+
+    @Deprecated
+    void m2() {
+    }
+
+    @Deprecated
+    void m3() {
+    }
+
+    @Deprecated
+    void m4() {
+    }
+
+    @Deprecated
+    void m5() {
+    }
+
+    @Deprecated
+    void m6() {
+    }
+
+    @Deprecated
+    void m7() {
+    }
+
+    @Deprecated
+    void m8() {
+    }
+
+    @Deprecated
+    void m9() {
+    }
+
+    /**
+     * @param
+     */
+    @Deprecated
+    void m10() {
+    }
+}
+----------</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2179286</commentid>
+    <comment_count>1</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-11-04 16:51:45 -0500</bug_when>
+    <thetext>Wow, thanks a lot for isolating this test case!
+
+The underlying problem is that the type hierarchy on A does not contain the subtype PullUpBug in this case. If I e.g. remove the annotation from A#m0(), then the type hierarchy is complete again, and the Pull Up refactoring behaves as expected.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2179976</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2012-11-06 09:48:58 -0500</bug_when>
+    <thetext>The problem is the call to HierarchyResolver#accept(ICompilationUnit, AccessRestriction) sets the ignoreFurtherInvestigation to true on the CompilationUnitDeclaration &apos;A&apos;. Now I don&apos;t really know why this should be reported as a problem.
+
+And here is the reason why it works when we have less than 10 annotations: code at SourceTypeConverter.java:119, forces a diet parse, which sets the ProblemReporter#referenceContext and this results in the CompilationUnitDeclaraton being tagged with errors (ProblemHandler.java:129).
+
+So, the question is, why should the HierarchyResolver#accept report the problem?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2180014</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-11-06 10:43:33 -0500</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; The problem is the call to HierarchyResolver#accept(ICompilationUnit,
+&gt; AccessRestriction) sets the ignoreFurtherInvestigation to true on the
+&gt; CompilationUnitDeclaration &apos;A&apos;. Now I don&apos;t really know why this should be
+&gt; reported as a problem.
+&gt; 
+&gt; And here is the reason why it works when we have less than 10 annotations:
+&gt; code at SourceTypeConverter.java:119, forces a diet parse, which sets the
+&gt; ProblemReporter#referenceContext 
+
+Where exactly is ProblemReporter#referenceContext assigned?
+From a brief look I only see assignment to Parser#referenceContext.
+
+&gt; and this results in the
+&gt; CompilationUnitDeclaraton being tagged with errors (ProblemHandler.java:129).
+&gt; 
+&gt; So, the question is, why should the HierarchyResolver#accept report the
+&gt; problem?
+
+I assume the main reason for abortDueToInternalError() is to trigger an Abort exception, right? Maybe we can indeed throw without going through the ProblemReporter? Did you see whether AbortCompilation was thrown or AbortType?
+
+Would that fix the issue?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2180355</commentid>
+    <comment_count>4</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2012-11-07 02:00:53 -0500</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; Where exactly is ProblemReporter#referenceContext assigned?
+&gt; From a brief look I only see assignment to Parser#referenceContext.
+
+	Parser.problemReporter() line: 10304	
+	JavadocParser(AbstractCommentParser).parseParam() line: 874	
+	JavadocParser.parseParam() line: 708	
+	JavadocParser.parseTag(int) line: 607	
+	JavadocParser(AbstractCommentParser).commentParse() line: 241	
+	JavadocParser.checkDeprecation(int) line: 100	
+	Parser.checkComment() line: 1139	
+	Parser.consumeModifiers() line: 4898	
+	Parser.consumeRule(int) line: 6436	
+	Parser.parse() line: 9683	
+	Parser.parse(ICompilationUnit, CompilationResult, int, int) line: 9922	
+	Parser.parse(ICompilationUnit, CompilationResult) line: 9879	
+	Parser.dietParse(ICompilationUnit, CompilationResult) line: 8445
+
+&gt; I assume the main reason for abortDueToInternalError() is to trigger an
+&gt; Abort exception, right? Maybe we can indeed throw without going through the
+&gt; ProblemReporter? Did you see whether AbortCompilation was thrown or
+&gt; AbortType?
+&gt; 
+&gt; Would that fix the issue?
+
+It&apos;s &quot;Abort&quot;. We mark the severity with Fatal and that make the ProblemHandler#handle() choose Abort from based on the stopOnFirstError policy. And I don&apos;t see abort exception being thrown without going through the problem reporter anywhere. Did I miss something?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2188366</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2012-11-28 05:54:00 -0500</bug_when>
+    <thetext>*** Bug 394957 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2198711</commentid>
+    <comment_count>6</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-01-03 15:11:14 -0500</bug_when>
+    <thetext>*** Bug 362775 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2200259</commentid>
+    <comment_count>7</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-01-08 11:25:39 -0500</bug_when>
+    <thetext>*** Bug 392171 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2219134</commentid>
+    <comment_count>8</comment_count>
+    <who name="Markus Duft">markus.duft</who>
+    <bug_when>2013-02-20 04:56:54 -0500</bug_when>
+    <thetext>we also have a problem with incomplete type hierarchies. the interesting thing here is, that once i open the missing type in a java editor in eclipse, it will be part of the hierarchy from then on. Before opening the file it is missing. Is this the same problem? The hierarchy in question is regarding to JUnit4 tests, so there are a lot of annotations here and there ;)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2224705</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-01 12:20:13 -0500</bug_when>
+    <thetext>This has come up quite a few times. We need to take a look at the hardcoded
+number there and see what the motivation was and what the alternatives
+could be etc. Jesper, this could be an interesting task to work on. TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2225961</commentid>
+    <comment_count>10</comment_count>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-04 19:02:29 -0500</bug_when>
+    <thetext>Ok, I think I understand the bug now.
+
+The optimization regarding the 10 annotations is a trade-off between the speed of the parser and the speed of decoding the stored annotation information from the compiled information, as long as full information is not required. I&apos;m not able to tell if this is still a valid optimization or not, as I lack the project history / knowledge of specific performance tests.
+The net effect is that if there are more than 10 annotations, an actual parse is carried out, and this causes the SourceTypeConverter&apos;s problemReporter.referenceContext to point to the parsed compilation unit. This is due to the reporting of the incorrect Javadoc warning for the missing text in the @param annotation in pullup.A.m10. JavadocParser calls sourceParser.problemReporter() to prepare for reporting, but the call is never made (inside javadocMissingParamName), since compiler options suppress this warning in this case. Thus, Thus, the referenceContext is now set, and the parse returns.
+
+Next up, during hierarchy computation, the supertype is tested for deprecation (org.eclipse.jdt.internal.compiler.ast.TypeReference.internalResolveType(Scope)), and the package-info.java is fetched for examination. However, HierarchyResolver doesn&apos;t want to visit other compilation units somehow, and so reports an error. Since the problemReporter is hooked up with the compilationUnit, this results in the class being marked as in error, and the type hierarchy is never completed.
+
+Possible, but unlikely fix #0: Remove &quot;more than 10 annotations&quot;-test and live with the (possible ??) performance degradation. Haven&apos;t tried this.
+
+Possible, but unlikely fix #1a: Fix the setting of referenceContext during problemReporting. Why can&apos;t the referenceContext somehow follow the call, not the &quot;set by side-effect&quot; ProblemReporter. Haven&apos;t tried this approach.
+Possible fix #1b: Make sure that methods which &apos;may&apos; report problems also clear ProblemReporter.referenceContext. Haven&apos;t tried this either.
+
+Possible fix #2: Live with this clumsy side effect of the error reporting during parse, and simply null this.problemReporter.referenceContext inside SourceTypeConverter, after dietParse (apprx. line 124, (BETA_JAVA8 branch)). That way, errors found during hierarchy examination won&apos;t mark CU as bad. Tried this, it works.
+
+Possible fix #3: Allow HierarchyResolver.visit to visit other compilation units, even if it&apos;s only &apos;package-info.java&apos;. Tried this as well, it works.
+
+Will be attaching test case and fix #2 and #3 for evaluation.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2225964</commentid>
+    <comment_count>11</comment_count>
+      <attachid>227907</attachid>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-04 19:09:23 -0500</bug_when>
+    <thetext>Created attachment 227907
+Test as addendum to TypeHierarchyTests
+
+Using the original example - thanks again, Milos!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2225966</commentid>
+    <comment_count>12</comment_count>
+      <attachid>227908</attachid>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-04 19:11:20 -0500</bug_when>
+    <thetext>Created attachment 227908
+Patch for fix #2
+
+Simply make sure the referenceContext is nulled after the dietParse</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2225968</commentid>
+    <comment_count>13</comment_count>
+      <attachid>227910</attachid>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-04 19:17:18 -0500</bug_when>
+    <thetext>Created attachment 227910
+Patch for fix #3 - simply allow the visit to package-info.java</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2226175</commentid>
+    <comment_count>14</comment_count>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-05 08:19:49 -0500</bug_when>
+    <thetext>Please review which approach (#2 or #3) is the better.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2227069</commentid>
+    <comment_count>15</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-06 16:36:51 -0500</bug_when>
+    <thetext>I think we can settle for fix#2 if it is found to solve the issues reported in
+the duplicates Bug 394957, Bug 362775 Bug 392171. Could you add junits for these
+and see if they pass alright ? TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2227088</commentid>
+    <comment_count>16</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-06 17:13:26 -0500</bug_when>
+    <thetext>Is it more defensive to clear the reference context at the end of 
+Parser.parse() ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2227217</commentid>
+    <comment_count>17</comment_count>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-07 03:53:56 -0500</bug_when>
+    <thetext>(In reply to comment #16)
+&gt; Is it more defensive to clear the reference context at the end of 
+&gt; Parser.parse() ?
+
+I&apos;m not sure how to judge which condition is more problematic - that the HierarchyResolver reports problems like that, or that the problems are propagated, as I don&apos;t know the intended invariant conditions for ProblemReporter.referenceContext.
+
+One could argue that the real problem is that the AbortException ends up marking the referenceContext as in error, since this abort is really from something entirely external.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2227311</commentid>
+    <comment_count>18</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-07 06:41:58 -0500</bug_when>
+    <thetext>(In reply to comment #17)
+&gt; (In reply to comment #16)
+&gt; &gt; Is it more defensive to clear the reference context at the end of 
+&gt; &gt; Parser.parse() ?
+
+
+Rephrased: For fix#2, Is it more defensive to clear the reference context 
+at the end of Parser.parse() ?
+
+&gt; I&apos;m not sure how to judge which condition is more problematic - that the
+&gt; HierarchyResolver reports problems like that, 
+
+This looks very deliberate, though I don&apos;t know the background.
+
+or that the problems are
+&gt; propagated, as I don&apos;t know the intended invariant conditions for
+&gt; ProblemReporter.referenceContext.
+
+ProblemReporter.referenceContext is supposed to be &quot;volatile&quot; - we don&apos;t
+have the infrastructure in place to push/pop. It is a reasonable guess
+that in the absence of such facility, refresh everytime, use and clear
+is the chosen strategy - That strategy fails in the current scenario because
+the agent that clears it i.e ProblemHandler.handle never gets reached.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2227746</commentid>
+    <comment_count>19</comment_count>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-07 16:38:02 -0500</bug_when>
+    <thetext>(In reply to comment #18)
+&gt; (In reply to comment #17)
+&gt; &gt; (In reply to comment #16)
+&gt; &gt; &gt; Is it more defensive to clear the reference context at the end of
+&gt; &gt; &gt; Parser.parse() ?
+&gt; 
+&gt; 
+&gt; Rephrased: For fix#2, Is it more defensive to clear the reference context
+&gt; at the end of Parser.parse() ?
+
+Given the volatility of the referenceExpression, I&apos;d say yes. After all, it has done its job at that stage.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2227819</commentid>
+    <comment_count>20</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-03-07 19:30:54 -0500</bug_when>
+    <thetext>Fix and tests released here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=c761974440acb731c195132472f655f4e933900d
+
+Thanks Jesper.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2227928</commentid>
+    <comment_count>21</comment_count>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-08 05:25:02 -0500</bug_when>
+    <thetext>*** Bug 392171 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2227959</commentid>
+    <comment_count>22</comment_count>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-08 06:50:30 -0500</bug_when>
+    <thetext>*** Bug 362775 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2228345</commentid>
+    <comment_count>23</comment_count>
+    <who name="Jesper Moller">jesper</who>
+    <bug_when>2013-03-08 16:50:48 -0500</bug_when>
+    <thetext>*** Bug 394957 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2229337</commentid>
+    <comment_count>24</comment_count>
+    <who name="ANIRBAN CHAKRABORTY">anchakrk</who>
+    <bug_when>2013-03-12 04:23:50 -0400</bug_when>
+    <thetext>VERIFIED for build eclipse-SDK-I20130310-2000.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2347162</commentid>
+    <comment_count>25</comment_count>
+    <who name="Terry Parker">tparker</who>
+    <bug_when>2014-01-08 15:31:06 -0500</bug_when>
+    <thetext>This change introduced bug 407376.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>227907</attachid>
+            <date>2013-03-04 19:09:00 -0500</date>
+            <delta_ts>2013-03-04 19:09:23 -0500</delta_ts>
+            <desc>Test as addendum to TypeHierarchyTests</desc>
+            <filename>test-patch.txt</filename>
+            <type>text/plain</type>
+            <size>5032</size>
+            <attacher name="Jesper Moller">jesper</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZS50
+ZXN0cy5tb2RlbApkaWZmIC0tZ2l0IHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9tb2Rl
+bC9UeXBlSGllcmFyY2h5VGVzdHMuamF2YSBzcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMv
+bW9kZWwvVHlwZUhpZXJhcmNoeVRlc3RzLmphdmEKaW5kZXggYTBmNjg4ZS4uNTExY2ViMiAxMDA2
+NDQKLS0tIHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9tb2RlbC9UeXBlSGllcmFyY2h5
+VGVzdHMuamF2YQorKysgc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21vZGVsL1R5cGVI
+aWVyYXJjaHlUZXN0cy5qYXZhCkBAIC0xLDUgKzEsNSBAQAogLyoqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioKLSAqIENvcHlyaWdodCAoYykgMjAwMCwgMjAxMiBJQk0gQ29ycG9yYXRpb24gYW5kIG90aGVy
+cy4KKyAqIENvcHlyaWdodCAoYykgMjAwMCwgMjAxMyBJQk0gQ29ycG9yYXRpb24gYW5kIG90aGVy
+cy4KICAqIEFsbCByaWdodHMgcmVzZXJ2ZWQuIFRoaXMgcHJvZ3JhbSBhbmQgdGhlIGFjY29tcGFu
+eWluZyBtYXRlcmlhbHMKICAqIGFyZSBtYWRlIGF2YWlsYWJsZSB1bmRlciB0aGUgdGVybXMgb2Yg
+dGhlIEVjbGlwc2UgUHVibGljIExpY2Vuc2UgdjEuMAogICogd2hpY2ggYWNjb21wYW5pZXMgdGhp
+cyBkaXN0cmlidXRpb24sIGFuZCBpcyBhdmFpbGFibGUgYXQKQEAgLTgsMTIgKzgsMTUgQEAKICAq
+IENvbnRyaWJ1dG9yczoKICAqICAgICBJQk0gQ29ycG9yYXRpb24gLSBpbml0aWFsIEFQSSBhbmQg
+aW1wbGVtZW50YXRpb24KICAqICAgICBTdGVwaGFuIEhlcnJtYW5uIC0gY29udHJpYnV0aW9uIGZv
+ciBCdWcgMzAwNTc2IC0gTlBFIENvbXB1dGluZyB0eXBlIGhpZXJhcmNoeSB3aGVuIGNvbXBsaWFu
+Y2UgZG9lc24ndCBtYXRjaCBsaWJyYXJpZXMKKyAqICAgICBKZXNwZXIgUyBNb2xsZXIgLSBjb250
+cmlidXRpb25zIGZvciBidWcgMzkzMTkyIC0gSW5jb21wbGV0ZSB0eXBlIGhpZXJhcmNoeSB3aXRo
+ID4gMTAgYW5ub3RhdGlvbnMKICAqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqLwogcGFja2FnZSBvcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5tb2RlbDsKIAogaW1wb3J0IGphdmEuaW8uRmlsZTsKIGlt
+cG9ydCBqYXZhLmlvLklPRXhjZXB0aW9uOwogaW1wb3J0IGphdmEudXRpbC5IYXNoTWFwOworCitp
+bXBvcnQganVuaXQuZnJhbWV3b3JrLlRlc3Q7CiAKIGltcG9ydCBvcmcuZWNsaXBzZS5jb3JlLnJl
+c291cmNlcy5JRmlsZTsKIGltcG9ydCBvcmcuZWNsaXBzZS5jb3JlLnJlc291cmNlcy5JUmVzb3Vy
+Y2U7CkBAIC0yMiwxMyArMjUsMjIgQEAKIGltcG9ydCBvcmcuZWNsaXBzZS5jb3JlLnJ1bnRpbWUu
+TnVsbFByb2dyZXNzTW9uaXRvcjsKIGltcG9ydCBvcmcuZWNsaXBzZS5jb3JlLnJ1bnRpbWUuT3Bl
+cmF0aW9uQ2FuY2VsZWRFeGNlcHRpb247CiBpbXBvcnQgb3JnLmVjbGlwc2UuY29yZS5ydW50aW1l
+LlBhdGg7Ci0KLWltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS4qOworaW1wb3J0IG9yZy5lY2xp
+cHNlLmpkdC5jb3JlLkZsYWdzOworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLklDbGFzc0Zp
+bGU7CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuSUNsYXNzcGF0aEVudHJ5OworaW1wb3J0
+IG9yZy5lY2xpcHNlLmpkdC5jb3JlLklDb21waWxhdGlvblVuaXQ7CitpbXBvcnQgb3JnLmVjbGlw
+c2UuamR0LmNvcmUuSUphdmFFbGVtZW50OworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLklK
+YXZhUHJvamVjdDsKK2ltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5JUGFja2FnZUZyYWdtZW50
+OworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLklQYWNrYWdlRnJhZ21lbnRSb290OworaW1w
+b3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLklSZWdpb247CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0
+LmNvcmUuSVR5cGU7CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuSVR5cGVIaWVyYXJjaHk7
+CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuSmF2YUNvcmU7CitpbXBvcnQgb3JnLmVjbGlw
+c2UuamR0LmNvcmUuSmF2YU1vZGVsRXhjZXB0aW9uOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5j
+b3JlLnRlc3RzLm1vZGVsLlNlYXJjaFRlc3RzLldhaXRpbmdKb2I7CiBpbXBvcnQgb3JnLmVjbGlw
+c2UuamR0LmNvcmUudGVzdHMubW9kZWwuU2VtYXBob3JlLlRpbWVPdXRFeGNlcHRpb247CiBpbXBv
+cnQgb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMudXRpbC5VdGlsOwotCi1pbXBvcnQganVuaXQu
+ZnJhbWV3b3JrLlRlc3Q7CiAKIHB1YmxpYyBjbGFzcyBUeXBlSGllcmFyY2h5VGVzdHMgZXh0ZW5k
+cyBNb2RpZnlpbmdSZXNvdXJjZVRlc3RzIHsKIAkvKioKQEAgLTI2MDQsNCArMjYxNiw5MSBAQAog
+CQkJZGVsZXRlUHJvamVjdChwcmopOwogCX0JCiB9Ci19CisvL0J1ZyAzOTMxOTIgLS0gSW5jb21w
+bGV0ZSB0eXBlIGhpZXJhcmNoeSB3aXRoID4gMTAgYW5ub3RhdGlvbnMKK3B1YmxpYyB2b2lkIHRl
+c3RCdWczOTMxOTIoKSB0aHJvd3MgQ29yZUV4Y2VwdGlvbiB7CisJSUphdmFQcm9qZWN0IHByaiA9
+IG51bGw7CisJdHJ5IHsKKwkJcHJqID0gY3JlYXRlSmF2YVByb2plY3QoIkJ1ZzM5MzE5MiIsIG5l
+dyBTdHJpbmdbXSB7InNyYyJ9LCBuZXcgU3RyaW5nW10geyJKQ0xfTElCIn0sICJiaW4iLCAiMS41
+Iik7CisJCWNyZWF0ZUZvbGRlcigiL0J1ZzM5MzE5Mi9zcmMvcHVsbHVwIik7CisJCWNyZWF0ZUZp
+bGUoIi9CdWczOTMxOTIvc3JjL3B1bGx1cC9BLmphdmEiLAorCQkJCSJwYWNrYWdlIHB1bGx1cDtc
+biIgKyAKKwkJCQkiXG4iICsgCisJCQkJImNsYXNzIEEge1xuIiArIAorCQkJCSIgICAgQERlcHJl
+Y2F0ZWRcbiIgKyAKKwkJCQkiICAgIHZvaWQgbTAoKSB7XG4iICsgCisJCQkJIiAgICB9XG4iICsg
+CisJCQkJIlxuIiArIAorCQkJCSIgICAgQERlcHJlY2F0ZWRcbiIgKyAKKwkJCQkiICAgIHZvaWQg
+bTEoKSB7XG4iICsgCisJCQkJIiAgICB9XG4iICsgCisJCQkJIlxuIiArIAorCQkJCSIgICAgQERl
+cHJlY2F0ZWRcbiIgKyAKKwkJCQkiICAgIHZvaWQgbTIoKSB7XG4iICsgCisJCQkJIiAgICB9XG4i
+ICsgCisJCQkJIlxuIiArIAorCQkJCSIgICAgQERlcHJlY2F0ZWRcbiIgKyAKKwkJCQkiICAgIHZv
+aWQgbTMoKSB7XG4iICsgCisJCQkJIiAgICB9XG4iICsgCisJCQkJIlxuIiArIAorCQkJCSIgICAg
+QERlcHJlY2F0ZWRcbiIgKyAKKwkJCQkiICAgIHZvaWQgbTQoKSB7XG4iICsgCisJCQkJIiAgICB9
+XG4iICsgCisJCQkJIlxuIiArIAorCQkJCSIgICAgQERlcHJlY2F0ZWRcbiIgKyAKKwkJCQkiICAg
+IHZvaWQgbTUoKSB7XG4iICsgCisJCQkJIiAgICB9XG4iICsgCisJCQkJIlxuIiArIAorCQkJCSIg
+ICAgQERlcHJlY2F0ZWRcbiIgKyAKKwkJCQkiICAgIHZvaWQgbTYoKSB7XG4iICsgCisJCQkJIiAg
+ICB9XG4iICsgCisJCQkJIlxuIiArIAorCQkJCSIgICAgQERlcHJlY2F0ZWRcbiIgKyAKKwkJCQki
+ICAgIHZvaWQgbTcoKSB7XG4iICsgCisJCQkJIiAgICB9XG4iICsgCisJCQkJIlxuIiArIAorCQkJ
+CSIgICAgQERlcHJlY2F0ZWRcbiIgKyAKKwkJCQkiICAgIHZvaWQgbTgoKSB7XG4iICsgCisJCQkJ
+IiAgICB9XG4iICsgCisJCQkJIlxuIiArIAorCQkJCSIgICAgQERlcHJlY2F0ZWRcbiIgKyAKKwkJ
+CQkiICAgIHZvaWQgbTkoKSB7XG4iICsgCisJCQkJIiAgICB9XG4iICsgCisJCQkJIlxuIiArIAor
+CQkJCSIgICAgLyoqXG4iICsgCisJCQkJIiAgICAgKiBAcGFyYW1cbiIgKyAKKwkJCQkiICAgICAq
+L1xuIiArIAorCQkJCSIgICAgQERlcHJlY2F0ZWRcbiIgKyAKKwkJCQkiICAgIHZvaWQgbTEwKCkg
+e1xuIiArIAorCQkJCSIgICAgfVxuIiArIAorCQkJCSJ9XG4iICsgCisJCQkJIlxuIik7CisJCWNy
+ZWF0ZUZpbGUoIi9CdWczOTMxOTIvc3JjL3B1bGx1cC9wYWNrYWdlLWluZm8uamF2YSIsCisJCQkJ
+InBhY2thZ2UgcHVsbHVwO1xuIiArIAorCQkJCSJcbiIpOworCQljcmVhdGVGaWxlKCIvQnVnMzkz
+MTkyL3NyYy9wdWxsdXAvUHVsbFVwQnVnLmphdmEiLAorCQkJCSJwYWNrYWdlIHB1bGx1cDtcbiIg
+KyAKKwkJCQkiXG4iICsgCisJCQkJImNsYXNzIFB1bGxVcEJ1ZyBleHRlbmRzIEEge1xuIiArIAor
+CQkJCSJcbiIgKyAKKwkJCQkiICAgIHZvaWQgbWIoKSB7XG4iICsgCisJCQkJIiAgICAgICAgcHVs
+bFVwKCk7XG4iICsgCisJCQkJIiAgICB9XG4iICsgCisJCQkJIlxuIiArIAorCQkJCSIgICAgLy8g
+SU5WT0tFIFB1bGwgVXAgUkVGQUNUT1JJTkcgT04gXCJwdWxsVXBcIiwgb3IgdHlwZSBIaWVyYXJj
+aHkgb24gQVxuIiArIAorCQkJCSIgICAgcHJpdmF0ZSB2b2lkIHB1bGxVcCgpIHtcbiIgKyAKKwkJ
+CQkiICAgIH1cbiIgKyAKKwkJCQkifVxuIik7CisJCUlUeXBlIGEgPSBnZXRDb21waWxhdGlvblVu
+aXQoIkJ1ZzM5MzE5MiIsICJzcmMiLCAicHVsbHVwIiwgIkEuamF2YSIpLmdldFR5cGUoIkEiKTsK
+KwkJSVR5cGVIaWVyYXJjaHkgaGllcmFyY2h5ID0gYS5uZXdUeXBlSGllcmFyY2h5KG5ldyBOdWxs
+UHJvZ3Jlc3NNb25pdG9yKCkpOworCQlhc3NlcnRIaWVyYXJjaHlFcXVhbHMoCisJCQkJIkZvY3Vz
+OiBBIFtpbiBBLmphdmEgW2luIHB1bGx1cCBbaW4gc3JjIFtpbiBCdWczOTMxOTJdXV1dXG4iICsg
+CisJCQkJIlN1cGVyIHR5cGVzOlxuIiArIAorCQkJCSIgIE9iamVjdCBbaW4gT2JqZWN0LmNsYXNz
+IFtpbiBqYXZhLmxhbmcgW2luICIrIGdldEV4dGVybmFsSkNMUGF0aFN0cmluZygpICsgIl1dXVxu
+IiArCisJCQkJIlN1YiB0eXBlczpcbiIgKworCQkJCSIgIFB1bGxVcEJ1ZyBbaW4gUHVsbFVwQnVn
+LmphdmEgW2luIHB1bGx1cCBbaW4gc3JjIFtpbiBCdWczOTMxOTJdXV1dXG4iLAorCQkJCWhpZXJh
+cmNoeSk7CisJfSBmaW5hbGx5IHsKKwkJaWYgKHByaiAhPSBudWxsKQorCQkJZGVsZXRlUHJvamVj
+dChwcmopOworCX0JCit9fQ==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>227908</attachid>
+            <date>2013-03-04 19:11:00 -0500</date>
+            <delta_ts>2013-03-04 19:11:20 -0500</delta_ts>
+            <desc>Patch for fix #2</desc>
+            <filename>fix-2.txt</filename>
+            <type>text/plain</type>
+            <size>1956</size>
+            <attacher name="Jesper Moller">jesper</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZQpk
+aWZmIC0tZ2l0IG1vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIv
+U291cmNlVHlwZUNvbnZlcnRlci5qYXZhIG1vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9j
+b21waWxlci9wYXJzZXIvU291cmNlVHlwZUNvbnZlcnRlci5qYXZhCmluZGV4IGZmYWU0MzMuLmQz
+NWFiMzYgMTAwNjQ0Ci0tLSBtb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIv
+cGFyc2VyL1NvdXJjZVR5cGVDb252ZXJ0ZXIuamF2YQorKysgbW9kZWwvb3JnL2VjbGlwc2UvamR0
+L2ludGVybmFsL2NvbXBpbGVyL3BhcnNlci9Tb3VyY2VUeXBlQ29udmVydGVyLmphdmEKQEAgLTEs
+NSArMSw1IEBACiAvKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKgotICogQ29weXJpZ2h0IChjKSAyMDAw
+LCAyMDExIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgorICogQ29weXJpZ2h0IChjKSAyMDAw
+LCAyMDEzIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgogICogQWxsIHJpZ2h0cyByZXNlcnZl
+ZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVyaWFscwogICogYXJlIG1h
+ZGUgYXZhaWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0aGUgRWNsaXBzZSBQdWJsaWMgTGljZW5z
+ZSB2MS4wCiAgKiB3aGljaCBhY2NvbXBhbmllcyB0aGlzIGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2
+YWlsYWJsZSBhdApAQCAtMTAsNiArMTAsOCBAQAogICogICAgIFN0ZXBoYW4gSGVycm1hbm4gPHN0
+ZXBoYW5AY3MudHUtYmVybGluLmRlPiAtIENvbnRyaWJ1dGlvbnMgZm9yCiAgKiAgICAgCQkJCQkJ
+CQlCdWcgMzIwODQxIC0gVHlwZUNvbnZlcnRlcnMgZG9uJ3Qgc2V0IGVuY2xvc2luZ1R5cGUKICAq
+ICAgICAJCQkJCQkJCUJ1ZyAzNTM0NzQgLSB0eXBlIGNvbnZlcnRlcnMgc2hvdWxkIGluY2x1ZGUg
+bW9yZSBhbm5vdGF0aW9ucworICogICAgIEplc3BlciBTIE1vbGxlciAtIENvbnRyaWJ1dGlvbnMg
+Zm9yCisgKgkJCQkJCQkJCWJ1ZyAzOTMxOTIgLSBJbmNvbXBsZXRlIHR5cGUgaGllcmFyY2h5IHdp
+dGggPiAxMCBhbm5vdGF0aW9ucwogICoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKiovCiBwYWNrYWdlIG9y
+Zy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5wYXJzZXI7CiAKQEAgLTEyMCw3ICsxMjIs
+OSBAQAogCQkJLy8gSWYgbW9yZSB0aGFuIDEwIGFubm90YXRpb25zLCBkaWV0IHBhcnNlIGFzIHRo
+aXMgaXMgZmFzdGVyLCBidXQgbm90IGlmCiAJCQkvLyB0aGUgY2xpZW50IHdhbnRzIGxvY2FsIGFu
+ZCBhbm9ueW1vdXMgdHlwZXMgdG8gYmUgY29udmVydGVkIChodHRwczovL2J1Z3MuZWNsaXBzZS5v
+cmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9MjU0NzM4KSAKIAkJCWlmICgodGhpcy5mbGFncyAmIExP
+Q0FMX1RZUEUpID09IDApIHsKLQkJCQlyZXR1cm4gbmV3IFBhcnNlcih0aGlzLnByb2JsZW1SZXBv
+cnRlciwgdHJ1ZSkuZGlldFBhcnNlKHRoaXMuY3UsIGNvbXBpbGF0aW9uUmVzdWx0KTsKKwkJCQlD
+b21waWxhdGlvblVuaXREZWNsYXJhdGlvbiBjb21waWxhdGlvblVuaXREZWNsYXJhdGlvbiA9IG5l
+dyBQYXJzZXIodGhpcy5wcm9ibGVtUmVwb3J0ZXIsIHRydWUpLmRpZXRQYXJzZSh0aGlzLmN1LCBj
+b21waWxhdGlvblJlc3VsdCk7CisJCQkJdGhpcy5wcm9ibGVtUmVwb3J0ZXIucmVmZXJlbmNlQ29u
+dGV4dCA9IG51bGw7IC8vIE51bGwgdGhpcyBzbyB3ZSB3b24ndCBlc2NhbGF0ZSBwcm9ibGVtcyBu
+ZWVkbGVzc2x5IChidWcgMzkzMTkyKQorCQkJCXJldHVybiBjb21waWxhdGlvblVuaXREZWNsYXJh
+dGlvbjsKIAkJCX0KIAkJfQog
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>227910</attachid>
+            <date>2013-03-04 19:17:00 -0500</date>
+            <delta_ts>2013-03-04 19:17:18 -0500</delta_ts>
+            <desc>Patch for fix #3 - simply allow the visit to package-info.java</desc>
+            <filename>clipboard.txt</filename>
+            <type>text/plain</type>
+            <size>2912</size>
+            <attacher name="Jesper Moller">jesper</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZQpk
+aWZmIC0tZ2l0IG1vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL2hpZXJhcmNoeS9I
+aWVyYXJjaHlSZXNvbHZlci5qYXZhIG1vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3Jl
+L2hpZXJhcmNoeS9IaWVyYXJjaHlSZXNvbHZlci5qYXZhCmluZGV4IDMwZWUyMDEuLjhjZGFiNDkg
+MTAwNjQ0Ci0tLSBtb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29yZS9oaWVyYXJjaHkv
+SGllcmFyY2h5UmVzb2x2ZXIuamF2YQorKysgbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFs
+L2NvcmUvaGllcmFyY2h5L0hpZXJhcmNoeVJlc29sdmVyLmphdmEKQEAgLTEsNSArMSw1IEBACiAv
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKgotICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDEyIElCTSBD
+b3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgorICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDEzIElCTSBD
+b3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgogICogQWxsIHJpZ2h0cyByZXNlcnZlZC4gVGhpcyBwcm9n
+cmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVyaWFscwogICogYXJlIG1hZGUgYXZhaWxhYmxl
+IHVuZGVyIHRoZSB0ZXJtcyBvZiB0aGUgRWNsaXBzZSBQdWJsaWMgTGljZW5zZSB2MS4wCiAgKiB3
+aGljaCBhY2NvbXBhbmllcyB0aGlzIGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2YWlsYWJsZSBhdApA
+QCAtOCw2ICs4LDcgQEAKICAqIENvbnRyaWJ1dG9yczoKICAqICAgICBJQk0gQ29ycG9yYXRpb24g
+LSBpbml0aWFsIEFQSSBhbmQgaW1wbGVtZW50YXRpb24KICAqICAgICBTdGVwaGFuIEhlcnJtYW5u
+IC0gY29udHJpYnV0aW9uIGZvciBCdWcgMzAwNTc2IC0gTlBFIENvbXB1dGluZyB0eXBlIGhpZXJh
+cmNoeSB3aGVuIGNvbXBsaWFuY2UgZG9lc24ndCBtYXRjaCBsaWJyYXJpZXMKKyAqICAgICBKZXNw
+ZXIgUyBNb2xsZXIgLSBjb250cmlidXRpb25zIGZvciBidWcgMzkzMTkyIC0gSW5jb21wbGV0ZSB0
+eXBlIGhpZXJhcmNoeSB3aXRoID4gMTAgYW5ub3RhdGlvbnMKICAqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqLwogcGFja2FnZSBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29yZS5oaWVyYXJjaHk7CiAK
+QEAgLTU0LDYgKzU1LDcgQEAKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGls
+ZXIucGFyc2VyLlBhcnNlcjsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGls
+ZXIucGFyc2VyLlNvdXJjZVR5cGVDb252ZXJ0ZXI7CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0Lmlu
+dGVybmFsLmNvbXBpbGVyLnByb2JsZW0uQWJvcnRDb21waWxhdGlvbjsKK2ltcG9ydCBvcmcuZWNs
+aXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIucHJvYmxlbS5BYm9ydENvbXBpbGF0aW9uVW5pdDsK
+IGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIucHJvYmxlbS5EZWZhdWx0
+UHJvYmxlbUZhY3Rvcnk7CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVy
+LnByb2JsZW0uUHJvYmxlbVJlcG9ydGVyOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5h
+bC5jb21waWxlci51dGlsLk1lc3NhZ2VzOwpAQCAtMTE5LDYgKzEyMSwyMiBAQAogICogQHBhcmFt
+IHNvdXJjZVVuaXQKICAqLwogcHVibGljIHZvaWQgYWNjZXB0KElDb21waWxhdGlvblVuaXQgc291
+cmNlVW5pdCwgQWNjZXNzUmVzdHJpY3Rpb24gYWNjZXNzUmVzdHJpY3Rpb24pIHsKKwlpZiAoQ2hh
+ck9wZXJhdGlvbi5lcXVhbHMoc291cmNlVW5pdC5nZXRNYWluVHlwZU5hbWUoKSwgVHlwZUNvbnN0
+YW50cy5QQUNLQUdFX0lORk9fTkFNRSkpIHsKKwkJQ29tcGlsYXRpb25SZXN1bHQgdW5pdFJlc3Vs
+dCA9IG5ldyBDb21waWxhdGlvblJlc3VsdChzb3VyY2VVbml0LCAxLCAxLCB0aGlzLm9wdGlvbnMu
+bWF4UHJvYmxlbXNQZXJVbml0KTsKKwkJdHJ5IHsKKwkJCVBhcnNlciBwYXJzZXIgPSBuZXcgUGFy
+c2VyKHRoaXMubG9va3VwRW52aXJvbm1lbnQucHJvYmxlbVJlcG9ydGVyLCB0cnVlKTsKKwkJCUNv
+bXBpbGF0aW9uVW5pdERlY2xhcmF0aW9uIHBhcnNlZFVuaXQgPSBwYXJzZXIuZGlldFBhcnNlKHNv
+dXJjZVVuaXQsIHVuaXRSZXN1bHQpOworCQkJdGhpcy5sb29rdXBFbnZpcm9ubWVudC5idWlsZFR5
+cGVCaW5kaW5ncyhwYXJzZWRVbml0LCBhY2Nlc3NSZXN0cmljdGlvbik7CisJCQl0aGlzLmxvb2t1
+cEVudmlyb25tZW50LmNvbXBsZXRlVHlwZUJpbmRpbmdzKHBhcnNlZFVuaXQsIHRydWUpOworCQkJ
+cmV0dXJuOworCQl9IGNhdGNoIChBYm9ydENvbXBpbGF0aW9uVW5pdCBlKSB7CisJCQkvLyBhdCB0
+aGlzIHBvaW50LCBjdXJyZW50Q29tcGlsYXRpb25Vbml0UmVzdWx0IG1heSBub3QgYmUgc291cmNl
+VW5pdCwgYnV0IHNvbWUgb3RoZXIKKwkJCS8vIG9uZSByZXF1ZXN0ZWQgZnVydGhlciBhbG9uZyB0
+byByZXNvbHZlIHNvdXJjZVVuaXQuCisJCQlpZiAodW5pdFJlc3VsdC5jb21waWxhdGlvblVuaXQg
+IT0gc291cmNlVW5pdCkgeworCQkJCXRocm93IGU7IC8vIHdhbnQgdG8gYWJvcnQgZW5jbG9zaW5n
+IHJlcXVlc3QgdG8gY29tcGlsZQorCQkJfQorCQl9CisJfQogCS8vU3lzdGVtLm91dC5wcmludGxu
+KCJDYW5ub3QgYWNjZXB0IGNvbXBpbGF0aW9uIHVuaXRzIGluc2lkZSB0aGUgSGllcmFyY2h5UmVz
+b2x2ZXIuIik7CiAJdGhpcy5sb29rdXBFbnZpcm9ubWVudC5wcm9ibGVtUmVwb3J0ZXIuYWJvcnRE
+dWVUb0ludGVybmFsRXJyb3IoCiAJCW5ldyBTdHJpbmdCdWZmZXIoTWVzc2FnZXMuYWNjZXB0X2Nh
+bm5vdCk=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

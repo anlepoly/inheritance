@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>462083</bug_id>
+          
+          <creation_ts>2015-03-13 12:25:00 -0400</creation_ts>
+          <short_desc>[1.8][inference] Java 8 generic return type mismatch with interface involving type parameter.</short_desc>
+          <delta_ts>2015-03-17 10:23:49 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/43836</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=6e5ceb8786f5ada5e37df504e04cd8d390bc4075</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M6</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Bruno Felaco">cfelaco</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2531122</commentid>
+    <comment_count>0</comment_count>
+    <who name="Bruno Felaco">cfelaco</who>
+    <bug_when>2015-03-13 12:25:30 -0400</bug_when>
+    <thetext>I can&apos;t come up with a good summary line for this one.  The bug involves an plain-old interface, 2 other interfaces that use the first interface as the base type for one of their generic type parameters, and a concrete class which extends one of the interfaces, and uses the other 2 as type parameters with correlations between them.  Here is the code which demos the issue:
+
+public abstract class Java8InterfaceTest
+{
+	public static interface Entity {}
+
+	public static interface Service&lt;T extends Entity&gt; {}
+
+    public static interface ServiceLocator&lt;T extends Entity&gt; {}
+
+    public static class ConcreteClass&lt;T extends Entity, S extends Service&lt;T&gt;&gt; implements ServiceLocator&lt;T&gt; {}
+
+    protected abstract &lt;T extends Entity&gt; ConcreteClass&lt;T, ?&gt; getParameterized(T entity);
+
+    protected &lt;T extends Entity&gt; ServiceLocator&lt;T&gt; getInterface(T entity)
+    {
+    	return getParameterized(entity);
+    }
+}
+
+The method &quot;getInterface&quot; reports an error:
+
+Type mismatch: cannot convert from Java8InterfaceTest.ConcreteClass&lt;T,capture#1-of ?&gt; to Java8InterfaceTest.ServiceLocator&lt;T&gt;
+
+There are 3 ways to silence this error:
+1.  Add the suggested cast (which should not be needed) but it then warns you that the cast is unneeded, so you also need to add a SuppressWarnings annotation.
+2. Use the explicit type parameter override notation:
+   return this.&lt;T&gt;getParameterized(entity);
+3. Change the getParameterized() method to return ConcreteClass&lt;T, Service&lt;T&gt;&gt;.
+
+None of these workarounds should be necessary since this code compiles fine with Javac for Java 7 and 8.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531254</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-13 18:55:46 -0400</bug_when>
+    <thetext>Thanks for the report and the succinct example (condensing that example even more into a explanatory summary is probably impossible :) ).
+
+The example is accepted by all versions of Luna and Mars M1 &amp; M2.
+
+Since Mars M3 we reject, which coincides with a significant improvement of our implementation of Java 8 type inference (bug 437444 et al).
+
+The example takes us very deep into the rabbit hole of type inference. Close to the bottom these characters meets:
+
+- a capture bound, being incorporated using JLS 18.3.2
+  ConcreteClass&lt;T4#0,?#1&gt; = capt(ConcreteClass&lt;T4#0,?&gt;)
+
+- an unnecessary intersection type
+  Service&lt;T3&gt; &amp; Service&lt;T3&gt;
+
+- attempt to perform type variable substitution on this intersection type,
+  which fails to substitute T3
+
+Turns out to be a simple omission to handle the rare species of IntersectionTypeBinding18 inside Scope.Substitutor.substitute(Substitution, TypeBinding).
+IntersectionTypeBinding18 represents a concept that exists only as an artifact from type inference, and we need to do some reading between the lines to figure out, which parts of the compiler need to be extended for handling this creature.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531256</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-13 18:59:35 -0400</bug_when>
+    <thetext>Just one remark on the example: why are all type parameters on this planet called T? In this example this severely blurs the fact that we have 6 distinct type parameters.
+
+The &quot;T4#0&quot; and &quot;T3&quot; in comment 1 are the obvious result of my first step necessary for any analysis: renaming.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531257</commentid>
+    <comment_count>3</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-03-13 19:02:02 -0400</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/43836</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531282</commentid>
+    <comment_count>4</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-03-13 20:46:02 -0400</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/43836 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=6e5ceb8786f5ada5e37df504e04cd8d390bc4075</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531283</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-13 20:46:45 -0400</bug_when>
+    <thetext>.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531606</commentid>
+    <comment_count>6</comment_count>
+    <who name="Bruno Felaco">cfelaco</who>
+    <bug_when>2015-03-15 17:19:37 -0400</bug_when>
+    <thetext>My apologies for the unintentional obfuscation, Stephen.  In the real code this was &quot;inspired&quot; by, T was used consistently for any type parameter that extends the &quot;Entity&quot; interface.  Why I didn&apos;t use E, I don&apos;t know. :-)  I don&apos;t normally use the same type parameter for static inner classes like this, but I just wanted to provide an example in a single file.
+
+I&apos;ve often toyed with the idea of using a special character rarely used in classes and interfaces for type parameters (like $), but I&apos;ve gotten so used to the convention of a single upper-case character that I never do it.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531608</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-15 17:24:19 -0400</bug_when>
+    <thetext>(In reply to Bruno Felaco from comment #6)
+&gt; My apologies
+
+accepted :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2532898</commentid>
+    <comment_count>8</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-03-17 10:23:49 -0400</bug_when>
+    <thetext>Verified for 4.5 M6 with build I20150316-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>456487</bug_id>
+          
+          <creation_ts>2015-01-01 11:27:00 -0500</creation_ts>
+          <short_desc>[1.8][null] @Nullable type variant of @NonNull-constrained type parameter causes grief</short_desc>
+          <delta_ts>2015-01-28 23:44:30 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>chris</cc>
+    
+    <cc>jarthana</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2501421</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-01 11:27:02 -0500</bug_when>
+    <thetext>When trying to null-annotate class Optional, I came up with this variant:
+
+//---
+class Optional&lt;@NonNull T&gt; {
+  @Nullable T value;
+  private Optional(T value) { this.value = value; }
+  public static &lt;@NonNull T&gt; Optional&lt;T&gt; of(T value) { return new Optional&lt;T&gt;(value); }
+  public T get() { 
+    @Nullable T t = this.value;
+    if (t != null) return t; 
+    else throw new NoSuchElementException(&quot;No value present&quot;); }
+  }
+  public @Nullable T orElse(@Nullable T other) { return (this.value != null) ? this.value : other; }
+}
+//---
+
+Here we complain:
+
+----------
+1. WARNING in /tmp/Optional.java (at line 10)
+        if (t != null) return t; 
+            ^
+Redundant null check: The variable t cannot be null at this location
+----------
+2. WARNING in /tmp/Optional.java (at line 11)
+        else throw new NoSuchElementException(&quot;No value present&quot;); }
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Dead code
+----------
+3. WARNING in /tmp/Optional.java (at line 12)
+        public @Nullable T orElse(@Nullable T other) { return (this.value != null) ? this.value : other; }
+                                                                    ^^^^^
+Redundant null check: The field value is specified as @NonNull
+----------
+
+This indicates that the compiler fails to override the previous nullness when saying &quot;@Nullable T&quot;. Note that a variant declaring &quot;&lt;T extends @NonNull Object&gt;&quot; instead of &quot;&lt;@NonNull T&gt;&quot; works as desired.
+
+
+Additionally, when I change &quot;Optional&lt;@NonNull T&gt;&quot; to &quot;&lt;Optional&lt;@Nullable T&gt;&quot; and add this test program:
+
+//---
+@NonNullByDefault
+@SuppressWarnings(&quot;unused&quot;)
+class OTest {
+  public static void good() {
+    Optional&lt;String&gt; os1 = Optional.of(&quot;yes&quot;);
+    @NonNull String s = os1.get();
+    @Nullable String ns = os1.orElse(null);
+  }
+  public static void bad() {
+    Optional&lt;String&gt; os = Optional.of(null);
+    @NonNull String s = os.orElse(null);
+  }
+}
+//---
+
+I get:
+
+java.lang.NullPointerException
+        at org.eclipse.jdt.internal.compiler.ast.NullAnnotationMatching.providedNullTagBits(NullAnnotationMatching.java:320)
+        at org.eclipse.jdt.internal.compiler.ast.NullAnnotationMatching.analyse(NullAnnotationMatching.java:204)
+        at org.eclipse.jdt.internal.compiler.ast.NullAnnotationMatching.analyse(NullAnnotationMatching.java:129)
+        at org.eclipse.jdt.internal.compiler.ast.NullAnnotationMatching.checkAssignment(NullAnnotationMatching.java:103)
+        at org.eclipse.jdt.internal.compiler.ast.LocalDeclaration.analyseCode(LocalDeclaration.java:105)
+        at org.eclipse.jdt.internal.compiler.ast.MethodDeclaration.analyseCode(MethodDeclaration.java:126)
+        at org.eclipse.jdt.internal.compiler.ast.TypeDeclaration.internalAnalyseCode(TypeDeclaration.java:737)
+        at org.eclipse.jdt.internal.compiler.ast.TypeDeclaration.analyseCode(TypeDeclaration.java:261)
+        at org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration.analyseCode(CompilationUnitDeclaration.java:118)
+        at org.eclipse.jdt.internal.compiler.Compiler.process(Compiler.java:794)
+        at org.eclipse.jdt.internal.compiler.ProcessTaskManager.run(ProcessTaskManager.java:139)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501708</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-03 19:18:33 -0500</bug_when>
+    <thetext>Re NPE in NullAnnotationMatching.providedNullTagBits:
+
+Inside MessageSend.resolveType() we failed to transfer a return type from a closestMatch. This happens differently per ProblemReason, just we failed to handle ProblemReason.ContradictoryNullAnnotations here. Fixed.
+
+
+The original error was caused by a bug in the initialization protocol for TypeVariableBinding: Initial creation of the TVB registers at TypeSystem making the TVB fill slot [0] of its family of types.
+Later during TVB.setTypeAnnotations() we tried to tweak things by first registering a clone, but that clone didn&apos;t make it to position [0] in this case, so calls to unannotated() would still answer the first registered type, which, however, was actually annotated in setTypeAnnotations().
+
+Fixed by pushing this entire tweak into TypeSystem where we now check if a clone is needed, and perform array manipulation as needed (and updated code comments to explain this unusual treatment :) ).
+
+
+See https://git.eclipse.org/r/38928</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501741</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-04 03:49:31 -0500</bug_when>
+    <thetext>Released for 4.5 M5 via commit 37b18fe3dec30aacdbf97606c4be5a6236865064</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511742</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-28 23:44:30 -0500</bug_when>
+    <thetext>Verified for 4.5 M5 with build I20150127-0900</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

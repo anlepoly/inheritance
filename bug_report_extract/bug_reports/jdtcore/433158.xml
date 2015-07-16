@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>433158</bug_id>
+          
+          <creation_ts>2014-04-21 16:04:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler] Another type inference difference with javac, type lost midway</short_desc>
+          <delta_ts>2014-09-19 03:44:11 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 8</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>432682</dup_id>
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>---</target_milestone>
+          
+          <blocked>428061</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Timo Kinnunen">timo.kinnunen</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2391033</commentid>
+    <comment_count>0</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-04-21 16:04:03 -0400</bug_when>
+    <thetext>This code shows an error message in IDE but Javac compiles it fine. Splitting the call in two by using a local variable works around the problem.
+
+
+package differences.lost.typing;
+
+import java.util.List;
+import java.util.Map;
+import static java.util.stream.Collectors.*;
+
+public class CollectorsMaps {/*Q*/
+	private static class Pair&lt;L, R&gt; {
+		public final L lhs; public final R rhs;
+		public Pair(L lhs, R rhs) { this.lhs = lhs; this.rhs = rhs; }
+		public R rhs() { return rhs; }
+		public L lhs() { return lhs; }
+		public &lt;N&gt; Pair&lt;N, R&gt; keepingRhs(N newLhs) { return new Pair&lt;&gt;(newLhs, rhs); }
+		/*E*/}
+
+	static Map&lt;String, List&lt;String&gt;&gt; invert(Map&lt;String, List&lt;String&gt;&gt; packages) {
+		return packages.entrySet().stream().map(e -&gt; new Pair&lt;&gt;(e.getValue(), e.getKey())).flatMap(
+			//The method collect(Collector&lt;? super Object,A,R&gt;) in the type Stream&lt;Object&gt;
+			//is not applicable for the arguments 
+			//(Collector&lt;CollectorsMaps.Pair&lt;String,String&gt;,capture#3-of ?,Map&lt;String,List&lt;String&gt;&gt;&gt;)
+		  p -&gt; p.lhs.stream().map(p::keepingRhs)).collect(
+		  groupingBy(Pair&lt;String, String&gt;::lhs, mapping(Pair&lt;String, String&gt;::rhs, toList())));
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2391052</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-21 17:18:53 -0400</bug_when>
+    <thetext>Let&apos;s see, who&apos;s right ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394618</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-29 07:10:35 -0400</bug_when>
+    <thetext>First finding:
+
+Inference fails at collect(..) because:
+- the receiver is resolved to Stream&lt;Object&gt;
+- hence the parameter for collect has type Collector&lt;? super Object,A,R&gt;
+- the actual argument in the collect call has type
+  Collector&lt;Pair&lt;String,String&gt;,?,Map&lt;String,List&lt;String&gt;&gt;&gt;
+- when inferring the type variable T for the nested invocation of groupingBy,
+  we have these contradictory bounds:
+  T &lt;: Pair&lt;String,String&gt;
+  T :&gt; Object
+=&gt; No solution exists
+
+Remaining question: is it correct to infer the receiver (invocation of flatMap) to Stream&lt;Object&gt;? Note, that the collect invocation has no influence on this inference.
+
+For lack of a target type for flatMap(..) the type variable R (to be used as the type argument for Stream) is inferred solely from the type of the lambda 
+   p -&gt; p.lhs.stream().map(p::keepingRhs)
+
+I see this lambda typed as
+Function&lt;? super Pair&lt;List&lt;String&gt;,String&gt;,? extends Stream&lt;? extends Object&gt;&gt;
+
+Can inference do better for this lambda?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394648</commentid>
+    <comment_count>3</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-04-29 07:56:06 -0400</bug_when>
+    <thetext>What happens to the type Pair&lt;N, R&gt; from p::keepingRhs? I&apos;m guessing that&apos;s the one that turns into Object.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394660</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-29 08:15:29 -0400</bug_when>
+    <thetext>During inference for flatMap(..) the driving constraint is this:
+
+(&lt;no type&gt; p) -&gt; p.lhs.stream().map(p::keepingRhs)  Function&lt;? super Pair&lt;List&lt;String&gt;,String&gt;,? extends Stream&lt;? extends R#0&gt;&gt;
+
+Whatever we infer for inference variable R#0 just from this one constraint will be the type argument for Stream in flatMap&apos;s return type.
+
+The above constraint is reduced to:
+
+p.lhs.stream().map(p::keepingRhs)  Stream&lt;? extends R#0&gt;
+
+This constraint triggers nested inference for the invocation of map.
+
+During applicability inference for map we have no interesting information because p::keepingRhs is not pertinent to applicability.
+
+Invocation type inference for map only correlates the new inference variable R#1 to the existing one R#0. In particular we do not consider actual arguments at this point (p::keepingRhs), because nested inference only involves those parts of 18.5.2 that produce bound set B3, whereas actual arguments are only considered after that in the bullet starting &quot;A set of constraint formulas, C, is constructed as follows.&quot;
+
+
+Ergo: I see no source of information which inference could legally use to infer R#0 to anything better than j.l.Object.
+
+Ergo: the given example is not a legal Java 8 program and must be rejected.
+
+Closing as INVALID, marking relation to bug 428061 to remember that s.o. should file a bug against javac. This bug to be reopened for the (unlikely :) ) case that javac team has a good excuse for accepting this program. Note that javac may have remnants of experiments that have been withdrawn from the spec, and must be withdrawn from javac, too. This has been observed at least once before.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394665</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-29 08:18:27 -0400</bug_when>
+    <thetext>(In reply to Timo Kinnunen from comment #3)
+&gt; What happens to the type Pair&lt;N, R&gt; from p::keepingRhs? I&apos;m guessing that&apos;s
+&gt; the one that turns into Object.
+
+I had a mid air collision, so here&apos;s one more answer (implicitly contained in the above):
+
+p::keepingRhs is not considered 
+- during applicability inference because it&apos;s not &apos;pertinent to applicability&apos;
+- during invocation type inference because nested inference only computes
+  B3, not B4 from 18.5.2</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394697</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-29 08:44:15 -0400</bug_when>
+    <thetext>One more check to see if we still might have a bug:
+
+(In reply to Stephan Herrmann from comment #5)
+&gt; p::keepingRhs is not considered 
+&gt; - during applicability inference because it&apos;s not &apos;pertinent to
+&gt; applicability&apos;
+
+Is it really not pertinent to applicability?
+
+- keepingRhs is a generic method
+- the method reference doesn&apos;t provide type arguments
+=&gt; the method reference is inexact (see 15.13.1)
+
+=&gt; an inexact method reference is not pertinent to applicability (15.12.2.2.).
+
+ECJ is correct in this respect, too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394707</commentid>
+    <comment_count>7</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-04-29 08:49:17 -0400</bug_when>
+    <thetext>If I replace p::keepingRhs with lhs-&gt;p.keepingRhs(lhs) then the result is the same. 
+
+However, is instead I use (String lhs) -&gt; p.keepingRhs(lhs) then that&apos;s enough to get the code to type-check. So even though it&apos;s not pertinent it still ends up influencing the type. Now these two versions are not the same, ? super String is not the same as String, so maybe there&apos;s something with the bounds going on, but apart from that shouldn&apos;t the end result be same though? Or does it become exact and now it can be used? I can&apos;t write (? super String lhs) -&gt; p.keepingRhs(lhs) to check the bounds theory, unfortunately :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394727</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-29 09:07:56 -0400</bug_when>
+    <thetext>(In reply to Timo Kinnunen from comment #7)
+&gt; If I replace p::keepingRhs with lhs-&gt;p.keepingRhs(lhs) then the result is
+&gt; the same. 
+&gt; 
+&gt; However, is instead I use (String lhs) -&gt; p.keepingRhs(lhs) then that&apos;s
+&gt; enough to get the code to type-check. So even though it&apos;s not pertinent it
+&gt; still ends up influencing the type.
+
+Wrong, an explicitly typed lambda *can be* pertinent to applicability, and in this case it actually *is*, and hence it does influence inference, see http://docs.oracle.com/javase/specs/jls/se8/html/jls-15.html#jls-15.12.2.2</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394759</commentid>
+    <comment_count>9</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-04-29 09:32:48 -0400</bug_when>
+    <thetext>I was afraid of that. This raises a dark spectre over type inference because it seems that the way code is written determines whether the code should compile rather than what the types involved are. Specifically, that two programs using exact same types in same places can end up type-checking differently. I&apos;ve prepared this demonstration, is it convincing in demonstrating this?
+
+	static Stream&lt;Entry&lt;List&lt;String&gt;, String&gt;&gt; map;
+	static Collector&lt;Entry&lt;String, String&gt;, ?, Map&lt;String, List&lt;String&gt;&gt;&gt; groupingBy;
+
+	private static Stream&lt;String&gt; stream(Entry&lt;List&lt;String&gt;, String&gt; p) { return null; }
+	private static Entry&lt;String, String&gt; keep(Entry&lt;List&lt;String&gt;, String&gt; p, String leftHS2) { return null; }
+
+	static Map&lt;String, List&lt;String&gt;&gt; invertNoError() {
+		return map.flatMap(p -&gt; stream(p).map((String leftHS) -&gt; {
+			String leftHS2 = leftHS;
+			return keep(p, leftHS2);
+		})).collect(groupingBy);
+	}
+	static Map&lt;String, List&lt;String&gt;&gt; invertHasError() {
+		return map.flatMap(p -&gt; stream(p).map(leftHS -&gt; {
+			String leftHS2 = leftHS;
+			return keep(p, leftHS2);
+		})).collect(groupingBy);
+	}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394809</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-29 10:01:16 -0400</bug_when>
+    <thetext>(In reply to Timo Kinnunen from comment #9)
+&gt; I was afraid of that. This raises a dark spectre over type inference because
+&gt; it seems that the way code is written determines whether the code should
+&gt; compile rather than what the types involved are. Specifically, that two
+&gt; programs using exact same types in same places can end up type-checking
+&gt; differently. 
+
+Again I have to disagree. The difference is in omitting or mentioning essential type information. Mind you: the contract of type inference is not that it will find each possible solution (that algorithm would not always terminate!).
+
+Nobody should be surprised that the inference with too little information at its input cannot find some solutions. That&apos;s exactly what we&apos;re seeing here. That&apos;s not a bug but an unavoidable property. And we should be happy that we have a spec the makes the line between finding a solution and not finding a solution explicit.
+
+We&apos;d all love to have a machine: throw in any untyped program, output: whether or not the program will ever throw exceptions and always terminate. We have word that this machine is not possible ;-P</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394848</commentid>
+    <comment_count>11</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-04-29 10:41:48 -0400</bug_when>
+    <thetext>I was going to explain why I disagree with your disagreement, but I found something more interesting in the demo:
+
+	static Map&lt;String, List&lt;String&gt;&gt; invertHasError2() {
+		return map.flatMap(p -&gt; stream(p).map((Function&lt;? super String, ? extends Entry&lt;String, String&gt;&gt;) leftHS -&gt; {
+			String leftHS2 = leftHS;
+			return keep(p, leftHS2);
+		})).collect(groupingBy);
+	}
+	static Map&lt;String, List&lt;String&gt;&gt; invertHasError3() {
+		Function&lt;? super Entry&lt;List&lt;String&gt;, String&gt;, ? extends Stream&lt;?&gt;&gt; function =
+		  p -&gt; stream(p).map((Function&lt;? super String, ? extends Entry&lt;String, String&gt;&gt;) leftHS -&gt; {
+			  String leftHS2 = leftHS;
+			  return keep(p, leftHS2);
+		  });
+		return map.flatMap(function).collect(groupingBy);
+	}
+
+The invertHasError3 version is the same as invertHasError2, but with the outer lambda extracted into a local variable. Even though the invertHasError2 version type-checks, the type computed for the local variable ends up containing a Stream&lt;?&gt; (which would show up as Stream&lt;Object&gt; in error messages) and causes invertHasError3 to not type-check. Could this be related?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394886</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-29 11:10:06 -0400</bug_when>
+    <thetext>Please, this after-close discussion is getting out of hand.
+
+Do you see a bug, then please file a new one, keeping in mind that not every not-found inference solution is a bug. 
+Ideally check the spec beforehand so you can demonstrate why ECJ behavior deviates from the spec.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394937</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-29 11:56:52 -0400</bug_when>
+    <thetext>I&apos;ve released the example from comment 0 as a negative regression test via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=31e6b3e1d82d077630162531833eba921494700a</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394969</commentid>
+    <comment_count>14</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-04-29 12:42:59 -0400</bug_when>
+    <thetext>Filed bug 433783 for type information lost during Extract Local Variable refactoring.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2395472</commentid>
+    <comment_count>15</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-04-30 11:18:12 -0400</bug_when>
+    <thetext>Verified for 4.4 M7</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2454014</commentid>
+    <comment_count>16</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-19 02:09:22 -0400</bug_when>
+    <thetext>I have a fix for https://bugs.eclipse.org/bugs/show_bug.cgi?id=432682 that
+actually addresses this problem.
+
+Reopening to reconsider.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2454049</commentid>
+    <comment_count>17</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-19 03:44:11 -0400</bug_when>
+    <thetext>With the patch proposed for bug 432682, we are compatible with javac.
+
+*** This bug has been marked as a duplicate of bug 432682 ***</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

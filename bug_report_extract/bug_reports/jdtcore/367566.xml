@@ -1,0 +1,579 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>367566</bug_id>
+          
+          <creation_ts>2011-12-27 02:20:00 -0500</creation_ts>
+          <short_desc>In try-with-resources statement close() method of resource is not called</short_desc>
+          <delta_ts>2013-08-30 08:49:24 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.7.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows XP</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>critical</bug_severity>
+          <target_milestone>3.6.2+J7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Roman Dawydkin">tanmatra</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>remy.suen</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="pmc_approved"
+          id="47873"
+          type_id="2"
+          status="+"
+          setter="daniel_megert"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2044603</commentid>
+    <comment_count>0</comment_count>
+      <attachid>208810</attachid>
+    <who name="Roman Dawydkin">tanmatra</who>
+    <bug_when>2011-12-27 02:20:01 -0500</bug_when>
+    <thetext>Created attachment 208810
+Test sources
+
+close() method is not executed, probably when calling method ends with return statement with condition.
+(Produces bytecode is somewhat messy and do not handle all execution paths)
+See attached sources for test case.
+Code compiled with Oracle javac runs normally.
+
+Tested on Eclipse 3.8M4 and 3.7.1
+JDK is 1.7u2
+
+When compiled with Eclipse, output is something like:
+  Test.Test()
+    Resource.Resource() @150bd4d
+  Test.close()
+  ERROR: some resources was not closed
+   -&gt; test.Resource@150bd4d
+
+When compiled with javac, output is:
+  Test.Test()
+    Resource.Resource() @12b6651
+    Resource.close() @12b6651
+  Test.close()</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2044668</commentid>
+    <comment_count>1</comment_count>
+      <attachid>208816</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-12-27 14:26:34 -0500</bug_when>
+    <thetext>Created attachment 208816
+test &amp; preliminary fix
+
+Indeed! The generated code contains a premature ireturn that
+bypasses the implicit call to close().
+
+The patch contains a simpler test case and a preliminary fix.
+Inside ReturnStatement.analyseCode(..) we didn&apos;t recognize that
+we are in a context that indeed has a subroutine to be called
+before returning, and thus the flag IsReturnedValue was wrongly set.
+The flag then cause generating the bogus ireturn.
+
+The patch fixes that by searching also for an enclosing try statement
+with resources (which doesn&apos;t have an InsideSubRoutineFlowContext
+but still needs to call a subroutine).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2044730</commentid>
+    <comment_count>2</comment_count>
+    <who name="Roman Dawydkin">tanmatra</who>
+    <bug_when>2011-12-28 06:25:48 -0500</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; Created attachment 208816 [details]
+&gt; test &amp; preliminary fix
+
+Stephan, thank you!
+With patch it seems all work good.
+I compiled patched org.eclipse.jdt.core bundle for myself and put it into Eclipse plugins folder.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2044733</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-12-28 07:09:55 -0500</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; (In reply to comment #1)
+&gt; &gt; Created attachment 208816 [details]
+&gt; &gt; test &amp; preliminary fix
+&gt; 
+&gt; Stephan, thank you!
+&gt; With patch it seems all work good.
+
+Thanks for confirming!
+The patch still needs to be reviewed, but we certainly want
+this fixed no later than M5.
+
+@Ayush: do you think we should actually have an
+InsideSubRoutineFlowContext in this situation, 
+or do you consider the location where my patch applies safe?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2045166</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-12-31 07:23:52 -0500</bug_when>
+    <thetext>Stephan, we have a test org.eclipse.jdt.core.tests.compiler.regression.TryWithResourcesStatementTest.test030() that tests for this and asserts that the resource closes do happen.
+
+Have you been able to find out what is special about the current test case that
+causes this problem ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2045173</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-12-31 09:45:16 -0500</bug_when>
+    <thetext>(In reply to comment #4)
+&gt; Stephan, we have a test
+&gt; org.eclipse.jdt.core.tests.compiler.regression.TryWithResourcesStatementTest.test030()
+&gt; that tests for this and asserts that the resource closes do happen.
+&gt; 
+&gt; Have you been able to find out what is special about the current test case that
+&gt; causes this problem ?
+
+The difference is:
+- the return statement returns a value provided by a binary expression
+  of type boolean
+
+The bit that was missing from my explanation in comment 1 is:
+Inside BinaryExpression.generateCode(..) we check for ASTNode.IsReturnedValue,
+iff set we generate an immediate ireturn for the true-case.
+If IsReturnedValue is set in a t-w-r without a finally block we
+miss to generate the close() call for the true-case.
+
+The test030 you mention doesn&apos;t involve a return value.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2045489</commentid>
+    <comment_count>6</comment_count>
+      <attachid>208929</attachid>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-03 06:39:38 -0500</bug_when>
+    <thetext>Created attachment 208929
+Alternate patch
+
+I didn&apos;t find anything particularly wrong with the patch
+already proposed, but I like this alternate patch (slightly)
+better. This is still under test.
+
+We now recognize the presence of autocloseables in the
+picture as an additional case where we cannot abruptly
+return while computing the return value. (as is already
+done for synchronized block.)
+
+The original patch tends to pass around null values and
+has to guard against one case where this passing around
+would result in an NPE. So I feel the current patch is
+somewhat cleaner.
+
+Stephan, let me know if I have overlooked something.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2045491</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-03 06:41:34 -0500</bug_when>
+    <thetext>(In reply to comment #6)
+&gt; Created attachment 208929 [details]
+&gt; Alternate patch
+
+This patch also includes an additional test.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2045511</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-03 07:28:05 -0500</bug_when>
+    <thetext>(In reply to comment #6)
+&gt; We now recognize the presence of autocloseables in the
+&gt; picture as an additional case where we cannot abruptly
+&gt; return while computing the return value. (as is already
+&gt; done for synchronized block.)
+
+The main difference I see between both patches is whether or not
+saveValueNeeded is set, the impact of which I don&apos;t immediately understand.
+Analogy to a regular finally recommends yes, analogy to synchronized says no.
+Hm...
+
+&gt; Stephan, let me know if I have overlooked something.
+
+At a quick glance your patch looks good to me. My patch was more
+for checking my theory about the root cause and I wasn&apos;t quite
+sure about all its side effects.
+
+Please feel free to take the bug if you want to release your patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2045607</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-03 10:24:35 -0500</bug_when>
+    <thetext>(In reply to comment #8)
+
+&gt; The main difference I see between both patches is whether or not
+&gt; saveValueNeeded is set, the impact of which I don&apos;t immediately understand.
+
+There is not much really. This boolean short circuits setting of the
+ASTNode.IsReturnedValue bit, which we are achieving otherwise anyways.
+
+Released fix and tests via
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=667b6c6169416d9b79d86e73c3fa9c45930c36a8
+for 3.8 M5.
+
+Ayush, could you release these for 3.7.2 and 3.6.2+Java7 streams ? TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2047853</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-09 10:42:40 -0500</bug_when>
+    <thetext>Dani, we need to back port this fix too. In some not very
+uncommon cases, we will fail to close the resources 
+specified in a TWR. Fix is clean IMO.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2047895</commentid>
+    <comment_count>11</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-01-09 11:47:47 -0500</bug_when>
+    <thetext>+1 for backport.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2048119</commentid>
+    <comment_count>12</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-01-10 00:38:23 -0500</bug_when>
+    <thetext>Released in 3.7 maintenance via commit 4bd87a9bbcc7e440b98ccfd3be7628d44517951c</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2048133</commentid>
+    <comment_count>13</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-01-10 01:46:41 -0500</bug_when>
+    <thetext>Released in 3.6.2+Java7 branch via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=117d4b22e0330a291663c9fe32b87118e24c700b</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2048158</commentid>
+    <comment_count>14</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-01-10 02:48:26 -0500</bug_when>
+    <thetext>(In reply to comment #13)
+&gt; Released in 3.6.2+Java7 branch via
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=117d4b22e0330a291663c9fe32b87118e24c700b
+
+Please not that you still need to do the build input manually (as in contrast to 3.7.2), see bug 364676.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052746</commentid>
+    <comment_count>15</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2012-01-19 05:33:03 -0500</bug_when>
+    <thetext>Verified for 3.7.2 RC2 with build M20120118-0800</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2054970</commentid>
+    <comment_count>16</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2012-01-24 06:04:22 -0500</bug_when>
+    <thetext>Verified for 3.8M5 using I20120122-2000</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2300708</commentid>
+    <comment_count>17</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-29 11:20:35 -0400</bug_when>
+    <thetext>Should this still be verified for 3.6.2+J7 (see target) or is it OK to mark VERIFIED?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2301242</commentid>
+    <comment_count>18</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-08-30 08:49:24 -0400</bug_when>
+    <thetext>(In reply to comment #17)
+&gt; Should this still be verified for 3.6.2+J7 (see target) or is it OK to mark
+&gt; VERIFIED?
+
+Verified in R3_6_maintenance_Java7.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>208810</attachid>
+            <date>2011-12-27 02:20:00 -0500</date>
+            <delta_ts>2011-12-27 02:20:01 -0500</delta_ts>
+            <desc>Test sources</desc>
+            <filename>Test.java</filename>
+            <type>application/octet-stream</type>
+            <size>1495</size>
+            <attacher name="Roman Dawydkin">tanmatra</attacher>
+            
+              <data encoding="base64">cGFja2FnZSB0ZXN0OwoKaW1wb3J0IGphdmEudXRpbC5IYXNoU2V0OwoKcHVibGljIGNsYXNzIFRl
+c3QKewoJcHVibGljIHN0YXRpYyB2b2lkIG1haW4oU3RyaW5nW10gYXJncykgewoJCWludCBjb3Vu
+dCA9IChhcmdzLmxlbmd0aCA+IDApID8gSW50ZWdlci5wYXJzZUludChhcmdzWzBdKSA6IDE7CgkJ
+VGVzdCB0ZXN0ID0gbmV3IFRlc3QoKTsKCQl0cnkgewoJCQlmb3IgKGludCBpID0gMDsgaSA8IGNv
+dW50OyBpKyspIHsKCQkJCXRlc3QucnVuUXVlcnkoKTsKCQkJfQoJCX0gZmluYWxseSB7CgkJCXRl
+c3QuY2xvc2UoKTsKCQl9Cgl9CgoJcHJpdmF0ZSBIYXNoU2V0PFJlc291cmNlPiByZXNvdXJjZXMg
+PSBuZXcgSGFzaFNldDw+KCk7CgoJcHVibGljIFRlc3QoKSB7CgkJU3lzdGVtLm91dC5wcmludGxu
+KCJUZXN0LlRlc3QoKSIpOwoJfQoKCXZvaWQgcmVnaXN0ZXIoUmVzb3VyY2UgcmVzb3VyY2UpIHsK
+CQlyZXNvdXJjZXMuYWRkKHJlc291cmNlKTsKCX0KCgl2b2lkIHVucmVnaXN0ZXIoUmVzb3VyY2Ug
+cmVzb3VyY2UpIHsKCQlyZXNvdXJjZXMucmVtb3ZlKHJlc291cmNlKTsKCX0KCglwcml2YXRlIHZv
+aWQgY2xvc2UoKSB7CgkJU3lzdGVtLm91dC5wcmludGxuKCJUZXN0LmNsb3NlKCkiKTsKCQlpZiAo
+IXJlc291cmNlcy5pc0VtcHR5KCkpIHsKCQkJU3lzdGVtLmVyci5wcmludGxuKCJFUlJPUjogc29t
+ZSByZXNvdXJjZXMgd2FzIG5vdCBjbG9zZWQiKTsKCQkJZm9yIChSZXNvdXJjZSByZXNvdXJjZSA6
+IHJlc291cmNlcykgewoJCQkJU3lzdGVtLmVyci5wcmludGxuKCIgLT4gIiArIHJlc291cmNlKTsK
+CQkJfQoJCX0KCX0KCglwdWJsaWMgYm9vbGVhbiBydW5RdWVyeSgpIHsKCQl0cnkgKFJlc291cmNl
+IHJlc291cmNlID0gbmV3IFJlc291cmNlKHRoaXMpKSB7CgkJCXJldHVybiByZXNvdXJjZS5leGVj
+dXRlVXBkYXRlKCkgPj0gMTsKCQkJLyogbmV4dCBjb21tZW50ZWQgY29kZSBpcyBvazogKi8KLy8J
+CQlib29sZWFuIHJlc3VsdCA9IHJlc291cmNlLmV4ZWN1dGVVcGRhdGUoKSA+IDA7Ci8vCQkJcmV0
+dXJuIHJlc3VsdDsKCQl9Cgl9Cn0KCmNsYXNzIFJlc291cmNlIGltcGxlbWVudHMgQXV0b0Nsb3Nl
+YWJsZQp7Cglwcml2YXRlIFRlc3QgdGVzdDsKCglwdWJsaWMgUmVzb3VyY2UoVGVzdCB0ZXN0KSB7
+CgkJdGhpcy50ZXN0ID0gdGVzdDsKCQlTeXN0ZW0ub3V0LmZvcm1hdCgiICBSZXNvdXJjZS5SZXNv
+dXJjZSgpIEAleCVuIiwgaGFzaENvZGUoKSk7CgkJdGVzdC5yZWdpc3Rlcih0aGlzKTsKCX0KCglw
+dWJsaWMgdm9pZCBjbG9zZSgpIHsKCQlTeXN0ZW0ub3V0LmZvcm1hdCgiICBSZXNvdXJjZS5jbG9z
+ZSgpIEAleCVuIiwgaGFzaENvZGUoKSk7CgkJdGVzdC51bnJlZ2lzdGVyKHRoaXMpOwoJfQoKCXB1
+YmxpYyBpbnQgZXhlY3V0ZVVwZGF0ZSgpIHsKCQlyZXR1cm4gMTsKCX0KCglAU3VwcHJlc3NXYXJu
+aW5ncygidW51c2VkIikKCXB1YmxpYyB2b2lkIHNldFBhcmFtZXRlcihpbnQgaW5kZXgsIGludCB2
+YWx1ZSkgewoJfQp9Cg==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>208816</attachid>
+            <date>2011-12-27 14:26:00 -0500</date>
+            <delta_ts>2012-01-09 00:34:53 -0500</delta_ts>
+            <desc>test &amp; preliminary fix</desc>
+            <filename>Bug367566.patch</filename>
+            <type>text/plain</type>
+            <size>3107</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL1RyeVdpdGhSZXNvdXJj
+ZXNTdGF0ZW1lbnRUZXN0LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxl
+ci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9UcnlX
+aXRoUmVzb3VyY2VzU3RhdGVtZW50VGVzdC5qYXZhCmluZGV4IDUyYzFhM2UuLjA5ZWNmYTcgMTAw
+NjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL1RyeVdpdGhSZXNvdXJjZXNT
+dGF0ZW1lbnRUZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGls
+ZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vVHJ5
+V2l0aFJlc291cmNlc1N0YXRlbWVudFRlc3QuamF2YQpAQCAtNTIxOCw2ICs1MjE4LDMyIEBAIHB1
+YmxpYyB2b2lkIHRlc3QwNTgoKSB7CiAJCQkifVxuIgogCQl9LCAgIiIpOwkKIH0KKy8vIEJ1ZyAz
+Njc1NjYgLSBJbiB0cnktd2l0aC1yZXNvdXJjZXMgc3RhdGVtZW50IGNsb3NlKCkgbWV0aG9kIG9m
+IHJlc291cmNlIGlzIG5vdCBjYWxsZWQKK3B1YmxpYyB2b2lkIHRlc3QwNTkoKSB7CisJdGhpcy5y
+dW5Db25mb3JtVGVzdCgKKwkJbmV3IFN0cmluZ1tdIHsKKwkJCSJYLmphdmEiLAorCQkJImltcG9y
+dCBqYXZhLmlvLklPRXhjZXB0aW9uO1xuIiArCisJCQkiXG4iICsKKwkJCSJwdWJsaWMgY2xhc3Mg
+WCBpbXBsZW1lbnRzIGphdmEubGFuZy5BdXRvQ2xvc2VhYmxlIHtcbiIgKworCQkJIiAgc3RhdGlj
+IGJvb2xlYW4gaXNPcGVuID0gdHJ1ZTtcbiIgKworCQkJIiAgcHVibGljIHN0YXRpYyB2b2lkIG1h
+aW4oZmluYWwgU3RyaW5nW10gYXJncykgdGhyb3dzIElPRXhjZXB0aW9uIHtcbiIgKworCQkJIiAg
+ICBmb28oKTtcbiIgKworCQkJIiAgICBTeXN0ZW0ub3V0LnByaW50bG4oaXNPcGVuKTtcbiIgKwor
+CQkJIiAgfVxuIiArCisJCQkiICBzdGF0aWMgYm9vbGVhbiBmb28oKSB7XG4iICsKKwkJCSIgICAg
+dHJ5IChmaW5hbCBYIHggPSBuZXcgWCgpKSB7XG4iICsKKwkJCSIgICAgICByZXR1cm4geC5udW0o
+KSA+PSAxO1xuIiArCisJCQkiICAgIH1cbiIgKworCQkJIiAgfVxuIiArCisJCQkiICBpbnQgbnVt
+KCkgeyByZXR1cm4gMjsgfVxuIiArCisJCQkiICBwdWJsaWMgdm9pZCBjbG9zZSgpIHtcbiIgKwor
+CQkJIiAgICBpc09wZW4gPSBmYWxzZTtcbiIgKworCQkJIiAgfVxuIiArCisJCQkifVxuIgorCQl9
+LCAgCisJCSJmYWxzZSIpOwkKK30KIHB1YmxpYyBzdGF0aWMgQ2xhc3MgdGVzdENsYXNzKCkgewog
+CXJldHVybiBUcnlXaXRoUmVzb3VyY2VzU3RhdGVtZW50VGVzdC5jbGFzczsKIH0KZGlmZiAtLWdp
+dCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5h
+bC9jb21waWxlci9hc3QvUmV0dXJuU3RhdGVtZW50LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L1JldHVyblN0
+YXRlbWVudC5qYXZhCmluZGV4IDU3ZjRkODkuLmI4M2I0YmEgMTAwNjQ0Ci0tLSBhL29yZy5lY2xp
+cHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9h
+c3QvUmV0dXJuU3RhdGVtZW50LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGls
+ZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9SZXR1cm5TdGF0ZW1lbnQu
+amF2YQpAQCAtODEsMTMgKzgxLDE5IEBAIHB1YmxpYyBGbG93SW5mbyBhbmFseXNlQ29kZShCbG9j
+a1Njb3BlIGN1cnJlbnRTY29wZSwgRmxvd0NvbnRleHQgZmxvd0NvbnRleHQsIEZsCiAJCX0KIAkJ
+dHJhdmVyc2VkQ29udGV4dC5yZWNvcmRSZXR1cm5Gcm9tKGZsb3dJbmZvLnVuY29uZGl0aW9uYWxJ
+bml0cygpKTsKIAotCQlpZiAodHJhdmVyc2VkQ29udGV4dCBpbnN0YW5jZW9mIEluc2lkZVN1YlJv
+dXRpbmVGbG93Q29udGV4dCkgewotCQkJQVNUTm9kZSBub2RlID0gdHJhdmVyc2VkQ29udGV4dC5h
+c3NvY2lhdGVkTm9kZTsKKwkJQVNUTm9kZSBub2RlID0gdHJhdmVyc2VkQ29udGV4dC5hc3NvY2lh
+dGVkTm9kZTsKKwkJYm9vbGVhbiBpc0luc2lkZVN1YnJvdXRpbmVDb250ZXh0ID0gZmFsc2U7CisJ
+CWlmICh0cmF2ZXJzZWRDb250ZXh0IGluc3RhbmNlb2YgSW5zaWRlU3ViUm91dGluZUZsb3dDb250
+ZXh0KQorCQkJaXNJbnNpZGVTdWJyb3V0aW5lQ29udGV4dCA9IHRydWU7CisJCWVsc2UgaWYgKG5v
+ZGUgaW5zdGFuY2VvZiBUcnlTdGF0ZW1lbnQpCisJCQlpc0luc2lkZVN1YnJvdXRpbmVDb250ZXh0
+ID0gKChUcnlTdGF0ZW1lbnQpIG5vZGUpLnJlc291cmNlcy5sZW5ndGggPiAwOworCQlpZiAoaXNJ
+bnNpZGVTdWJyb3V0aW5lQ29udGV4dCkgewogCQkJaWYgKG5vZGUgaW5zdGFuY2VvZiBTeW5jaHJv
+bml6ZWRTdGF0ZW1lbnQpIHsKIAkJCQl0aGlzLmJpdHMgfD0gQVNUTm9kZS5Jc1N5bmNocm9uaXpl
+ZDsKIAkJCX0gZWxzZSBpZiAobm9kZSBpbnN0YW5jZW9mIFRyeVN0YXRlbWVudCkgewogCQkJCVRy
+eVN0YXRlbWVudCB0cnlTdGF0ZW1lbnQgPSAoVHJ5U3RhdGVtZW50KSBub2RlOwotCQkJCWZsb3dJ
+bmZvLmFkZEluaXRpYWxpemF0aW9uc0Zyb20odHJ5U3RhdGVtZW50LnN1YlJvdXRpbmVJbml0cyk7
+IC8vIGNvbGxlY3QgaW5pdHMKKwkJCQlpZiAodHJ5U3RhdGVtZW50LnN1YlJvdXRpbmVJbml0cyAh
+PSBudWxsKQorCQkJCQlmbG93SW5mby5hZGRJbml0aWFsaXphdGlvbnNGcm9tKHRyeVN0YXRlbWVu
+dC5zdWJSb3V0aW5lSW5pdHMpOyAvLyBjb2xsZWN0IGluaXRzCiAJCQkJaWYgKGhhc1ZhbHVlVG9T
+YXZlKSB7CiAJCQkJCWlmICh0aGlzLnNhdmVWYWx1ZVZhcmlhYmxlID09IG51bGwpeyAvLyBjbG9z
+ZXN0IHN1YnJvdXRpbmUgc2VjcmV0IHZhcmlhYmxlIGlzIHVzZWQKIAkJCQkJCXByZXBhcmVTYXZl
+VmFsdWVMb2NhdGlvbih0cnlTdGF0ZW1lbnQpOwo=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>208929</attachid>
+            <date>2012-01-03 06:39:00 -0500</date>
+            <delta_ts>2012-01-03 06:39:38 -0500</delta_ts>
+            <desc>Alternate patch</desc>
+            <filename>patch.txt</filename>
+            <type>text/plain</type>
+            <size>6816</size>
+            <attacher name="Srikanth Sankaran">srikanth_sankaran</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL1RyeVdpdGhSZXNvdXJj
+ZXNTdGF0ZW1lbnRUZXN0LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxl
+ci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9UcnlX
+aXRoUmVzb3VyY2VzU3RhdGVtZW50VGVzdC5qYXZhCmluZGV4IDU2M2NjMGIuLmYyMWE1N2YgMTAw
+NjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL1RyeVdpdGhSZXNvdXJjZXNT
+dGF0ZW1lbnRUZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGls
+ZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vVHJ5
+V2l0aFJlc291cmNlc1N0YXRlbWVudFRlc3QuamF2YQpAQCAtMSw1ICsxLDUgQEAKIC8qKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqCi0gKiBDb3B5cmlnaHQgKGMpIDIwMTEgSUJNIENvcnBvcmF0aW9uIGFu
+ZCBvdGhlcnMuCisgKiBDb3B5cmlnaHQgKGMpIDIwMTEsIDIwMTIgSUJNIENvcnBvcmF0aW9uIGFu
+ZCBvdGhlcnMuCiAgKiBBbGwgcmlnaHRzIHJlc2VydmVkLiBUaGlzIHByb2dyYW0gYW5kIHRoZSBh
+Y2NvbXBhbnlpbmcgbWF0ZXJpYWxzCiAgKiBhcmUgbWFkZSBhdmFpbGFibGUgdW5kZXIgdGhlIHRl
+cm1zIG9mIHRoZSBFY2xpcHNlIFB1YmxpYyBMaWNlbnNlIHYxLjAKICAqIHdoaWNoIGFjY29tcGFu
+aWVzIHRoaXMgZGlzdHJpYnV0aW9uLCBhbmQgaXMgYXZhaWxhYmxlIGF0CkBAIC01MjI2LDYgKzUy
+MjYsMTM1IEBACiAJCQkifVxuIgogCQl9LCAgIiIpOwkKIH0KKy8vIGh0dHBzOi8vYnVncy5lY2xp
+cHNlLm9yZy9idWdzL3Nob3dfYnVnLmNnaT9pZD0zNjc1NjYgLSBJbiB0cnktd2l0aC1yZXNvdXJj
+ZXMgc3RhdGVtZW50IGNsb3NlKCkgbWV0aG9kIG9mIHJlc291cmNlIGlzIG5vdCBjYWxsZWQKK3B1
+YmxpYyB2b2lkIHRlc3QwNTkoKSB7CisJdGhpcy5ydW5Db25mb3JtVGVzdCgKKwkJbmV3IFN0cmlu
+Z1tdIHsKKwkJCSJYLmphdmEiLAorCQkJImltcG9ydCBqYXZhLmlvLklPRXhjZXB0aW9uO1xuIiAr
+CisJCQkiXG4iICsKKwkJCSJwdWJsaWMgY2xhc3MgWCBpbXBsZW1lbnRzIGphdmEubGFuZy5BdXRv
+Q2xvc2VhYmxlIHtcbiIgKworCQkJIiAgc3RhdGljIGJvb2xlYW4gaXNPcGVuID0gdHJ1ZTtcbiIg
+KworCQkJIiAgcHVibGljIHN0YXRpYyB2b2lkIG1haW4oZmluYWwgU3RyaW5nW10gYXJncykgdGhy
+b3dzIElPRXhjZXB0aW9uIHtcbiIgKworCQkJIiAgICBmb28oKTtcbiIgKworCQkJIiAgICBTeXN0
+ZW0ub3V0LnByaW50bG4oaXNPcGVuKTtcbiIgKworCQkJIiAgfVxuIiArCisJCQkiICBzdGF0aWMg
+Ym9vbGVhbiBmb28oKSB7XG4iICsKKwkJCSIgICAgdHJ5IChmaW5hbCBYIHggPSBuZXcgWCgpKSB7
+XG4iICsKKwkJCSIgICAgICByZXR1cm4geC5udW0oKSA+PSAxO1xuIiArCisJCQkiICAgIH1cbiIg
+KworCQkJIiAgfVxuIiArCisJCQkiICBpbnQgbnVtKCkgeyByZXR1cm4gMjsgfVxuIiArCisJCQki
+ICBwdWJsaWMgdm9pZCBjbG9zZSgpIHtcbiIgKworCQkJIiAgICBpc09wZW4gPSBmYWxzZTtcbiIg
+KworCQkJIiAgfVxuIiArCisJCQkifVxuIgorCQl9LCAgCisJCSJmYWxzZSIpOwkKK30KKworLy8g
+aHR0cHM6Ly9idWdzLmVjbGlwc2Uub3JnL2J1Z3Mvc2hvd19idWcuY2dpP2lkPTM2NzU2NiAtIElu
+IHRyeS13aXRoLXJlc291cmNlcyBzdGF0ZW1lbnQgY2xvc2UoKSBtZXRob2Qgb2YgcmVzb3VyY2Ug
+aXMgbm90IGNhbGxlZAorcHVibGljIHZvaWQgdGVzdDA2MCgpIHsKKwl0aGlzLnJ1bkNvbmZvcm1U
+ZXN0KAorCQluZXcgU3RyaW5nW10geworCQkJIlguamF2YSIsCisJCQkicHVibGljIGNsYXNzIFgg
+aW1wbGVtZW50cyBBdXRvQ2xvc2VhYmxlIHtcbiIgKworCQkJIglzdGF0aWMgaW50IG51bSA9IDEw
+IDtcbiIgKworCQkJIiAgICBwdWJsaWMgc3RhdGljIHZvaWQgbWFpbihTdHJpbmcgW10gYXJncykg
+dGhyb3dzIEV4Y2VwdGlvbiB7IFxuIiArCisJCQkiICAgIAlTeXN0ZW0ub3V0LnByaW50bG4oZm9v
+KDEpKTtcbiIgKworCQkJIiAgICAJU3lzdGVtLm91dC5wcmludGxuKGZvbygyKSk7XG4iICsKKwkJ
+CSIgICAgCVN5c3RlbS5vdXQucHJpbnRsbihmb28oMykpO1xuIiArCisJCQkiICAgIH1cbiIgKwor
+CQkJIglwcml2YXRlIHN0YXRpYyBib29sZWFuIGZvbyhpbnQgd2hlcmUpIHRocm93cyBFeGNlcHRp
+b24ge1xuIiArCisJCQkiCQlmaW5hbCBib29sZWFuIGdldE91dCA9IHRydWU7XG4iICsKKwkJCSIg
+ICAgCVN5c3RlbS5vdXQucHJpbnRsbihcIk1haW5cIik7XG4iICsKKwkJCSIgICAgCXRyeSAoWCB4
+MSA9IG5ldyBYKCk7IFggeDIgPSBuZXcgWCgpKSB7XG4iICsKKwkJCSIgICAgCQlpZiAod2hlcmUg
+PT0gMSkge1xuIiArCisJCQkiICAgIAkJCXJldHVybiB3aGVyZSA9PSAxO1xuIiArCisJCQkiICAg
+IAkJfVxuIiArCisJCQkiICAgICAgICAgICAgU3lzdGVtLm91dC5wcmludGxuKFwiT3V0ZXIgVHJ5
+XCIpO1xuIiArCisJCQkiICAgICAgICAgICAgd2hpbGUgKHRydWUpIHtcbiIgKworCQkJIiAgICAg
+ICAgICAgIAl0cnkgKFkgeTEgPSBuZXcgWSgpOyBZIHkyID0gbmV3IFkoKSkgeyBcbiIgKworCQkJ
+IiAgICAgICAgICAgIAkJaWYgKHdoZXJlID09IDIpIHtcbiIgKworCQkJIiAgICAgICAgICAgIAkJ
+CXJldHVybiB3aGVyZSA9PSAyO1xuIiArCisJCQkiICAgICAgICAgICAgCQl9CQlcbiIgKworCQkJ
+IiAgICAgICAgICAgIAkJU3lzdGVtLm91dC5wcmludGxuKFwiTWlkZGxlIFRyeVwiKTtcbiIgKwor
+CQkJIiAgICAgICAgICAgIAkJdHJ5IChaIHoxID0gbmV3IFooKTsgWiB6MiA9IG5ldyBaKCkpIHtc
+biIgKworCQkJIiAgICAgICAgICAgIAkJCVN5c3RlbS5vdXQucHJpbnRsbihcIklubmVyIFRyeVwi
+KTtcbiIgKworCQkJIiAgICAgICAgICAgIAkJCWlmIChnZXRPdXQpIFxuIiArCisJCQkiICAgICAg
+ICAgICAgCQkJCXJldHVybiBudW0gPj0gMTA7XG4iICsKKwkJCSIgICAgICAgICAgICAJCQllbHNl
+XG4iICsKKwkJCSIgICAgICAgICAgICAJCQkJYnJlYWs7IFxuIiArCisJCQkiICAgICAgICAgICAg
+CQl9XG4iICsKKwkJCSIgICAgICAgICAgICAJfVxuIiArCisJCQkiICAgICAgICAgICAgfVxuIiAr
+CisJCQkiICAgICAgICAgICAgU3lzdGVtLm91dC5wcmludGxuKFwiT3V0IG9mIHdoaWxlXCIpO1xu
+IiArCisJCQkiICAgICAgICB9XG4iICsKKwkJCSIJCXJldHVybiBmYWxzZTtcbiIgKworCQkJIgl9
+XG4iICsKKwkJCSIgICAgcHVibGljIFgoKSB7XG4iICsKKwkJCSIgICAgICAgIFN5c3RlbS5vdXQu
+cHJpbnRsbihcIlg6OlhcIik7XG4iICsKKwkJCSIgICAgfVxuIiArCisJCQkiICAgIEBPdmVycmlk
+ZVxuIiArCisJCQkiCXB1YmxpYyB2b2lkIGNsb3NlKCkgdGhyb3dzIEV4Y2VwdGlvbiB7XG4iICsK
+KwkJCSIgICAgICAgIFN5c3RlbS5vdXQucHJpbnRsbihcIlg6On5YXCIpO1xuIiArCisJCQkiICAg
+IH1cbiIgKworCQkJIn1cbiIgKworCQkJImNsYXNzIFkgaW1wbGVtZW50cyBBdXRvQ2xvc2VhYmxl
+IHtcbiIgKworCQkJIiAgICBwdWJsaWMgWSgpIHtcbiIgKworCQkJIiAgICAgICAgU3lzdGVtLm91
+dC5wcmludGxuKFwiWTo6WVwiKTtcbiIgKworCQkJIiAgICB9XG4iICsKKwkJCSIgICAgQE92ZXJy
+aWRlXG4iICsKKwkJCSIJcHVibGljIHZvaWQgY2xvc2UoKSB0aHJvd3MgRXhjZXB0aW9uIHtcbiIg
+KworCQkJIiAgICAgICAgU3lzdGVtLm91dC5wcmludGxuKFwiWTo6fllcIik7XG4iICsKKwkJCSIg
+ICAgfVxuIiArCisJCQkifVxuIiArCisJCQkiY2xhc3MgWiBpbXBsZW1lbnRzIEF1dG9DbG9zZWFi
+bGUge1xuIiArCisJCQkiICAgIHB1YmxpYyBaKCkge1xuIiArCisJCQkiICAgICAgICBTeXN0ZW0u
+b3V0LnByaW50bG4oXCJaOjpaXCIpO1xuIiArCisJCQkiICAgIH1cbiIgKworCQkJIiAgICBAT3Zl
+cnJpZGVcbiIgKworCQkJIglwdWJsaWMgdm9pZCBjbG9zZSgpIHRocm93cyBFeGNlcHRpb24ge1xu
+IiArCisJCQkiICAgICAgICBTeXN0ZW0ub3V0LnByaW50bG4oXCJaOjp+WlwiKTtcbiIgKworCQkJ
+IiAgICB9XG4iICsKKwkJCSJ9XG4iCisJCX0sIAorCQkiTWFpblxuIiArIAorCQkiWDo6WFxuIiAr
+IAorCQkiWDo6WFxuIiArIAorCQkiWDo6flhcbiIgKyAKKwkJIlg6On5YXG4iICsgCisJCSJ0cnVl
+XG4iICsgCisJCSJNYWluXG4iICsgCisJCSJYOjpYXG4iICsgCisJCSJYOjpYXG4iICsgCisJCSJP
+dXRlciBUcnlcbiIgKyAKKwkJIlk6OllcbiIgKyAKKwkJIlk6OllcbiIgKyAKKwkJIlk6On5ZXG4i
+ICsgCisJCSJZOjp+WVxuIiArIAorCQkiWDo6flhcbiIgKyAKKwkJIlg6On5YXG4iICsgCisJCSJ0
+cnVlXG4iICsgCisJCSJNYWluXG4iICsgCisJCSJYOjpYXG4iICsgCisJCSJYOjpYXG4iICsgCisJ
+CSJPdXRlciBUcnlcbiIgKyAKKwkJIlk6OllcbiIgKyAKKwkJIlk6OllcbiIgKyAKKwkJIk1pZGRs
+ZSBUcnlcbiIgKyAKKwkJIlo6OlpcbiIgKyAKKwkJIlo6OlpcbiIgKyAKKwkJIklubmVyIFRyeVxu
+IiArIAorCQkiWjo6flpcbiIgKyAKKwkJIlo6On5aXG4iICsgCisJCSJZOjp+WVxuIiArIAorCQki
+WTo6fllcbiIgKyAKKwkJIlg6On5YXG4iICsgCisJCSJYOjp+WFxuIiArIAorCQkidHJ1ZSIpOwor
+fQorCiBwdWJsaWMgc3RhdGljIENsYXNzIHRlc3RDbGFzcygpIHsKIAlyZXR1cm4gVHJ5V2l0aFJl
+c291cmNlc1N0YXRlbWVudFRlc3QuY2xhc3M7CiB9CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5q
+ZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L1Jl
+dHVyblN0YXRlbWVudC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2Vj
+bGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9SZXR1cm5TdGF0ZW1lbnQuamF2YQppbmRl
+eCA2MWM2N2EwLi4xNjdmYzQ3IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21w
+aWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L1JldHVyblN0YXRlbWVu
+dC5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9hc3QvUmV0dXJuU3RhdGVtZW50LmphdmEKQEAgLTEsNSArMSw1
+IEBACiAvKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKgotICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDEx
+IElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgorICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDEy
+IElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgogICogQWxsIHJpZ2h0cyByZXNlcnZlZC4gVGhp
+cyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVyaWFscwogICogYXJlIG1hZGUgYXZh
+aWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0aGUgRWNsaXBzZSBQdWJsaWMgTGljZW5zZSB2MS4w
+CiAgKiB3aGljaCBhY2NvbXBhbmllcyB0aGlzIGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2YWlsYWJs
+ZSBhdApAQCAtNjQsNiArNjQsNyBAQAogCWludCBzdWJDb3VudCA9IDA7CiAJYm9vbGVhbiBzYXZl
+VmFsdWVOZWVkZWQgPSBmYWxzZTsKIAlib29sZWFuIGhhc1ZhbHVlVG9TYXZlID0gbmVlZFZhbHVl
+U3RvcmUoKTsKKwlib29sZWFuIG5vQXV0b0Nsb3NlYWJsZXMgPSB0cnVlOwogCWRvIHsKIAkJU3Vi
+Um91dGluZVN0YXRlbWVudCBzdWI7CiAJCWlmICgoc3ViID0gdHJhdmVyc2VkQ29udGV4dC5zdWJy
+b3V0aW5lKCkpICE9IG51bGwpIHsKQEAgLTc4LDYgKzc5LDExIEBACiAJCQkJc2F2ZVZhbHVlTmVl
+ZGVkID0gZmFsc2U7CiAJCQkJdGhpcy5iaXRzIHw9IEFTVE5vZGUuSXNBbnlTdWJSb3V0aW5lRXNj
+YXBpbmc7CiAJCQkJYnJlYWs7CisJCQl9CisJCQlpZiAoc3ViIGluc3RhbmNlb2YgVHJ5U3RhdGVt
+ZW50KSB7CisJCQkJaWYgKCgoVHJ5U3RhdGVtZW50KSBzdWIpLnJlc291cmNlcy5sZW5ndGggPiAw
+KSB7CisJCQkJCW5vQXV0b0Nsb3NlYWJsZXMgPSBmYWxzZTsKKwkJCQl9CiAJCQl9CiAJCX0KIAkJ
+dHJhdmVyc2VkQ29udGV4dC5yZWNvcmRSZXR1cm5Gcm9tKGZsb3dJbmZvLnVuY29uZGl0aW9uYWxJ
+bml0cygpKTsKQEAgLTExNyw3ICsxMjMsOSBAQAogCX0gZWxzZSB7CiAJCXRoaXMuc2F2ZVZhbHVl
+VmFyaWFibGUgPSBudWxsOwogCQlpZiAoKCh0aGlzLmJpdHMgJiBBU1ROb2RlLklzU3luY2hyb25p
+emVkKSA9PSAwKSAmJiB0aGlzLmV4cHJlc3Npb24gIT0gbnVsbCAmJiB0aGlzLmV4cHJlc3Npb24u
+cmVzb2x2ZWRUeXBlID09IFR5cGVCaW5kaW5nLkJPT0xFQU4pIHsKLQkJCXRoaXMuZXhwcmVzc2lv
+bi5iaXRzIHw9IEFTVE5vZGUuSXNSZXR1cm5lZFZhbHVlOworCQkJaWYgKG5vQXV0b0Nsb3NlYWJs
+ZXMpIHsgLy8gY2FuJ3QgYWJydXB0bHkgcmV0dXJuIGluIHRoZSBwcmVzZW5jZSBvZiBhdXRvY2xv
+c2VhYmxlcy4gU2VlIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy9idWdzL3Nob3dfYnVnLmNnaT9p
+ZD0zNjc1NjYKKwkJCQl0aGlzLmV4cHJlc3Npb24uYml0cyB8PSBBU1ROb2RlLklzUmV0dXJuZWRW
+YWx1ZTsKKwkJCX0KIAkJfQogCX0KIAljdXJyZW50U2NvcGUuY2hlY2tVbmNsb3NlZENsb3NlYWJs
+ZXMoZmxvd0luZm8sIHRoaXMsIGN1cnJlbnRTY29wZSk7
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

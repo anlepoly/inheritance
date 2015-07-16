@@ -1,0 +1,48 @@
+BUG REPORT COMMENTS:
+Build Identifier: M20090917-0800
+
+Per the specs, getEnclosedElements should return items in source order. However, it seems to return them in alphabetical order.
+
+I'm making an annotation where method parameters in a generated class are based on the source order of the annotated class. This is what would make the most sense to the user. Alphabetical is at least deterministic, but source order is preferable.
+
+http://download.java.net/jdk7/docs/api/javax/lang/model/element/TypeElement.html
+
+(Also, will debugging, I'm pretty sure I noticed getAllMembers uses hash maps internally and so will result in non-deterministic ordering. I was originally using getAllMembers and so I suspected it to be the culprit. However, removing it is still sorting orders alphabetically. I'd like to use getAllMembers if it would also respect source order--perhaps base class items first, source order, then sub class items next, also source order.)
+
+javac does return source order, which makes building cross-compiler annotation processors more complicated. I'll have to re-sort on own, most likely alphabetically since that is all I can do, so that both Eclipse and javac output is the same.
+
+
+
+Reproducible: Always
+
+Steps to Reproduce:
+1. Make a source class with two fields bFoo first and aFoo second.
+2. Make an annotation processor that calls getEnclosedElements and the order is aFoo then bFoo.
+You cite the JDK 7 spec, but that is not (yet, anyway) what Eclipse implements, nor do I know of any JSR that superceded the Java 6 JSR 269 spec that was implemented in JDK 6 and that Eclipse is meant to implement.  I don't see anything in the JDK 6 documentation about the ordering of getEnclosedElements; can you point me to it?
+
+We currently have no information about changes that may or may not be in JDK 7 when/if it emerges, since it appears to no longer be subject to the JCP.  Thus there is no schedule for implementing JDK 7 changes.  That said, it may be possible to get this ordering to work the way you want; I'll try to take a look.
+Ack--my apologies about the jdk7 link; it was just the first thing I came across on Google.
+
+Here are the jdk6 javadocs for TypeElement with the same wording:
+
+http://java.sun.com/javase/6/docs/api/javax/lang/model/element/TypeElement.html
+
+    Each method of this interface that returns a list of elements will return them in the order that is natural for the underlying source of program information. For example, if the underlying source of information is Java source code, then the elements will be returned in source code order.
+
+However, now that you mention it, I'm calling Element.getEnclosedElements, which is in the super interface of TypeElement, not TypeElement itself. So, perhaps the javadocs in TypeElement are meant to apply only to those methods declared directly in TypeElement, e.g. getInterfaces() and getTypeParameters().
+
+Well, isn't that odd. My original search query when researching this was "getEnclosedElements order":
+
+http://www.google.com/search?q=getEnclosedElements+order
+
+Note the 1st result is the jdk7 link (no idea how it made it to the front of the list given its not even out yet).
+
+However, more interesting is note that the 2nd result is this bug:
+
+http://bugs.sun.com/view_bug.do?bug_id=6884227
+
+The bug was only submitted in September of 2009--so maybe the javadocs have changed since you/Eclipse first implemented them.
+Hmm, this might be a challenge.  The Eclipse compiler internally stores the elements categorized by type (field, method, etc.) and sorted alphabetically; that is, it does not keep track of source order.  To maintain source order we'll need to walk the AST and re-organize the bindings in a list of our own, separate from the compiler's internal list.  Not impossible but I fear it's a substantial amount of effort.  I guess if that's the direction that JDK 7 is going in, we'll need to do it at some point.
+
+Independently of that issue, I agree completely that getAllMembers should at least be deterministic.  That should be a trivial change.
+

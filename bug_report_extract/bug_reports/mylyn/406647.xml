@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>406647</bug_id>
+          
+          <creation_ts>2013-04-26 07:43:00 -0400</creation_ts>
+          <short_desc>task data gets corrupted when falling back to XML 1.1</short_desc>
+          <delta_ts>2013-04-30 17:04:49 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>14</classification_id>
+          <classification>Mylyn</classification>
+          <product>Mylyn Tasks</product>
+          <component>Framework</component>
+          <version>unspecified</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>3.8.4</target_milestone>
+          
+          <blocked>406959</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Steffen Pingel">steffen.pingel</reporter>
+          <assigned_to name="Steffen Pingel">steffen.pingel</assigned_to>
+          <cc>david.green</cc>
+    
+    <cc>shawn.minto</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2248921</commentid>
+    <comment_count>0</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-04-26 07:43:31 -0400</bug_when>
+    <thetext>When a non XML character is encountered in task data the parsing code falls back to using XML 1.1 (bug 268456) which supports a larger character set. Depending on the input the built in SAX parser of the JDK can fail to parse the data correctly. Some attribute values may contain part of XML tags instead of the expected characters.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2249142</commentid>
+    <comment_count>1</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-04-26 13:47:31 -0400</bug_when>
+    <thetext>For reference: http://wiki.eclipse.org/Orbit/Xerces_in_Eclipse.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2249191</commentid>
+    <comment_count>2</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-04-26 15:42:39 -0400</bug_when>
+    <thetext>Proposed fix that adds Apache Xerces as an explicit dependency for org.eclipse.mylyn.tasks.core: https://git.eclipse.org/r/#/c/12234/.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2249674</commentid>
+    <comment_count>3</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-04-29 05:55:11 -0400</bug_when>
+    <thetext>The proposed change causes other bundles that depend on tasks.core (but not xerces) to fail when creating XML reader instances. A similar problem is described here: https://bugs.eclipse.org/bugs/show_bug.cgi?id=167695#c20
+
+I was only able to reproduce this on Java 1.7. It appears that XMLReaderFactory attempts to discover the SAX parser by looking up META-INF/services/org.xml.sax.driver. In Java 1.7 discovery is only done once and the class name is cached. If the first bundle that uses XMLReaderFactory has Xerces on the bundle class path &quot;org.apache.xerces.parsers.SAXParser&quot; will end up getting cached and subsequent invocations of the factory method will fail for bundles that don&apos;t depend on xerces.
+
+To fix the problem clients need to change usage of XMLReaderFactory:
+
+  XMLReader reader = XMLReaderFactory.createXMLReader();
+  
+To using SAXParserFactory:
+
+  SAXParser parser = SAXParserFactory.newInstance().newSAXParser();
+  XMLReader reader = parser.getXMLReader();
+
+Since we discussed this: XMLReaderFactory.createXMLReader() and it&apos;s related factories use the thread context class loader. Eclipse sets that to ContextFinder which uses the stack to find the bundle class loader that called into the factory.
+
+Stack trace on Java 1.7:
+
+org.xml.sax.SAXException: SAX2 driver class org.apache.xerces.parsers.SAXParser not found
+java.lang.ClassNotFoundException: org.apache.xerces.parsers.SAXParser
+	at org.xml.sax.helpers.XMLReaderFactory.loadClass(XMLReaderFactory.java:229)
+	at org.xml.sax.helpers.XMLReaderFactory.createXMLReader(XMLReaderFactory.java:190)
+	at org.eclipse.mylyn.internal.context.core.SaxContextReader.readContext(SaxContextReader.java:75)
+	at org.eclipse.mylyn.internal.context.core.InteractionContextExternalizer.readContextFromXml(InteractionContextExternalizer.java:241)
+	at org.eclipse.mylyn.internal.context.core.InteractionContextExternalizer.readContextFromXml(InteractionContextExternalizer.java:225)
+	at org.eclipse.mylyn.internal.context.core.LocalContextStore.loadContext(LocalContextStore.java:107)
+	at org.eclipse.mylyn.internal.context.core.LocalContextStore.loadContext(LocalContextStore.java:83)
+	at org.eclipse.mylyn.internal.context.core.InteractionContextManager.loadActivityMetaContext(InteractionContextManager.java:820)
+	at org.eclipse.mylyn.internal.context.tasks.ui.ActivityExternalizationParticipant.execute(ActivityExternalizationParticipant.java:67)
+	at org.eclipse.mylyn.internal.tasks.core.externalization.ExternalizationManager$1.run(ExternalizationManager.java:117)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250829</commentid>
+    <comment_count>4</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-04-30 17:04:49 -0400</bug_when>
+    <thetext>The fixes have been merged on master and the e_3_8_m_3_8_x branch. The tasks.core bundle now uses SAXParserFactory instead of XMLReaderFactory to avoid the problem described in comment 3. I have opened bug 406959 to update other usages of XMLReaderFactory as well in case other bundles trigger this problem which could break Mylyn.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

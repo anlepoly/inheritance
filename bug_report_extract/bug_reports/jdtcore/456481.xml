@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>456481</bug_id>
+          
+          <creation_ts>2015-01-01 09:40:00 -0500</creation_ts>
+          <short_desc>[1.8] VerifyError on constructor reference inside lambda</short_desc>
+          <delta_ts>2015-01-28 01:51:05 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Sasikanth Bharadwaj">saammana</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>luan.nico</cc>
+    
+    <cc>manpalat</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="63931"
+          type_id="1"
+          status="+"
+          setter="jarthana"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2501403</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-01 09:40:08 -0500</bug_when>
+    <thetext>This example from http://bugs.java.com/bugdatabase/view_bug.do?bug_id=8044737 
+
+//--- 
+public class Test  {
+
+    interface Constructor {
+        MyTest execute();
+    }
+
+    class MyTest {
+        MyTest() { System.out.println(&quot;Constructor executed&quot;); }
+    }
+
+    public Constructor getConstructor() {
+        return getConstructor(() -&gt; { return MyTest::new; });
+    }
+
+    public static void main(String argv[]) {
+        Test t = new Test();
+        MyTest mytest = t.getConstructor().execute();
+    }
+
+    Constructor getConstructor(Wrapper arg) {
+        return arg.unwrap();
+    }
+
+    interface Wrapper {
+        Constructor unwrap();
+    }
+}
+//---
+
+compiles fine using ecj head, but at runtime the program throws:
+
+Exception in thread &quot;main&quot; java.lang.VerifyError: Bad local variable type
+Exception Details:
+  Location:
+    Test.lambda$0()LTest$Constructor; @0: aload_0
+  Reason:
+    Type top (current frame, locals[0]) is not assignable to reference type
+  Current Frame:
+    bci: @0
+    flags: { }
+    locals: { }
+    stack: { }
+  Bytecode:
+    0x0000000: 2aba 0026 0000 b0                      
+
+        at java.lang.Class.getDeclaredMethods0(Native Method)
+        at java.lang.Class.privateGetDeclaredMethods(Class.java:2693)
+        at java.lang.Class.privateGetMethodRecursive(Class.java:3040)
+        at java.lang.Class.getMethod0(Class.java:3010)
+        at java.lang.Class.getMethod(Class.java:1776)
+        at sun.launcher.LauncherHelper.validateMainClass(LauncherHelper.java:544)
+        at sun.launcher.LauncherHelper.checkAndLoadMain(LauncherHelper.java:526)
+
+The compiled method lambda$0 looks like this:
+
+  private static Test$Constructor lambda$0();
+    flags: ACC_PRIVATE, ACC_STATIC, ACC_SYNTHETIC
+    Code:
+      stack=1, locals=1, args_size=0
+         0: aload_0       
+         1: invokedynamic #38,  0             // InvokeDynamic #1:execute:(LTest;)LTest$Constructor;
+         6: areturn       
+      LineNumberTable:
+        line 12: 0
+
+
+aload_0 in a static argumentless methods doesn&apos;t look right ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501717</commentid>
+    <comment_count>1</comment_count>
+    <who name="Luan Nico">luan.nico</who>
+    <bug_when>2015-01-03 20:42:15 -0500</bug_when>
+    <thetext>A much simpler setup will do the trick:
+
+//--- 
+public class A {
+
+	public static void main(String[] args) { }
+
+	public void run() {
+		class B {
+		}
+
+		Runnable r = () -&gt; new B();
+	}
+}
+//--- 
+
+The problem is when a anonymous inner class inside a non-static method is instantiated inside a lambda expression. The main is just for running the code with eclipse. The method doesn&apos;t need to be run - the errors seems to occur when the class is loaded and Java verifies the bytecode to see if it is alright. It compiles fine with javac.
+
+The exact error for this scenario is:
+
+//--- 
+Exception in thread &quot;main&quot; java.lang.VerifyError: Bad local variable type
+Exception Details:
+  Location:
+    A.lambda$0()V @4: aload_0
+  Reason:
+    Type top (current frame, locals[0]) is not assignable to reference type
+  Current Frame:
+    bci: @4
+    flags: { }
+    locals: { }
+    stack: { uninitialized 0, uninitialized 0 }
+  Bytecode:
+    0x0000000: bb00 1959 2ab7 001b b1                 
+
+	at java.lang.Class.getDeclaredMethods0(Native Method)
+	at java.lang.Class.privateGetDeclaredMethods(Class.java:2693)
+	at java.lang.Class.privateGetMethodRecursive(Class.java:3040)
+	at java.lang.Class.getMethod0(Class.java:3010)
+	at java.lang.Class.getMethod(Class.java:1776)
+	at sun.launcher.LauncherHelper.validateMainClass(LauncherHelper.java:544)
+	at sun.launcher.LauncherHelper.checkAndLoadMain(LauncherHelper.java:526)
+//---</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501819</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-04 22:53:37 -0500</bug_when>
+    <thetext>Sasi, please take this forward. Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501832</commentid>
+    <comment_count>3</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2015-01-05 01:40:40 -0500</bug_when>
+    <thetext>The first example in comment 0 happens because the Reference Expression needs to tag the lambda as non-static, which currently it doesn&apos;t. Second example in comment 1 works fine on head. Which build were you using? Could you check the comment1 test case with the most recent 4.5?
+
+Thanks</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2502224</commentid>
+    <comment_count>4</comment_count>
+      <attachid>249727</attachid>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2015-01-06 00:31:14 -0500</bug_when>
+    <thetext>Created attachment 249727
+patch with fix and test</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2502225</commentid>
+    <comment_count>5</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2015-01-06 00:35:22 -0500</bug_when>
+    <thetext>Jay, please review. Constructor references do not tag the lambda as requiring enclosing instance which causes this problem. Patch addresses this by doing the necessary tagging. All java8 tests pass with the patch</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2502577</commentid>
+    <comment_count>6</comment_count>
+    <who name="Luan Nico">luan.nico</who>
+    <bug_when>2015-01-06 16:41:59 -0500</bug_when>
+    <thetext>Sorry, my bad about the code example, I said you didn&apos;t need to run it, but you actually do - just add new A().run(); to the main method. I&apos;m using Luna 4.4.0 [20140612-0600], and comment_0 gets the same problem. I try the fix as soon as it is released in a update :) (sorry, I&apos;m not familiar with the build process to try it out now).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2502738</commentid>
+    <comment_count>7</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-07 06:12:38 -0500</bug_when>
+    <thetext>Looks good Sasi, please release.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2503276</commentid>
+    <comment_count>8</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2015-01-08 07:03:46 -0500</bug_when>
+    <thetext>Fix and test released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=850beb1f09df6032835753aabec914d27d4848de</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511131</commentid>
+    <comment_count>9</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2015-01-28 01:51:05 -0500</bug_when>
+    <thetext>Verified for Eclipse Mars 4.5 M5 Build id: I20150126-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>249727</attachid>
+            <date>2015-01-06 00:31:00 -0500</date>
+            <delta_ts>2015-01-06 00:31:14 -0500</delta_ts>
+            <desc>patch with fix and test</desc>
+            <filename>Fix-and-tests-for-bug456481.patch</filename>
+            <type>text/plain</type>
+            <size>5061</size>
+            <attacher name="Sasikanth Bharadwaj">saammana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0xhbWJkYVJlZ3Jlc3Np
+b25UZXN0LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3Jn
+L2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9MYW1iZGFSZWdyZXNz
+aW9uVGVzdC5qYXZhDQppbmRleCAyNTEyY2E3Li42NjE5MWRiIDEwMDY0NA0KLS0tIGEvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rl
+c3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTGFtYmRhUmVncmVzc2lvblRlc3QuamF2YQ0KKysrIGIv
+b3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9j
+b3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTGFtYmRhUmVncmVzc2lvblRlc3QuamF2YQ0K
+QEAgLTEsNSArMSw1IEBADQogLyoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioNCi0gKiBDb3B5cmlnaHQg
+KGMpIDIwMTQgSUJNIENvcnBvcmF0aW9uIGFuZCBvdGhlcnMuDQorICogQ29weXJpZ2h0IChjKSAy
+MDE1IElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLg0KICAqIEFsbCByaWdodHMgcmVzZXJ2ZWQu
+IFRoaXMgcHJvZ3JhbSBhbmQgdGhlIGFjY29tcGFueWluZyBtYXRlcmlhbHMNCiAgKiBhcmUgbWFk
+ZSBhdmFpbGFibGUgdW5kZXIgdGhlIHRlcm1zIG9mIHRoZSBFY2xpcHNlIFB1YmxpYyBMaWNlbnNl
+IHYxLjANCiAgKiB3aGljaCBhY2NvbXBhbmllcyB0aGlzIGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2
+YWlsYWJsZSBhdA0KQEAgLTYwMCw2ICs2MDAsNzAgQEANCiAJfSwNCiAJIiIpOw0KIH0NCisNCisv
+LyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9NDU2NDgxIC0g
+WzEuOF0gVmVyaWZ5RXJyb3Igb24gY29uc3RydWN0b3IgcmVmZXJlbmNlIGluc2lkZSBsYW1iZGEN
+CitwdWJsaWMgdm9pZCB0ZXN0QnVnNDU2NDgxKCkgew0KKwl0aGlzLnJ1bkNvbmZvcm1UZXN0KG5l
+dyBTdHJpbmcgW10gew0KKwkJIlRlc3QuamF2YSIsDQorCQkicHVibGljIGNsYXNzIFRlc3QgIHtc
+biIgKyANCisJCSIgICAgaW50ZXJmYWNlIENvbnN0cnVjdG9yIHtcbiIgKyANCisJCSIgICAgICAg
+IE15VGVzdCBleGVjdXRlKCk7XG4iICsgDQorCQkiICAgIH1cbiIgKyANCisJCSIgICAgaW50ZXJm
+YWNlIEFycmF5Q29uc3RydWN0b3Ige1xuIiArIA0KKwkJIiAgICAJTXlUZXN0W10gZXhlY3V0ZShp
+bnQgbm8pO1xuIiArIA0KKwkJIiAgICB9XG4iICsgDQorCQkiICAgIGludGVyZmFjZSBQYXJhbWV0
+ZXJpemVkQ29uc3RydWN0b3Ige1xuIiArIA0KKwkJIiAgICAJTXlQYXJhbWV0ZXJpemVkVGVzdDxT
+dHJpbmc+IGV4ZWN1dGUoKTtcbiIgKyANCisJCSIgICAgfVxuIiArIA0KKwkJIiAgICBjbGFzcyBN
+eVRlc3Qge1xuIiArIA0KKwkJIiAgICAgICAgTXlUZXN0KCkgeyBTeXN0ZW0ub3V0LnByaW50bG4o
+XCJDb25zdHJ1Y3RvciBleGVjdXRlZFwiKTsgfVxuIiArIA0KKwkJIiAgICB9XG4iICsgDQorCQki
+ICAgIGNsYXNzIE15UGFyYW1ldGVyaXplZFRlc3Q8VD4ge1xuIiArIA0KKwkJIiAgICAJTXlQYXJh
+bWV0ZXJpemVkVGVzdCgpIHtcbiIgKyANCisJCSIgICAgCQlTeXN0ZW0ub3V0LnByaW50bG4oXCJQ
+YXJhbWV0ZXJpemVkIENvbnN0cnVjdG9yIGV4ZWN1dGVkXCIpO1xuIiArIA0KKwkJIiAgICAJfVxu
+IiArIA0KKwkJIiAgICB9XG4iICsgDQorCQkiICAgIHB1YmxpYyBDb25zdHJ1Y3RvciBnZXRDb25z
+dHJ1Y3RvcigpIHtcbiIgKyANCisJCSIgICAgICAgIHJldHVybiBnZXRDb25zdHJ1Y3RvcigoKSAt
+PiB7IHJldHVybiBNeVRlc3Q6Om5ldzsgfSk7XG4iICsgDQorCQkiICAgIH1cbiIgKyANCisJCSIg
+ICAgcHVibGljIE15VGVzdFtdIGdldEFycmF5KGludCBubykge1xuIiArIA0KKwkJIiAgICAJcmV0
+dXJuIG5ldyBNeVRlc3Rbbm9dO1xuIiArIA0KKwkJIiAgICB9XG4iICsgDQorCQkiICAgIEFycmF5
+Q29uc3RydWN0b3IgZ2V0QXJyYXlDb25zdHJ1Y3RvcigpIHtcbiIgKyANCisJCSIgICAgCXJldHVy
+biBnZXRBcnJheUNvbnN0cnVjdG9yKCgpIC0+IHtyZXR1cm4gTXlUZXN0W106Om5ldzt9KTtcbiIg
+KyANCisJCSIgICAgfVxuIiArIA0KKwkJIiAgICBQYXJhbWV0ZXJpemVkQ29uc3RydWN0b3IgZ2V0
+UGFyYW1ldGVyaXplZENvbnN0cnVjdG9yKCkge1xuIiArIA0KKwkJIiAgICAJcmV0dXJuIGdldFBh
+cmFtZXRlcml6ZWRDb25zdHJ1Y3RvcigoKSAtPiB7cmV0dXJuIE15UGFyYW1ldGVyaXplZFRlc3Q8
+U3RyaW5nPjo6bmV3O30pO1xuIiArIA0KKwkJIiAgICB9XG4iICsgDQorCQkiICAgIEFycmF5Q29u
+c3RydWN0b3IgZ2V0QXJyYXlDb25zdHJ1Y3RvcihBcnJheVdyYXBwZXIgdykge1xuIiArIA0KKwkJ
+IiAgICAJcmV0dXJuIHcudW53cmFwKCk7XG4iICsgDQorCQkiICAgIH1cbiIgKyANCisJCSIgICAg
+cHVibGljIHN0YXRpYyB2b2lkIG1haW4oU3RyaW5nIGFyZ3ZbXSkge1xuIiArIA0KKwkJIiAgICAg
+ICAgVGVzdCB0ID0gbmV3IFRlc3QoKTtcbiIgKyANCisJCSIgICAgICAgIE15VGVzdCBteXRlc3Qg
+PSB0LmdldENvbnN0cnVjdG9yKCkuZXhlY3V0ZSgpO1xuIiArIA0KKwkJIiAgICAgICAgTXlUZXN0
+W10gYXJyYXkgPSB0LmdldEFycmF5Q29uc3RydWN0b3IoKS5leGVjdXRlKDIpO1xuIiArDQorCQki
+ICAgICAgICBNeVBhcmFtZXRlcml6ZWRUZXN0PFN0cmluZz4gcHQgPSB0LmdldFBhcmFtZXRlcml6
+ZWRDb25zdHJ1Y3RvcigpLmV4ZWN1dGUoKTtcbiIgKw0KKwkJIiAgICB9XG4iICsgDQorCQkiICAg
+IFBhcmFtZXRlcml6ZWRDb25zdHJ1Y3RvciBnZXRQYXJhbWV0ZXJpemVkQ29uc3RydWN0b3IoUFRX
+cmFwcGVyIHB0dykge1xuIiArIA0KKwkJIiAgICAJcmV0dXJuIHB0dy51bndyYXAoKTtcbiIgKyAN
+CisJCSIgICAgfVxuIiArIA0KKwkJIiAgICBDb25zdHJ1Y3RvciBnZXRDb25zdHJ1Y3RvcihXcmFw
+cGVyIGFyZykge1xuIiArIA0KKwkJIiAgICAgICAgcmV0dXJuIGFyZy51bndyYXAoKTtcbiIgKyAN
+CisJCSIgICAgfVxuIiArIA0KKwkJIiAgICBpbnRlcmZhY2UgUFRXcmFwcGVyIHtcbiIgKyANCisJ
+CSIgICAgCVBhcmFtZXRlcml6ZWRDb25zdHJ1Y3RvciB1bndyYXAoKTtcbiIgKyANCisJCSIgICAg
+fVxuIiArIA0KKwkJIiAgICBpbnRlcmZhY2UgQXJyYXlXcmFwcGVyIHtcbiIgKyANCisJCSIgICAg
+CUFycmF5Q29uc3RydWN0b3IgdW53cmFwKCk7XG4iICsgDQorCQkiICAgIH1cbiIgKyANCisJCSIg
+ICAgaW50ZXJmYWNlIFdyYXBwZXIge1xuIiArIA0KKwkJIiAgICAgICAgQ29uc3RydWN0b3IgdW53
+cmFwKCk7XG4iICsgDQorCQkiICAgIH1cbiIgKyANCisJCSJ9Ig0KKwl9LA0KKwkiQ29uc3RydWN0
+b3IgZXhlY3V0ZWRcbiIgKw0KKwkiUGFyYW1ldGVyaXplZCBDb25zdHJ1Y3RvciBleGVjdXRlZCIp
+Ow0KK30NCiBwdWJsaWMgc3RhdGljIENsYXNzIHRlc3RDbGFzcygpIHsNCiAJcmV0dXJuIExhbWJk
+YVJlZ3Jlc3Npb25UZXN0LmNsYXNzOw0KIH0NCmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L1JlZmVy
+ZW5jZUV4cHJlc3Npb24uamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvUmVmZXJlbmNlRXhwcmVzc2lvbi5qYXZh
+DQppbmRleCAxMjM5ZGMyLi5mNjkyYTlmIDEwMDY0NA0KLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNv
+cmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9SZWZlcmVu
+Y2VFeHByZXNzaW9uLmphdmENCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29y
+Zy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvUmVmZXJlbmNlRXhwcmVzc2lvbi5q
+YXZhDQpAQCAtMSw1ICsxLDUgQEANCiAvKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKg0KLSAqIENvcHly
+aWdodCAoYykgMjAwMCwgMjAxNCBJQk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy4NCisgKiBDb3B5
+cmlnaHQgKGMpIDIwMDAsIDIwMTUgSUJNIENvcnBvcmF0aW9uIGFuZCBvdGhlcnMuDQogICogQWxs
+IHJpZ2h0cyByZXNlcnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVy
+aWFscw0KICAqIGFyZSBtYWRlIGF2YWlsYWJsZSB1bmRlciB0aGUgdGVybXMgb2YgdGhlIEVjbGlw
+c2UgUHVibGljIExpY2Vuc2UgdjEuMA0KICAqIHdoaWNoIGFjY29tcGFuaWVzIHRoaXMgZGlzdHJp
+YnV0aW9uLCBhbmQgaXMgYXZhaWxhYmxlIGF0DQpAQCAtNDEyLDYgKzQxMiwxMiBAQA0KIAkJaWYg
+KHRoaXMuaGF2ZVJlY2VpdmVyKSB7DQogCQkJdGhpcy5saHMuY2hlY2tOUEUoY3VycmVudFNjb3Bl
+LCBmbG93Q29udGV4dCwgZmxvd0luZm8pOw0KIAkJCXRoaXMubGhzLmFuYWx5c2VDb2RlKGN1cnJl
+bnRTY29wZSwgZmxvd0NvbnRleHQsIGZsb3dJbmZvLCB0cnVlKTsNCisJCX0gZWxzZSBpZiAoaXND
+b25zdHJ1Y3RvclJlZmVyZW5jZSgpKSB7DQorCQkJVHlwZUJpbmRpbmcgdHlwZSA9IHRoaXMucmVj
+ZWl2ZXJUeXBlLmxlYWZDb21wb25lbnRUeXBlKCk7DQorCQkJaWYgKHR5cGUuaXNNZW1iZXJUeXBl
+KCkgJiYNCisJCQkJdHlwZSBpbnN0YW5jZW9mIFJlZmVyZW5jZUJpbmRpbmcgJiYgISgoUmVmZXJl
+bmNlQmluZGluZyl0eXBlKS5pc1N0YXRpYygpKSB7DQorCQkJCWN1cnJlbnRTY29wZS50YWdBc0Fj
+Y2Vzc2luZ0VuY2xvc2luZ0luc3RhbmNlU3RhdGVPZigoUmVmZXJlbmNlQmluZGluZyl0eXBlLCBm
+YWxzZSk7DQorCQkJfQ0KIAkJfQ0KIAkJbWFuYWdlU3ludGhldGljQWNjZXNzSWZOZWNlc3Nhcnko
+Y3VycmVudFNjb3BlLCBmbG93SW5mbyk7DQogCQlyZXR1cm4gZmxvd0luZm87
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,401 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>428811</bug_id>
+          
+          <creation_ts>2014-02-21 18:44:00 -0500</creation_ts>
+          <short_desc>[1.8][compiler] Type witness unnecessarily required</short_desc>
+          <delta_ts>2014-10-29 07:23:42 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M3</target_milestone>
+          
+          <blocked>428061</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Kirk Loretz">kirk_loretz</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2367120</commentid>
+    <comment_count>0</comment_count>
+    <who name="Kirk Loretz">kirk_loretz</who>
+    <bug_when>2014-02-21 18:44:53 -0500</bug_when>
+    <thetext>Eclipse Java Development Tools Patch for Java 8 Support (BETA)	1.0.0.v20140221-1402
+JDK 8 b129 64-bit
+
+-----
+
+import java.util.AbstractList;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.stream.Collector;
+
+public class MoreCollectors {
+    public static void main (String[] args) {
+        ImmutableList&lt;String&gt; list = Arrays.asList(&quot;a&quot;, &quot;b&quot;, &quot;c&quot;).stream().collect(toImmutableList());
+        
+        System.out.println(list);
+    }
+    
+    public static &lt;T&gt; Collector&lt;T, ?, ImmutableList&lt;T&gt;&gt; toImmutableList () {
+        return Collector.of(ArrayList&lt;T&gt;::new,
+                List&lt;T&gt;::add,
+                (left, right) -&gt; { left.addAll(right); return left; },
+                ImmutableList::copyOf);
+    }
+    
+    private static class ImmutableList&lt;T&gt; extends AbstractList&lt;T&gt; {
+        public static &lt;T&gt; ImmutableList&lt;T&gt; copyOf (Collection&lt;T&gt; c) {
+            return new ImmutableList&lt;&gt;(c.toArray());
+        }
+
+        private Object[] array;
+        
+        private ImmutableList (Object[] array) {
+            this.array = array;
+        }
+
+        @Override @SuppressWarnings(&quot;unchecked&quot;)
+        public T get(int index) {
+            return (T)array[index];
+        }
+
+        @Override
+        public int size() {
+            return array.length;
+        }
+    }
+}
+
+-----
+
+The Eclipse compiler requires the Collector.of method in toImmutableList to have a type witness of &lt;T, List&lt;T&gt;, ImmutableList&lt;T&gt;&gt; to compile, while the JDK8 compiler does not. I&apos;m not 100% sure whether it should be required, but I would think javac is correct.
+
+(If you&apos;re wondering, I&apos;m using Guava&apos;s ImmutableList. I made the one here to keep the example self-contained.)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367131</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-21 20:04:41 -0500</bug_when>
+    <thetext>Thanks, I&apos;ll take a look.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367132</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-21 20:06:42 -0500</bug_when>
+    <thetext>Using my workspace version with a few unpublished commits I see the interesting warning:
+
+Problem detected during type inference: (Recovered) Internal inconsistency while checking invocation ambiguity
+
+@Srikanth, our safety net caught another fish :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2370219</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-02 10:40:50 -0500</bug_when>
+    <thetext>We find two candidates during invocation applicability inference:
+
+Collector&lt;Object,Object,Object&gt; of(Supplier&lt;Object&gt;, BiConsumer&lt;Object,Object&gt;, BinaryOperator&lt;Object&gt;, Characteristics[]) 
+
+Collector&lt;Object,Object,Object&gt; of(Supplier&lt;Object&gt;, BiConsumer&lt;Object,Object&gt;, BinaryOperator&lt;Object&gt;, Function&lt;Object,Object&gt;, Characteristics[]) 
+
+
+When checking parameterCompatibilityLevel(), we get NOT_COMPATIBLE for both. This might be a bug, because we are checking against a preliminary solution with lots of types substituted by &apos;Object&apos;, were final inference would find more specific types.
+
+A plausible solution would be to check for all arguments arg.isPertinentToApplicability() during parameterCompatibilityLevel().
+
+HOWEVER, if we fix this, we regard the first method as
+ - APPLICABLE (&quot;applicable in a strict invocation context&quot;)
+and the second as
+ - VARARGS_COMPATIBLE (passing nothing to Characteristics[]).
+
+Now we prefer the first method, which however fails during invocation type inference. After a candidate for strict or loose applicability is found, varargs applicability is not considered according to the spec.
+
+
+At this point I see two possibilities:
+- either applicability inference should be able to reject the first method, or
+- failing the inference is the correct answer.
+
+From a first look, I don&apos;t see on which grounds we could possibly reject the first method during applicability inference, since all arguments to of(...) seem to be not pertinent to applicability.
+
+
+For now let me defer this issue to 4.4, because:
+- we need coordination with the javac team (which takes time)
+- a client solution exists by making type arguments explicit.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2370244</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-02 15:00:32 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #3)
+&gt; When checking parameterCompatibilityLevel(), we get NOT_COMPATIBLE for both.
+&gt; This might be a bug, because we are checking against a preliminary solution
+&gt; with lots of types substituted by &apos;Object&apos;, were final inference would find
+&gt; more specific types.
+&gt; 
+&gt; A plausible solution would be to check for all arguments
+&gt; arg.isPertinentToApplicability() during parameterCompatibilityLevel().
+
+For lack of any good excuse I released that change via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=5090be04f190f40927af0c51e6f1e59a74a5ed03
+
+Test added as GRT_1_8._testBug428811 remains disabled, until we no better what the expected result should really be.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2370909</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-03 19:23:32 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; (In reply to Stephan Herrmann from comment #3)
+&gt; &gt; When checking parameterCompatibilityLevel(), we get NOT_COMPATIBLE for both.
+&gt; &gt; This might be a bug, because we are checking against a preliminary solution
+&gt; &gt; with lots of types substituted by &apos;Object&apos;, were final inference would find
+&gt; &gt; more specific types.
+&gt; &gt; 
+&gt; &gt; A plausible solution would be to check for all arguments
+&gt; &gt; arg.isPertinentToApplicability() during parameterCompatibilityLevel().
+&gt; 
+&gt; For lack of any good excuse I released that change via
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/
+&gt; ?h=BETA_JAVA8&amp;id=5090be04f190f40927af0c51e6f1e59a74a5ed03
+
+For an example where this change makes a difference see http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=55937e1c59536ae2b5bf5c1974bd9004ae584981 on behalf of bug 429490.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2371522</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-04 19:07:07 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; (In reply to Stephan Herrmann from comment #3)
+&gt; &gt; A plausible solution would be to check for all arguments
+&gt; &gt; arg.isPertinentToApplicability() during parameterCompatibilityLevel().
+&gt; 
+&gt; For lack of any good excuse I released that change via
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/
+&gt; ?h=BETA_JAVA8&amp;id=5090be04f190f40927af0c51e6f1e59a74a5ed03
+&gt; 
+&gt; Test added as GRT_1_8._testBug428811 remains disabled, until we know better
+&gt; what the expected result should really be.
+
+For the records: this change has been reverted on behalf of bug 429490 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=a209f427039b5b4db27a67f609cb706801ba28e5</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2389151</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-15 06:47:27 -0400</bug_when>
+    <thetext>Linking to bug 428061 as we should probably file a bug against javac and await their answer.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434382</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-31 15:16:39 -0400</bug_when>
+    <thetext>Srikanth, Jay, anything you&apos;d like me to do for M1?
+
+Otherwise I&apos;d move this to M5, hoping that I find the time for coordination with / bug reports against javac during one of the next milestones...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435236</commentid>
+    <comment_count>9</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-08-04 09:37:18 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #8)
+&gt; Otherwise I&apos;d move this to M5, hoping that I find the time for coordination
+&gt; with / bug reports against javac during one of the next milestones...
+
+Moving out of M1 is fine with me, but I am intrigued by your choice of &apos;M5&apos;. Why not M4 or M6? :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435326</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-04 13:34:09 -0400</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #9)
+&gt; (In reply to Stephan Herrmann from comment #8)
+&gt; &gt; Otherwise I&apos;d move this to M5, hoping that I find the time for coordination
+&gt; &gt; with / bug reports against javac during one of the next milestones...
+&gt; 
+&gt; Moving out of M1 is fine with me, but I am intrigued by your choice of &apos;M5&apos;.
+&gt; Why not M4 or M6? :)
+
+You caught me here :)
+I seems I couldn&apos;t make up my mind between saying &quot;MX&quot; or &quot;4.5&quot; :)
+
+Rest assured, this was NOT an allusion to the fact that M5 traditionally is the one milestone with the late-found stop-ship bug requiring an M5a ;-P</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2453445</commentid>
+    <comment_count>11</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-18 00:05:18 -0400</bug_when>
+    <thetext>Targetting for 4.5 M3. While ATM ownership is left unchanged, Stephan is under
+time constraint during this window, so I will likely take this over or assign to someone else to load balance later on.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2454459</commentid>
+    <comment_count>12</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-09-20 08:49:23 -0400</bug_when>
+    <thetext>Similar failure at https://bugs.eclipse.org/bugs/show_bug.cgi?id=432605</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2459849</commentid>
+    <comment_count>13</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-03 14:45:05 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+
+&gt; For lack of any good excuse I released that change via
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/
+&gt; ?h=BETA_JAVA8&amp;id=5090be04f190f40927af0c51e6f1e59a74a5ed03
+&gt; 
+&gt; Test added as GRT_1_8._testBug428811 remains disabled, until we no better
+&gt; what the expected result should really be.
+
+Hmm. Somehow this test got enabled inadvertently. Since the defect is still
+open I am disabling it back: Here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=69f4a2a3518ca7c69e08a411f56be124aa83c4f6
+
+
+(In reply to Stephan Herrmann from comment #3)
+
+&gt; At this point I see two possibilities:
+&gt; - either applicability inference should be able to reject the first method,
+&gt; or
+&gt; - failing the inference is the correct answer.
+&gt; 
+&gt; From a first look, I don&apos;t see on which grounds we could possibly reject the
+&gt; first method during applicability inference, since all arguments to of(...)
+&gt; seem to be not pertinent to applicability.
+
+I have an idea how to solve this problem, I&apos;ll get on it right after the current
+project I am on.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2460995</commentid>
+    <comment_count>14</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-07 09:44:40 -0400</bug_when>
+    <thetext>The call to shallowOriginal in reduceRefe* does not look totally correct.
+It is stripping the &lt;T&gt; from ArrayList and we lose vital dependency there.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2461062</commentid>
+    <comment_count>15</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-07 11:26:01 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #14)
+&gt; The call to shallowOriginal in reduceRefe* does not look totally correct.
+&gt; It is stripping the &lt;T&gt; from ArrayList and we lose vital dependency there.
+
+I see it as a workaround until we have bug 437444. Ideally we shouldn&apos;t see any PGMB during inference, right? By ripping off the (assumed pre-mature) method parameterization we get down to the bare type parameters we need to infer.
+
+If you think otherwise can you give a little more context?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2461103</commentid>
+    <comment_count>16</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-07 12:47:08 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #15)
+
+
+&gt; If you think otherwise can you give a little more context?
+
+The problem is with List&lt;T&gt;::add case. The type parameter &lt;T&gt; coming
+from the enclosing method is necessary to solve the equations. By calling
+shallow original, we are stripping it down to List&lt;Object&gt;.add
+
+This is what I recall off the top of my head - I have been hopping from
+snippet to snippet. I&apos;ll reinvestigate and add details later this week</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2461143</commentid>
+    <comment_count>17</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-07 13:50:18 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #16)
+&gt; (In reply to Stephan Herrmann from comment #15)
+&gt; 
+&gt; 
+&gt; &gt; If you think otherwise can you give a little more context?
+&gt; 
+&gt; The problem is with List&lt;T&gt;::add case. The type parameter &lt;T&gt; coming
+&gt; from the enclosing method is necessary to solve the equations. By calling
+&gt; shallow original, we are stripping it down to List&lt;Object&gt;.add
+
+That looks unexpected, indeed. The reason for using shallowOriginal() instead of original() is exactly to leave the parameterization of the declaringClass intact. Could be a bug in shallowOriginal().</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2461291</commentid>
+    <comment_count>18</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-07 23:04:51 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #17)
+&gt; (In reply to Srikanth Sankaran from comment #16)
+&gt; &gt; (In reply to Stephan Herrmann from comment #15)
+&gt; &gt; 
+&gt; &gt; 
+&gt; &gt; &gt; If you think otherwise can you give a little more context?
+&gt; &gt; 
+&gt; &gt; The problem is with List&lt;T&gt;::add case. The type parameter &lt;T&gt; coming
+&gt; &gt; from the enclosing method is necessary to solve the equations. By calling
+&gt; &gt; shallow original, we are stripping it down to List&lt;Object&gt;.add
+&gt; 
+&gt; That looks unexpected, indeed. The reason for using shallowOriginal()
+&gt; instead of original() is exactly to leave the parameterization of the
+&gt; declaringClass intact. Could be a bug in shallowOriginal().
+
+OK, here are the details: It is not List&lt;T&gt;::add that is the source of the
+problem, but ArrayList&lt;T&gt;::new. We attempt to diamond infer when we should
+not.
+
+Fix and test posted as incremental patch at https://bugs.eclipse.org/bugs/show_bug.cgi?id=437444#c45</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471790</commentid>
+    <comment_count>19</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-25 12:42:40 -0400</bug_when>
+    <thetext>Fix and tests included as a part of http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=f357f309273e0bfe8345ff708d18fa83c6a34931 made on behalf of 
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=437444</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2473481</commentid>
+    <comment_count>20</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-10-29 07:23:42 -0400</bug_when>
+    <thetext>Verified for 4.5 M3 using  I20141027-2000 build.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

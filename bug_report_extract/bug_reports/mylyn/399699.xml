@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>399699</bug_id>
+          
+          <creation_ts>2013-01-31 19:48:00 -0500</creation_ts>
+          <short_desc>Minimize number of patch set loading jobs</short_desc>
+          <delta_ts>2013-02-04 13:55:03 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>14</classification_id>
+          <classification>Mylyn</classification>
+          <product>Mylyn Reviews</product>
+          <component>Framework</component>
+          <version>unspecified</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>2.0</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Miles Parker">milesparker</reporter>
+          <assigned_to name="Steffen Pingel">steffen.pingel</assigned_to>
+          <cc>sam.davis</cc>
+    
+    <cc>sebastien.dubois</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2210887</commentid>
+    <comment_count>0</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-01-31 19:48:25 -0500</bug_when>
+    <thetext>Currently, the editor requests all of the patch sets for a given editor at once. Each of these are loaded in a separate jobs. If a review has a large number of patch sets, or a number of reviews are opened at the same time (such as when the workbench starts up and there are a number of reviews open), a large number of jobs can be created. This could create performance issues. (Though the bug reporter hasn&apos;t seen any.) We should consider batching all of these changes into either one or a limited number of jobs.
+
+Note that there is an advantage to having multiple calls against the Gerrit API, as the performance of these jobs is likely highly bound to the response time of the Gerrit server; under the assumption that there was no incremental cost to &quot;spamming&quot; the gerrit server, the best performance would be achieved by making all of the API calls at once. So we should trade off the gains from multiple calls against the potential memory and performance costs of multiple jobs. A pooling approach would allow us to support an arbitrary number of jobs and select an optimized value perhaps surfacing a preference for maximum number of jobs to the user.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2210892</commentid>
+    <comment_count>1</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-01-31 20:08:38 -0500</bug_when>
+    <thetext>See https://bugs.eclipse.org/bugs/show_bug.cgi?id=334967#c26 and replies for more context.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211224</commentid>
+    <comment_count>2</comment_count>
+    <who name="Sam Davis">sam.davis</who>
+    <bug_when>2013-02-01 13:59:21 -0500</bug_when>
+    <thetext>(In reply to comment #0)&gt; 
+&gt; Note that there is an advantage to having multiple calls against the Gerrit API,
+&gt; as the performance of these jobs is likely highly bound to the response time of
+&gt; the Gerrit server; under the assumption that there was no incremental cost to
+&gt; &quot;spamming&quot; the gerrit server, the best performance would be achieved by making
+&gt; all of the API calls at once.
+
+I think it depends on your definition of best. If you mean minimizing the time to get all patch sets, then maybe, but I think a better definition would be minimizing the time to get the most recent patch set. Does Gerrit allow you to take advantage of the similarity between patch sets by only fetching the deltas between them?
+
+Really, once a patch set has been fetched, it should be cached and never need to be fetched again. This would reduce the impact of this problem a lot. However,  if you open a review for the first time and it already has 40 patch sets, it probably doesn&apos;t make sense to fetch them all.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211253</commentid>
+    <comment_count>3</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-02-01 15:01:16 -0500</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; (In reply to comment #0)&gt;
+&gt; I think it depends on your definition of best. If you mean minimizing the time
+&gt; to get all patch sets, then maybe, but I think a better definition would be
+&gt; minimizing the time to get the most recent patch set. Does Gerrit allow you to
+&gt; take advantage of the similarity between patch sets by only fetching the deltas
+&gt; between them?
+
+I&apos;m not sure, we should revisit. If you want, perhaps create an &quot;investigate optrimizing patch set retrieval&quot; bug or something like that?
+
+&gt; Really, once a patch set has been fetched, it should be cached and never need to
+&gt; be fetched again. This would reduce the impact of this problem a lot. However,
+
+Exactly.
+
+&gt; if you open a review for the first time and it already has 40 patch sets, it
+&gt; probably doesn&apos;t make sense to fetch them all.
+
+Yeah. Those should really be demand loaded or at most loaded in a deep background job. This is something that *needs* to be taken care of for Kepler. But just a little history here to be clear on why we did things this way...
+
+1. We needed to be able to display the items in arbitrary patch sets within navigator.
+2. It didn&apos;t seem to make any sense at all to load these seperatly in navigator and editor, so editor manages that for now.
+3. There wasn&apos;t any way to favor one vs. the other, though I suppose we could do these in reverse order.
+4. We could write a bunch of code to optimize this, but that would end up being dead code because..
+5. We couldn&apos;t really demand load them easily in navigator, because creating a notification mechanism for navigator would require tight coupling and again most of that code would end up being tossed.
+6. We&apos;re going to be implementing a complete model side load for Gerrit. It should be quite easy to tune this for any load and notifcation scenario we want.
+
+We&apos;re working out the details on this and will have a more concrete plan of attack next week.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211319</commentid>
+    <comment_count>4</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-02-01 17:44:41 -0500</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; (In reply to comment #2)
+&gt; &gt; (In reply to comment #0)&gt;
+&gt; &gt; I think it depends on your definition of best. If you mean minimizing the time
+&gt; &gt; to get all patch sets, then maybe, but I think a better definition would be
+&gt; &gt; minimizing the time to get the most recent patch set. Does Gerrit allow you to
+&gt; &gt; take advantage of the similarity between patch sets by only fetching the
+&gt; deltas
+&gt; &gt; between them?
+&gt; 
+&gt; I&apos;m not sure, we should revisit. If you want, perhaps create an &quot;investigate
+&gt; optrimizing patch set retrieval&quot; bug or something like that?
+
+Let&apos;s not spent time on pre-mature optimizations. We should consider using git to fetch the patch sets which has a bunch of optimizations of that kind anyways. 
+
+&gt; &gt; if you open a review for the first time and it already has 40 patch sets, it
+&gt; &gt; probably doesn&apos;t make sense to fetch them all.
+&gt; 
+&gt; Yeah. Those should really be demand loaded or at most loaded in a deep
+&gt; background job. This is something that *needs* to be taken care of for Kepler.
+&gt; But just a little history here to be clear on why we did things this way...
+&gt; 
+&gt; 1. We needed to be able to display the items in arbitrary patch sets within
+&gt; navigator.
+&gt; 2. It didn&apos;t seem to make any sense at all to load these seperatly in navigator
+&gt; and editor, so editor manages that for now.
+&gt; 3. There wasn&apos;t any way to favor one vs. the other, though I suppose we could do
+&gt; these in reverse order.
+
+Yes, that sounds like a good plan and doing that in a single job. It should be reasonably straight forward to change the code accordingly.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211322</commentid>
+    <comment_count>5</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-02-01 18:07:27 -0500</bug_when>
+    <thetext>(In reply to comment #4)
+&gt; (In reply to comment #3)
+&gt; &gt; 3. There wasn&apos;t any way to favor one vs. the other, though I suppose we could
+&gt; do
+&gt; &gt; these in reverse order.
+&gt; 
+&gt; Yes, that sounds like a good plan and doing that in a single job. It should be
+&gt; reasonably straight forward to change the code accordingly.
+
+I think it&apos;s a bit more complicated to do this as we&apos;d still need to load the item sets even if we differ the control creation. (It probably makes sense to tackle implement bug 399697 at the same time, since we&apos;ll be tearing apart the same code.) We&apos;d need to do something like this:
+
+1. Create the subsection.
+2. Begin loading the item sets. (But in reverse order from the section creation code!)
+3. On user expand, create the controls. (As it worked before)
+4. When item sets are created update the values.
+
+If we do that, it would probably be implementing _something_ sort of like my first attempt at bug 386705. See https://git.eclipse.org/r/#/c/10057/2/org.eclipse.mylyn.gerrit.ui/src/org/eclipse/mylyn/internal/gerrit/ui/editor/PatchSetSection.java.  That is, there is a tight coordination needed between item sets and their related pieces. Or actually, we probably just want to create a class for the SubSection itself.
+
+Just to say that it isn&apos;t that straightforward. But OTOH, we may want to do something *like* this when we implement the model stuff anyway. I&apos;m just still not sure it makes sense to tackle this before then..</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211323</commentid>
+    <comment_count>6</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-02-01 18:19:34 -0500</bug_when>
+    <thetext>I&apos;m not even sure that I agree with the basic assumption and all patch sets need to be downloaded eagerly. What if we restored the original behavior and only downloaded the open patch set which would default to the latest patch set? We could add an expand all button to easily fetch all patch sets as needed.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211324</commentid>
+    <comment_count>7</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-02-01 18:25:33 -0500</bug_when>
+    <thetext>(In reply to comment #6)
+&gt; I&apos;m not even sure that I agree with the basic assumption and all patch sets need
+&gt; to be downloaded eagerly. What if we restored the original behavior and only
+&gt; downloaded the open patch set which would default to the latest patch set? We
+&gt; could add an expand all button to easily fetch all patch sets as needed.
+
+Remember again that this need is being driven by Navigator *as it is currently implemented*, not Editor, and the reason that we have an issue w/ Navigator is not that we can&apos;t difer loading for that, but that we don&apos;t have a clean strategy for requesting and notification of changes that doesn&apos;t couple w/ editor. I&apos;m just making the argument that we should differ implementation until after we have the model loading entirely decoupled from the interface. Then we can easily persue whatever loading strategies we want as appropriate.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211332</commentid>
+    <comment_count>8</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-02-01 19:26:51 -0500</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; Remember again that this need is being driven by Navigator *as it is currently
+&gt; implemented*, not Editor, and the reason that we have an issue w/ Navigator is
+&gt; not that we can&apos;t difer loading for that, but that we don&apos;t have a clean
+&gt; strategy for requesting and notification of changes that doesn&apos;t couple w/
+&gt; editor. I&apos;m just making the argument that we should differ implementation until
+&gt; after we have the model loading entirely decoupled from the interface. Then we
+&gt; can easily persue whatever loading strategies we want as appropriate.
+
+Sure, but the changes have introduced a performance regression and I am starting to doubt the need to have all patch sets downloaded right away. Right now loading is still triggered by the editor and we have all infrastructure in place to load patch sets lazily.
+
+This will certainly change in the future but for now I would prefer to go back to what we previously had and improve on that rather than release a significant performance regression and then try to find a solution later: https://git.eclipse.org/r/10127</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211334</commentid>
+    <comment_count>9</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-02-01 19:37:12 -0500</bug_when>
+    <thetext>Yeah... It&apos;s a cost/benefit between a) the performance regression against b) the UI confusion for users who can&apos;t figure out why their patch set contents aren&apos;t being shown, and you&apos;re saying a) is better. It sort of makes a lot of the features of the review navigator pointless for now, but I can both sides.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211399</commentid>
+    <comment_count>10</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-02-02 17:44:45 -0500</bug_when>
+    <thetext>I have merged the change to restore the old behavior. We can reopen this bug if necessary once we look into decoupling fetching of change sets from the editor.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211401</commentid>
+    <comment_count>11</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-02-02 17:46:20 -0500</bug_when>
+    <thetext>*** Bug 399697 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211956</commentid>
+    <comment_count>12</comment_count>
+    <who name="Sam Davis">sam.davis</who>
+    <bug_when>2013-02-04 13:37:41 -0500</bug_when>
+    <thetext>(In reply to comment #9)
+&gt; Yeah... It&apos;s a cost/benefit between a) the performance regression against b) the
+&gt; UI confusion for users who can&apos;t figure out why their patch set contents aren&apos;t
+&gt; being shown, and you&apos;re saying a) is better. It sort of makes a lot of the
+&gt; features of the review navigator pointless for now, but I can both sides.
+
+Perhaps it would be worth adding a button in the navigator to fetch all patch sets as an interim solution.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2211962</commentid>
+    <comment_count>13</comment_count>
+    <who name="Miles Parker">milesparker</who>
+    <bug_when>2013-02-04 13:55:03 -0500</bug_when>
+    <thetext>(In reply to comment #12)
+&gt; (In reply to comment #9)
+&gt; Perhaps it would be worth adding a button in the navigator to fetch all patch
+&gt; sets as an interim solution.
+
+Yeah, I think Steffen suggested something like that above. And we might want that in any case. But I don&apos;t think it makes sense to go through the excercise of coupling back to the editor at this point. Hopefully we&apos;ll get that remote API etc.. in soon enough to render the issue moot!</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

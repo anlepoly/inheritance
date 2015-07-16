@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>426996</bug_id>
+          
+          <creation_ts>2014-01-30 09:08:00 -0500</creation_ts>
+          <short_desc>[1.8][inference] try to avoid method Expression.unresolve()?</short_desc>
+          <delta_ts>2014-02-21 04:08:08 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P4</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2356597</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-30 09:08:19 -0500</bug_when>
+    <thetext>Type inference relies on a new method Expression.unresolve() which is probably unsafe, and not tested for completeness of various AST kinds. In bug 424930 I&apos;m even adding one more call to this method (in AllocationExpression, in analogy to MessageSend).
+
+On the long run we should either find a way to avoid using this method, or find a way of convincing ourselves that this approach is / can be made safe.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359392</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-05 18:31:25 -0500</bug_when>
+    <thetext>From bug 427483 comment 4 (by Srikanth):
+
+We should also take out all the unresolve() calls as soon as reasonably
+possible. 
+
+Recently, I implemented support for method/constructor references targetting
+varargs method by transforming the method reference into a synthesized
+implicit lambda. I needed bits and pieces of virgin AST for this and this
+was achieved by: 
+
+final Parser parser = new Parser(this.enclosingScope.problemReporter(), false);
+		final char[] source = this.compilationResult.getCompilationUnit().getContents();
+		ReferenceExpression copy =  (ReferenceExpression) parser.parseExpression(source, this.sourceStart, this.sourceEnd - this.sourceStart + 1, 
+										this.enclosingScope.referenceCompilationUnit(), false /* record line separators */);
+		
+This should work for any expression actually.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363232</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-14 00:27:06 -0500</bug_when>
+    <thetext>Stephan, is this actually a NOP ? 
+
+If I comment out the calls to unresolve() from MessageSend (both the calls)
+I don&apos;t see any failures in RunAllJava8Tests. The comment in Expression.java
+says:
+
+// call this before resolving an expression for the second time.
+// FIXME: we should find a better strategy, see LambdaExpressionsTest.testLambdaInference1() f. for tests that currently need this.
+void unresolve() {
+	this.resolvedType = null;
+}
+
+These tests are not failing.
+
+It is also my understanding that MessageSend&apos;s, AllocationExpression&apos;s and
+ExplicitConstructorCalls are not resolve more than once and are patched
+otherwise directly when feasible - is this true ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363766</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-15 08:15:01 -0500</bug_when>
+    <thetext>Well, ideally, yes, we should resolve each invocation only once.
+
+The calls from AE to unresolve() have been added as recently as bug 424930. Interestingly even that call doesn&apos;t seem to be needed anymore. In ECC we never saw the need (may be due to fewer tests).
+
+It might be, that each situation requiring the unresolve() call actually has some other root cause. I&apos;ll use the AE case to search for the fix that made the unresolve() unnecessary.
+
+My current thinking would be to replace the unresolve() calls with some kind of harness that reports this as an implementation problem (PR.needImplementation() or such). WDYT?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363767</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-15 08:39:16 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #3)
+&gt; The calls from AE to unresolve() have been added as recently as bug 424930.
+&gt; Interestingly even that call doesn&apos;t seem to be needed anymore. In ECC we
+&gt; never saw the need (may be due to fewer tests).
+&gt; 
+&gt; It might be, that each situation requiring the unresolve() call actually has
+&gt; some other root cause. I&apos;ll use the AE case to search for the fix that made
+&gt; the unresolve() unnecessary.
+
+An interesting find: the call from AE to unresolve() was made unnecessary by a &quot;Work around [...] for Bug 427483&quot; [1]. The workaround is this little paragraph inside LambdaExpression.resolveType():
+
+		if (this.resolvedType != null)
+			return this.resolvedType;
+
+This sounds like an effective prevention of double resolve :))
+The only risk remaining: what if this.resolveType was set prematurely?
+The current strategy is to use only getResolvedCopyForInferenceTargeting() and isCompatibleWith(), until we are sure what the target type will be. This *should* be safe in terms of saying that once we have a resolvedType this is it.
+
+[1] http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=d71b3ce043b24a156efd3f7e8d9fe75d5e1e2f32
+
+I should probably do a similar exercise for the MessageSend case.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363770</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-15 09:01:03 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; I should probably do a similar exercise for the MessageSend case.
+
+That call is unnecessary since the fix for bug 424167.
+
+In this case it&apos;s not directly obvious which part of the patch is relevant for the matter at hand. We may even say that any matters of type inference pre-dating bug 424167 should be considered pre-historic, not relevant for modern historiography.
+
+I&apos;m currently running all tests at the state of bug 424167 minus the calls from MessageSend to unresolve(). If that succeeds I&apos;ll replace the calls with diagnostic harness as mentioned above.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363773</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-15 09:31:16 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #5)
+&gt; I&apos;m currently running all tests at the state of bug 424167 minus the calls
+&gt; from MessageSend to unresolve(). If that succeeds I&apos;ll replace the calls
+&gt; with diagnostic harness as mentioned above.
+
+Two more regressions in that experiment (NLET.testBug423129b, LET.testLambdaInference1), which both triggered by new diagnostic code.
+
+These two were fixed via bug 424710, more specifically by this change inside ASTNode.resolvePolyExpressionArguments():
+
+from:
+updatedArgumentType = argument.checkAgainstFinalTargetType(parameterType);
+
+to:
+if (infCtx != null &amp;&amp; infCtx.stepCompleted == InferenceContext18.BINDINGS_UPDATED)
+    updatedArgumentType = argument.resolvedType; // in this case argument was already resolved via InferenceContext18.acceptPendingPolyArguments()
+else
+    updatedArgumentType = argument.checkAgainstFinalTargetType(parameterType);
+
+
+This gives a perfectly reasonable explanation, why we&apos;re now more successful in avoiding double resolution. Looks like we&apos;re on a good track here.
+
+Rerunning tests at state after the fix for bug 424710 (Jan 6) which my pending changes.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363774</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-15 09:35:33 -0500</bug_when>
+    <thetext>I viewed it from the point of view of answering the question: Where exactly
+is the second or third or any subsequent call to resolveType originating from ?
+
+I don&apos;t see a control flow that would reach it.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363777</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-15 09:47:15 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #7)
+&gt; I viewed it from the point of view of answering the question: Where exactly
+&gt; is the second or third or any subsequent call to resolveType originating
+&gt; from ?
+
+Well, *in the past* the machinery around IC18.rebindInnerPolies() and ASTNode.resolvePolyExpressionArguments() was driven by apparently incomplete logic and &quot;succeeded&quot; to call checkAgainstFinalTargetType() on an already resolved node.
+ 
+&gt; I don&apos;t see a control flow that would reach it.
+
+Great, so we seem to agree on removing unresolve(). I have code in my workspace which - for the unlikely case we still run into this situation [1] - will raise an error &quot;Error detected during type inference: Argument was unexpectedly found resolved&quot;, OK? Problem id = GenericInferenceError. This only reminds me, that we might want to avoid releasing this id as public API??
+
+
+[1] As you see I&apos;m still not 100% sure those control flows will *never* occur, after the same problem was triggered from several quite different situations in the past. Can you accept my cowardice? :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363782</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-15 10:11:31 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #8)
+
+&gt; [1] As you see I&apos;m still not 100% sure those control flows will *never*
+&gt; occur, after the same problem was triggered from several quite different
+&gt; situations in the past. Can you accept my cowardice? :)
+
+Hi Stephan, in that case, I vote for simply retargetting this to 4.4 and deal 
+with at leisure.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363784</commentid>
+    <comment_count>10</comment_count>
+      <attachid>239979</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-15 10:51:15 -0500</bug_when>
+    <thetext>Created attachment 239979
+proposed change
+
+For illustration: this is the change I was going to include in my next big test run. With this diagnostic code in place we&apos;d get the information we need in case the situation still occurs in some corner case.
+
+Let me propose: wait if bug 428254 hits this sore spot and decide after that one is well understood, OK?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2363826</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-15 16:41:50 -0500</bug_when>
+    <thetext>After the connection to bug 428254 was a red herring, I went ahead and released the patch that swaps the unresolve() calls with:
+problemReporter().genericInferenceError(&quot;Argument was unexpectedly found resolved&quot;);
+
+I&apos;m comfortable with removing unresolve() I just don&apos;t (yet) want to let it go unnoticed should the double resolving still occur.
+
+Released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=6af4748240d783fb0fd75666c88ce3ea32b7386e
+
+I&apos;ll leave this bug open at reduced priority as a reminder to also remove the error call (for 4.4 sounds fine).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2365152</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-18 16:28:28 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #11)
+&gt; I&apos;ll leave this bug open at reduced priority as a reminder to also remove
+&gt; the error call (for 4.4 sounds fine).
+
+I&apos;ve created bug 428489 as the new home for this cleanup.
+
+Resolving.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366553</commentid>
+    <comment_count>13</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-21 04:08:08 -0500</bug_when>
+    <thetext>Verified by code inspection at the time of Eclipse + Java 8 RC1.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>239979</attachid>
+            <date>2014-02-15 10:51:00 -0500</date>
+            <delta_ts>2014-02-15 10:51:15 -0500</delta_ts>
+            <desc>proposed change</desc>
+            <filename>Bug-426996--18inference-try-to-avoid-method-Expressi.patch</filename>
+            <type>text/plain</type>
+            <size>6256</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9hc3QvQWxsb2NhdGlvbkV4cHJlc3Npb24uamF2YSBiL29yZy5l
+Y2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxl
+ci9hc3QvQWxsb2NhdGlvbkV4cHJlc3Npb24uamF2YQppbmRleCA1MWQ0ODNjLi4yZmJmMTE4IDEw
+MDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQv
+aW50ZXJuYWwvY29tcGlsZXIvYXN0L0FsbG9jYXRpb25FeHByZXNzaW9uLmphdmEKKysrIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2FzdC9BbGxvY2F0aW9uRXhwcmVzc2lvbi5qYXZhCkBAIC0zNiw2ICszNiw3IEBACiAgKgkJ
+CQkJCQlCdWcgNDI0OTMwIC0gWzEuOF1bY29tcGlsZXJdIFJlZ3Jlc3Npb246ICJDYW5ub3QgaW5m
+ZXIgdHlwZSBhcmd1bWVudHMiIGVycm9yIGZyb20gY29tcGlsZXIuCiAgKgkJCQkJCQlCdWcgNDI3
+NDgzIC0gW0phdmEgOF0gVmFyaWFibGVzIGluIGxhbWJkYXMgc29tZXRpbWVzIGNhbid0IGJlIHJl
+c29sdmVkCiAgKgkJCQkJCQlCdWcgNDI3NDM4IC0gWzEuOF1bY29tcGlsZXJdIE5QRSBhdCBvcmcu
+ZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuYXN0LkNvbmRpdGlvbmFsRXhwcmVzc2lvbi5n
+ZW5lcmF0ZUNvZGUoQ29uZGl0aW9uYWxFeHByZXNzaW9uLmphdmE6MjgwKQorICoJCQkJCQkJQnVn
+IDQyNjk5NiAtIFsxLjhdW2luZmVyZW5jZV0gdHJ5IHRvIGF2b2lkIG1ldGhvZCBFeHByZXNzaW9u
+LnVucmVzb2x2ZSgpPyAKICAqICAgICBKZXNwZXIgUyBNb2xsZXIgPGplc3BlckBzZWxza2FiZXQu
+b3JnPiAtIENvbnRyaWJ1dGlvbnMgZm9yCiAgKgkJCQkJCQlidWcgMzc4Njc0IC0gIlRoZSBtZXRo
+b2QgY2FuIGJlIGRlY2xhcmVkIGFzIHN0YXRpYyIgaXMgd3JvbmcKICAqICAgICBBbmR5IENsZW1l
+bnQgKEdvUGl2b3RhbCwgSW5jKSBhY2xlbWVudEBnb3Bpdm90YWwuY29tIC0gQ29udHJpYnV0aW9u
+cyBmb3IKQEAgLTQyNCw3ICs0MjUsNyBAQAogCQkJfQogCQkJYXJndW1lbnQuc2V0RXhwcmVzc2lv
+bkNvbnRleHQoSU5WT0NBVElPTl9DT05URVhUKTsKIAkJCWlmICh0aGlzLmFyZ3VtZW50c1tpXS5y
+ZXNvbHZlZFR5cGUgIT0gbnVsbCkgCi0JCQkJdGhpcy5hcmd1bWVudHNbaV0udW5yZXNvbHZlKCk7
+IC8vIHNvbWUgY2xlYW51cCBiZWZvcmUgc2Vjb25kIGF0dGVtcHQKKwkJCQlzY29wZS5wcm9ibGVt
+UmVwb3J0ZXIoKS5nZW5lcmljSW5mZXJlbmNlRXJyb3IoIkFyZ3VtZW50IHdhcyB1bmV4cGVjdGVk
+bHkgZm91bmQgcmVzb2x2ZWQiLCB0aGlzKTsgLy8kTk9OLU5MUy0xJAogCQkJaWYgKChhcmd1bWVu
+dFR5cGVzW2ldID0gYXJndW1lbnQucmVzb2x2ZVR5cGUoc2NvcGUpKSA9PSBudWxsKSB7CiAJCQkJ
+YXJnSGFzRXJyb3IgPSB0cnVlOwogCQkJfQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNv
+cmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9FeHByZXNz
+aW9uLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQv
+aW50ZXJuYWwvY29tcGlsZXIvYXN0L0V4cHJlc3Npb24uamF2YQppbmRleCBmMmI4OTk3Li4yNjA5
+ZWM0IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBz
+ZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0V4cHJlc3Npb24uamF2YQorKysgYi9vcmcuZWNs
+aXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIv
+YXN0L0V4cHJlc3Npb24uamF2YQpAQCAtMjYsNiArMjYsNyBAQAogICoJCQkJCQkJCUJ1ZyA0MjY3
+OTIgLSBbMS44XVtpbmZlcmVuY2VdW2ltcGxdIGdlbmVyaWZ5IG5ldyB0eXBlIGluZmVyZW5jZSBl
+bmdpbmUKICAqCQkJCQkJCQlCdWcgNDIzNTA1IC0gWzEuOF0gSW1wbGVtZW50ICIxOC41LjQgTW9y
+ZSBTcGVjaWZpYyBNZXRob2QgSW5mZXJlbmNlIgogICoJCQkJCQkJCUJ1ZyA0Mjc0MzggLSBbMS44
+XVtjb21waWxlcl0gTlBFIGF0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5hc3Qu
+Q29uZGl0aW9uYWxFeHByZXNzaW9uLmdlbmVyYXRlQ29kZShDb25kaXRpb25hbEV4cHJlc3Npb24u
+amF2YToyODApCisgKgkJCQkJCQkJQnVnIDQyNjk5NiAtIFsxLjhdW2luZmVyZW5jZV0gdHJ5IHRv
+IGF2b2lkIG1ldGhvZCBFeHByZXNzaW9uLnVucmVzb2x2ZSgpPyAKICAqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqLwogcGFja2FnZSBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuYXN0Owog
+CkBAIC05NTUsMTEgKzk1Niw2IEBACiAKIHB1YmxpYyBib29sZWFuIGlzUGVydGluZW50VG9BcHBs
+aWNhYmlsaXR5KFR5cGVCaW5kaW5nIHRhcmdldFR5cGUsIE1ldGhvZEJpbmRpbmcgbWV0aG9kKSB7
+CiAJcmV0dXJuIHRydWU7Ci19Ci0vLyBjYWxsIHRoaXMgYmVmb3JlIHJlc29sdmluZyBhbiBleHBy
+ZXNzaW9uIGZvciB0aGUgc2Vjb25kIHRpbWUuCi0vLyBGSVhNRTogd2Ugc2hvdWxkIGZpbmQgYSBi
+ZXR0ZXIgc3RyYXRlZ3ksIHNlZSBMYW1iZGFFeHByZXNzaW9uc1Rlc3QudGVzdExhbWJkYUluZmVy
+ZW5jZTEoKSBmLiBmb3IgdGVzdHMgdGhhdCBjdXJyZW50bHkgbmVlZCB0aGlzLgotdm9pZCB1bnJl
+c29sdmUoKSB7Ci0JdGhpcy5yZXNvbHZlZFR5cGUgPSBudWxsOwogfQogLyoqCiAgKiBSZXR1cm5z
+IHRoZSB0eXBlIG9mIHRoZSBleHByZXNzaW9uIGFmdGVyIHJlcXVpcmVkIGltcGxpY2l0IGNvbnZl
+cnNpb25zLiBXaGVuIGV4cHJlc3Npb24gdHlwZSBnZXRzIHByb21vdGVkCmRpZmYgLS1naXQgYS9v
+cmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29t
+cGlsZXIvYXN0L01lc3NhZ2VTZW5kLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxl
+ci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L01lc3NhZ2VTZW5kLmphdmEK
+aW5kZXggNmNjMTFhYy4uZTYyZTY1NiAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUv
+Y29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9NZXNzYWdlU2Vu
+ZC5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9hc3QvTWVzc2FnZVNlbmQuamF2YQpAQCAtNDgsNiArNDgsNyBA
+QAogICoJCQkJCQkJCUJ1ZyA0MjYyOTAgLSBbMS44XVtjb21waWxlcl0gSW5mZXJlbmNlICsgb3Zl
+cmxvYWRpbmcgPT4gd3JvbmcgbWV0aG9kIHJlc29sdXRpb24gPwogICoJCQkJCQkJCUJ1ZyA0Mjc0
+ODMgLSBbSmF2YSA4XSBWYXJpYWJsZXMgaW4gbGFtYmRhcyBzb21ldGltZXMgY2FuJ3QgYmUgcmVz
+b2x2ZWQKICAqCQkJCQkJCQlCdWcgNDI3NDM4IC0gWzEuOF1bY29tcGlsZXJdIE5QRSBhdCBvcmcu
+ZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuYXN0LkNvbmRpdGlvbmFsRXhwcmVzc2lvbi5n
+ZW5lcmF0ZUNvZGUoQ29uZGl0aW9uYWxFeHByZXNzaW9uLmphdmE6MjgwKQorICoJCQkJCQkJCUJ1
+ZyA0MjY5OTYgLSBbMS44XVtpbmZlcmVuY2VdIHRyeSB0byBhdm9pZCBtZXRob2QgRXhwcmVzc2lv
+bi51bnJlc29sdmUoKT8gCiAgKiAgICAgSmVzcGVyIFMgTW9sbGVyIC0gQ29udHJpYnV0aW9ucyBm
+b3IKICAqCQkJCQkJCQlCdWcgMzc4Njc0IC0gIlRoZSBtZXRob2QgY2FuIGJlIGRlY2xhcmVkIGFz
+IHN0YXRpYyIgaXMgd3JvbmcKICAqICAgICAgICBBbmR5IENsZW1lbnQgKEdvUGl2b3RhbCwgSW5j
+KSBhY2xlbWVudEBnb3Bpdm90YWwuY29tIC0gQ29udHJpYnV0aW9ucyBmb3IKQEAgLTU5OSw3ICs2
+MDAsNyBAQAogCQlyZWNlaXZlckNhc3QgPSB0cnVlOwogCX0KIAlpZiAodGhpcy5yZWNlaXZlci5y
+ZXNvbHZlZFR5cGUgIT0gbnVsbCkKLQkJdGhpcy5yZWNlaXZlci51bnJlc29sdmUoKTsgLy8gc29t
+ZSBjbGVhbnVwIGJlZm9yZSBzZWNvbmQgYXR0ZW1wdAorCQlzY29wZS5wcm9ibGVtUmVwb3J0ZXIo
+KS5nZW5lcmljSW5mZXJlbmNlRXJyb3IoIlJlY2VpdmVyIHdhcyB1bmV4cGVjdGVkbHkgZm91bmQg
+cmVzb2x2ZWQiLCB0aGlzKTsgLy8kTk9OLU5MUy0xJAogCXRoaXMuYWN0dWFsUmVjZWl2ZXJUeXBl
+ID0gdGhpcy5yZWNlaXZlci5yZXNvbHZlVHlwZShzY29wZSk7CiAJYm9vbGVhbiByZWNlaXZlcklz
+VHlwZSA9IHRoaXMucmVjZWl2ZXIgaW5zdGFuY2VvZiBOYW1lUmVmZXJlbmNlICYmICgoKE5hbWVS
+ZWZlcmVuY2UpIHRoaXMucmVjZWl2ZXIpLmJpdHMgJiBCaW5kaW5nLlRZUEUpICE9IDA7CiAJaWYg
+KHJlY2VpdmVyQ2FzdCAmJiB0aGlzLmFjdHVhbFJlY2VpdmVyVHlwZSAhPSBudWxsKSB7CkBAIC02
+NDAsNyArNjQxLDcgQEAKIAkJZm9yIChpbnQgaSA9IDA7IGkgPCBsZW5ndGg7IGkrKyl7CiAJCQlF
+eHByZXNzaW9uIGFyZ3VtZW50ID0gdGhpcy5hcmd1bWVudHNbaV07CiAJCQlpZiAodGhpcy5hcmd1
+bWVudHNbaV0ucmVzb2x2ZWRUeXBlICE9IG51bGwpIAotCQkJCXRoaXMuYXJndW1lbnRzW2ldLnVu
+cmVzb2x2ZSgpOyAvLyBzb21lIGNsZWFudXAgYmVmb3JlIHNlY29uZCBhdHRlbXB0CisJCQkJc2Nv
+cGUucHJvYmxlbVJlcG9ydGVyKCkuZ2VuZXJpY0luZmVyZW5jZUVycm9yKCJBcmd1bWVudCB3YXMg
+dW5leHBlY3RlZGx5IGZvdW5kIHJlc29sdmVkIiwgdGhpcyk7IC8vJE5PTi1OTFMtMSQKIAkJCWlm
+IChhcmd1bWVudCBpbnN0YW5jZW9mIENhc3RFeHByZXNzaW9uKSB7CiAJCQkJYXJndW1lbnQuYml0
+cyB8PSBBU1ROb2RlLkRpc2FibGVVbm5lY2Vzc2FyeUNhc3RDaGVjazsgLy8gd2lsbCBjaGVjayBs
+YXRlciBvbgogCQkJCWFyZ3NDb250YWluQ2FzdCA9IHRydWU7CmRpZmYgLS1naXQgYS9vcmcuZWNs
+aXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIv
+YXN0L05hbWVSZWZlcmVuY2UuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29y
+Zy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvTmFtZVJlZmVyZW5jZS5qYXZhCmlu
+ZGV4IDlkYWZkNTMuLmNkYjcxNWQgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2Nv
+bXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvTmFtZVJlZmVyZW5j
+ZS5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9hc3QvTmFtZVJlZmVyZW5jZS5qYXZhCkBAIC0xNCw2ICsxNCw3
+IEBACiAgKiAgICAgU3RlcGhhbiBIZXJybWFubiAtIENvbnRyaWJ1dGlvbiBmb3IKICAqCQkJCQkJ
+CQlidWcgMzMxNjQ5IC0gW2NvbXBpbGVyXVtudWxsXSBjb25zaWRlciBudWxsIGFubm90YXRpb25z
+IGZvciBmaWVsZHMKICAqCQkJCQkJCQlCdWcgNDAwODc0IC0gWzEuOF1bY29tcGlsZXJdIEluZmVy
+ZW5jZSBpbmZyYXN0cnVjdHVyZSBzaG91bGQgZXZvbHZlIHRvIG1lZXQgSkxTOCAxOC54IChQYXJ0
+IEcgb2YgSlNSMzM1IHNwZWMpCisgKgkJCQkJCQkJQnVnIDQyNjk5NiAtIFsxLjhdW2luZmVyZW5j
+ZV0gdHJ5IHRvIGF2b2lkIG1ldGhvZCBFeHByZXNzaW9uLnVucmVzb2x2ZSgpPyAKICAqICAgICBK
+ZXNwZXIgUyBNb2xsZXIgLSBDb250cmlidXRpb25zIGZvcgogICoJCQkJCQkJYnVnIDM4MjcyMSAt
+IFsxLjhdW2NvbXBpbGVyXSBFZmZlY3RpdmVseSBmaW5hbCB2YXJpYWJsZXMgbmVlZHMgc3BlY2lh
+bCB0cmVhdG1lbnQKICAqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqLwpAQCAtMTA0LDExICsxMDUsNSBA
+QAogCQkJdGhyb3cgbmV3IEFib3J0TWV0aG9kKHNjb3BlLnJlZmVyZW5jZUNvbXBpbGF0aW9uVW5p
+dCgpLmNvbXBpbGF0aW9uUmVzdWx0LCBudWxsKTsKIAkJfQogCX0KLX0KLXZvaWQgdW5yZXNvbHZl
+KCkgewotCXRoaXMucmVzb2x2ZWRUeXBlID0gbnVsbDsKLQl0aGlzLmFjdHVhbFJlY2VpdmVyVHlw
+ZSA9IG51bGw7Ci0JdGhpcy5iaXRzICY9IH5SZXN0cmljdGl2ZUZsYWdNQVNLOwotCXRoaXMuYml0
+cyB8PSBCaW5kaW5nLlRZUEUgfCBCaW5kaW5nLlZBUklBQkxFOwogfQogfQ==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

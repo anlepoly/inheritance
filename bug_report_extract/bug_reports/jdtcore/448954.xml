@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>448954</bug_id>
+          
+          <creation_ts>2014-10-27 09:12:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler] Incorrect error: &quot;The method foo(String, String, X::goo) is undefined for the type X&quot;</short_desc>
+          <delta_ts>2015-02-04 17:08:09 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M4</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>marko.bjelac</cc>
+    
+    <cc>stephan.herrmann</cc>
+          <qa_contact name="Srikanth Sankaran">srikanth_sankaran</qa_contact>
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2472381</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-27 09:12:47 -0400</bug_when>
+    <thetext>Compiling this program on master, I see an error, while javac compiles
+this fine and prints &quot;Right!&quot;
+
+// --
+
+
+interface I&lt;T, U, V&gt; {
+	T goo(U u, V v);
+}
+
+interface J {
+	void foo();
+}
+public class X {
+	static String goo(String s, String s2) {
+		return null;
+	}
+	static &lt;T, U, V&gt; T foo(T t, U u, J j) {
+       System.out.println(&quot;Wrong!&quot;);
+       return null;
+   }
+	static &lt;T, U, V&gt; V foo(T t, U u, I&lt;T, U, V&gt; i) {
+		System.out.println(&quot;Right!&quot;);
+		return null;
+	}
+	public static void main(String[] args) {
+		String s = goo(foo(&quot;String&quot;, &quot;String&quot;, X::goo));
+	}
+	static &lt;T&gt; T goo(T t) {
+	    return t;	
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472387</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-27 09:22:05 -0400</bug_when>
+    <thetext>This bug exists in the old as well integration of F &amp; G - so no hurry to
+get this for M3. I&apos;ll look at this for M4.
+
+I uncovered this while trying to understand what post inference compatibility
+checks can and cannot do.
+
+Turns out lambdas can ALWAYS be checked for compatibility whether we have
+a PGMB or a PPGMB as long as we are careful to handle in the latter&apos;s case 
+the potential of an unresolved type variable of the method being the 
+parameter (lambda will see Object as target type)
+
+This is because lambda compatibility when the lambda is NOT pertinent to
+applicability concerns itself only with shape compatibility. Do we have
+a functional interface, does the arity match ? Are we suitably value/void
+compatibile with the sam are the questions that decide compatibility.
+In particular result expression compatibility is NOT checked when the
+lambda is not pertinent. So we don&apos;t have to fear partial substitutions
+with jlO altering the answer.
+
+ReferenceExpression on the other hand poses challenges. With Object
+substitutions in place (as shown by this example,) we can&apos;t assert
+congruence because method look up will likely fail.
+
+ReferenceExpressions also pose an interesting case in that a fully inferred
+PGMB may be incompatible with its arguments !!! This is the outcome of
+reference expression reduction as specified in the JLS.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472401</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-27 09:36:42 -0400</bug_when>
+    <thetext>15.12.2.1: 
+
+
+A method reference expression (15.13) is potentially compatible with a
+functional interface type if, where the type&apos;s function type arity is n, 
+there exists at least one potentially applicable method for the method 
+reference expression
+with arity n (15.13.1), and one of the following is true:
+ The method reference expression has the form ReferenceType ::
+[TypeArguments] Identifier and at least one potentially applicable method is
+i) static and supports arity n, or ii) not static and supports arity n-1.
+ The method reference expression has some other form and at least one
+potentially applicable method is not static.
+
+We should not be checking for full compatibility.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475395</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-02 23:25:31 -0500</bug_when>
+    <thetext>Sasi, can you take this forward for M4 please ? TIA.
+
+Change is required in ReferenceExpression.isCompatibleWith(TypeBinding, Scope).
+If RE is not pertinent to applicability, we should not be using resolveType()
+to see if it is compatible. Rather, we should use getMethods() to retrieve
+the methods and see if they are suitable as per 15.12.2.1
+
+Basically we need a version of Scope.getInexactMethod/getInexactConstructor
+which are arity based rather than type based (types may involve inference
+variables or jlO substitutions for them)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475742</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-03 08:48:20 -0500</bug_when>
+    <thetext>Sorry for the flip flop and grabbing this - I am unable to wrap up
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=448794 without this
+being fixed. Otherwise forwarded solutions sometimes are incorrect
+(due to some other bug being unmasked)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2477439</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-05 13:05:01 -0500</bug_when>
+    <thetext>Cumulative fix and tests for bug 448954 and 448826 released here:
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=1ddc6abfe5d6cd8ad8c71d5100cfa53f4e84487a</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2477447</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-05 13:10:06 -0500</bug_when>
+    <thetext>Stephan, you may want to glance through the changes at least for the
+engine part. 
+
+I had to introduce a new ReductionResult.POTENTIALLY_COMPATIBLE to address:
+
+15.12.2.1: ... The definition of potential applicability goes beyond a 
+basic arity check to also take into account the presence and &quot;shape&quot; of 
+functional interface target types. In some cases involving type argument 
+inference, a lambda expression appearing as a method invocation argument cannot 
+be properly typed until after overload resolution. These rules allow the 
+form of the lambda expression to still be taken into account, discarding 
+obviously incorrect target types that might otherwise cause ambiguity errors.
+
+(this speaks only of lambdas, but same argument holds for method references)
+
+I had to invent isPotentiallyCompatibleWith() and implement it in LE and RE.
+Latter was challenging, but I think we have a neat solution.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2486369</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-20 08:09:55 -0500</bug_when>
+    <thetext>From the 15.12.2.1 p.o.v this seems to make sense, except that building an implementation only on the *comments* in the JLS has a smell of its own.
+
+If your implementation is the right solution, then 18.5.1 bullet 4 would have to be considered as incomplete, right? It has no mentioning of any constraints for any ei that is not pertinent to applicability, hence literally speaking, our else block should remain empty. Or is our implementation of Expression.isPertinentToApplicability incomplete and therefore needs some external help?
+
+Of course inventing a new reduction rule raises some red alerts :)
+
+Or, are you saying, inference is invoked with some candidates which *should* have been weeded out even before inferring and our implementation only moves this responsibility from earlier phases into inference?
+
+On a different note, the ping pong of
+(a) e.isPertinentToApplicability(t) and
+(b) t.isPertinentToApplicability(e) which in one case seems to call (a)
+looks funny to me. Looking at the two implementations of (b) I would guess,
+all we need for the second check is
+  (!(parameters[i] instanceof TypeVariableBinding))
+Am I missing anything?
+
+If so, do you have an explanation for this logic?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2486780</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-20 19:42:27 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #7)
+
+&gt; Or, are you saying, inference is invoked with some candidates which *should*
+&gt; have been weeded out even before inferring and our implementation only moves
+&gt; this responsibility from earlier phases into inference?
+
+Yes, we don&apos;t have a phase that collects only potentially applicable methods,
+weeding out rest.
+
+&gt; On a different note, the ping pong of
+&gt; (a) e.isPertinentToApplicability(t) and
+&gt; (b) t.isPertinentToApplicability(e) which in one case seems to call (a)
+&gt; looks funny to me. Looking at the two implementations of (b) I would guess,
+&gt; all we need for the second check is
+&gt;   (!(parameters[i] instanceof TypeVariableBinding))
+&gt; Am I missing anything?
+
+(!(parameters[i] instanceof TypeVariableBinding)) in itself would be the wrong
+check as the TVB could be declared in a class or in a contrived case by an outer
+method. Despite the circuitous route, the present code is doing the right thing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2487641</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-23 12:24:27 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #8)
+&gt; (In reply to Stephan Herrmann from comment #7)
+&gt; 
+&gt; &gt; Or, are you saying, inference is invoked with some candidates which *should*
+&gt; &gt; have been weeded out even before inferring and our implementation only moves
+&gt; &gt; this responsibility from earlier phases into inference?
+&gt; 
+&gt; Yes, we don&apos;t have a phase that collects only potentially applicable methods,
+&gt; weeding out rest.
+
+Sounds like an excellent project for Neptun M3 :))
+
+
+&gt; &gt; On a different note, the ping pong of
+&gt; &gt; (a) e.isPertinentToApplicability(t) and
+&gt; &gt; (b) t.isPertinentToApplicability(e) which in one case seems to call (a)
+&gt; &gt; looks funny to me. Looking at the two implementations of (b) I would guess,
+&gt; &gt; all we need for the second check is
+&gt; &gt;   (!(parameters[i] instanceof TypeVariableBinding))
+&gt; &gt; Am I missing anything?
+&gt; 
+&gt; (!(parameters[i] instanceof TypeVariableBinding)) in itself would be the
+&gt; wrong
+&gt; check as the TVB could be declared in a class or in a contrived case by an
+&gt; outer
+&gt; method. Despite the circuitous route, the present code is doing the right
+&gt; thing.
+
+Sorry for being dense, but the current code just doesn&apos;t speak to me.
+
+What&apos;s the notion of a type binding being &quot;pertinent to applicability&quot;?
+
+What exactly is the condition you are expressing by this:
+
+    if (this.invocationArguments[i].isPertinentToApplicability(parameters[i], method)) { ....
+    } else {
+        if (parameters[i].isPertinentToApplicability(this.invocationArguments[i], method))
+
+
+OK, I previously missed that PolyTypeBinding also has an override, but other than that we have for the second &quot;if&quot;:
+ - TypeBinding constantly answers true
+ - TypeVariableBinding delegates to the reverse condition that was found to be false just above.
+I suspect the PolyTypeBinding case to behave similar to the TVB case.
+
+RunAllJava8Tests is equally happy with my experiment 
+  (!(parameters[i] instanceof TypeVariableBinding))
+
+
+What&apos;s the meaning of all this?
+
+
+BTW: 
+The following pair of methods in TypeBinding to me looks dangerous:
+  public boolean isPertinentToApplicability(TypeVariableBinding typeVariable, MethodBinding method)
+  public boolean isPertinentToApplicability(TypeBinding argument, MethodBinding method)
+Changing the static type of a variable at any call site may change the semantics. Not refactoring friendly.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2489566</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-11-27 01:05:22 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #9)
+
+&gt; Sorry for being dense, but the current code just doesn&apos;t speak to me.
+
+Hi Stephan, please feel free to amend as you see fit.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2489817</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-27 10:21:44 -0500</bug_when>
+    <thetext>Through a series of refactorings I succeeded to ...
+
+... get rid of most variants of isPertinentToApplicability, keeping only the hierarchy of Expression.isPertinentToApplicability(TypeBinding,MethodBinding)
+
+
+... understand the semantic fine points in comment 8. After some inlining etc. that&apos;s exactly what&apos;s left: compare the TVB&apos;s declaring element against the current method. And I found this perfectly aligns with this bullet from 15.12.2.1: 
+&quot;A lambda expression or a method reference expression is potentially compatible with a type variable if the type variable is a type parameter of the candidate method.&quot;
+
+The removed methods may have been necessary in intermediate versions, but in current HEAD, I could safely reduce the number of methods by 9 :). 
+
+
+Documenting my trail I pushed it piece-meal as
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=df8af25e16f5b7e59c39fb5a8e8fbed4f0aa740c
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=e74a7e922535396e598f77f6ca74363a6e6d0498
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=5132501fe32bc39d29df0ef5b05cc4e551a24910</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494964</commentid>
+    <comment_count>12</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-12-10 01:34:26 -0500</bug_when>
+    <thetext>Verified for Eclipse Mars 4.5 M4 using build  I20141209-2000</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2514362</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-04 17:08:09 -0500</bug_when>
+    <thetext>*** Bug 459038 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

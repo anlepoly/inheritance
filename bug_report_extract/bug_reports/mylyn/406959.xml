@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>406959</bug_id>
+          
+          <creation_ts>2013-04-30 17:00:00 -0400</creation_ts>
+          <short_desc>use SAXParserFactory instead of XMLReaderFactory</short_desc>
+          <delta_ts>2013-05-06 06:05:46 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>14</classification_id>
+          <classification>Mylyn</classification>
+          <product>Mylyn Commons</product>
+          <component>UI</component>
+          <version>unspecified</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P2</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>3.9</target_milestone>
+          <dependson>406647</dependson>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Steffen Pingel">steffen.pingel</reporter>
+          <assigned_to name="Steffen Pingel">steffen.pingel</assigned_to>
+          <cc>david.green</cc>
+    
+    <cc>david_williams</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2250826</commentid>
+    <comment_count>0</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-04-30 17:00:58 -0400</bug_when>
+    <thetext>XMLReaderFactory attempts to discover the SAX parser by looking up META-INF/services/org.xml.sax.driver. In Java 1.7 discovery is only done once and the class name is cached. If the first bundle that uses XMLReaderFactory has Xerces on the bundle class path &quot;org.apache.xerces.parsers.SAXParser&quot; will end up getting cached and subsequent usages of the factory will fail for bundles that do not depend on Xerces.
+
+To fix the problem clients need to change usage of XMLReaderFactory: @XMLReader reader = XMLReaderFactory.createXMLReader();@
+
+To using SAXParserFactory instead: @XMLReader reader = SAXParserFactory.newInstance().newSAXParser().getXMLReader();@
+
+The original implementation of org.xml.sax.helpers.XMLReaderFactory in Xerces does not exhibit this problem since it does not cache the discovered class name.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250835</commentid>
+    <comment_count>1</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-04-30 17:15:45 -0400</bug_when>
+    <thetext>David, just CC&apos;ing you in case you know more about this since you maintain the Xerces bundle. Eclipse doesn&apos;t appear to use XMLReaderFactory so it may have gone unnoticed (and the &quot;wrong&quot; bundle would need to trigger initialization of the factory). It seems potentially harmful to use XMLReaderFactory in OSGi contexts but I couldn&apos;t find other references to the problem which makes me wonder.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250853</commentid>
+    <comment_count>2</comment_count>
+    <who name="David Williams">david_williams</who>
+    <bug_when>2013-04-30 18:15:04 -0400</bug_when>
+    <thetext>
+I know it has been problematic in the past, but think its much better now. 
+
+I believe OSGi does use the factory (deep in its &quot;service&quot; implementation). At least Equinox implementation.  
+Such as, see bug 285505. While its hard to &quot;see everything&quot; in the patches there, it implies it uses the factory (and the context class loader ... as much as they hated to :) 
+
+But, before that fix, long long ago, we often found we had to &quot;wrap&quot; our call to factory method in &quot;context class loader code&quot; to make sure &quot;the right&quot; parser was found. For example of that wrapping code, see bug 283721 and one of its attachments: https://bugs.eclipse.org/bugs/attachment.cgi?id=143069
+
+So, I think to get it right, you either have to go through the OSGi service to &quot;get&quot; your parser ... sorry, no example code comes to mind bug a google search should show you some. 
+Or, you have to do your own &quot;class loader&quot; control as in the attachment to that bug (merely as an example).  
+
+Now ... that&apos;s what I know ... and I am hoping that is what you are asking about :) 
+
+I am not familiar with &quot;XMLReaderFactory&quot; off the top of my head, but know that XML/Xerces has always been problematic with OSGi and for some reason I could never convince them of the need to &quot;fit in&quot; and &quot;fix&quot; their own custom &quot;lookup&quot; mechanisms ... though, they did fix enough that they&apos;d use classloader first, so if you set your own (or, let Equinox do it) then it&apos;ll find the right stuff according to that classloader. 
+
+HTH</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250865</commentid>
+    <comment_count>3</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-04-30 18:51:07 -0400</bug_when>
+    <thetext>Thanks for the very detailed response! Since we also want to run outside of OSGi we have been using the factories directly from the JDK and not through the OSGi service. 
+
+With this particular problem the code in the Apache XML Commons seems to behave fine as far as I can tell. It resolves the class name from the services file on each invocation using the proper context class loader.  What is weird to me is that the JDK has almost exactly the same code except that it statically caches the result of the first lookup even though the result really depends on the TCCL and hence the invocation context. I don&apos;t really see a work around since the cache can&apos;t be cleared.
+
+It seems like a limitation in the JDK that makes that code not work well in OSGi environments. Do you think it&apos;s worth raising a bug against the JDK to ask to make the code more OSGi friendly?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250883</commentid>
+    <comment_count>4</comment_count>
+    <who name="David Williams">david_williams</who>
+    <bug_when>2013-04-30 19:25:02 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; Thanks for the very detailed response! Since we also want to run outside of
+&gt; OSGi we have been using the factories directly from the JDK and not through
+&gt; the OSGi service. 
+&gt; 
+&gt; With this particular problem the code in the Apache XML Commons seems to
+&gt; behave fine as far as I can tell. It resolves the class name from the
+&gt; services file on each invocation using the proper context class loader. 
+&gt; What is weird to me is that the JDK has almost exactly the same code except
+&gt; that it statically caches the result of the first lookup even though the
+&gt; result really depends on the TCCL and hence the invocation context. I don&apos;t
+&gt; really see a work around since the cache can&apos;t be cleared.
+&gt; 
+&gt; It seems like a limitation in the JDK that makes that code not work well in
+&gt; OSGi environments. Do you think it&apos;s worth raising a bug against the JDK to
+&gt; ask to make the code more OSGi friendly?
+
+Wouldn&apos;t hurt ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2252323</commentid>
+    <comment_count>5</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-05-03 18:08:16 -0400</bug_when>
+    <thetext>After taking another close look it appears that this problem exists in 1.7.0_10 but the code changed in 1.7.0_22. The latter still only reads the services file once but doesn&apos;t cache the discovered class name. I&apos;m not entirely sure how that&apos;s correct in terms of the returned result as services files are only honored during the first invocation and it cause problems just of a different nature.
+
+We&apos;ll work around it in Mylyn:
+
+https://git.eclipse.org/r/#/c/12513/
+https://git.eclipse.org/r/#/c/12514/
+
+For the record, I filed this bug against JDK 1.7:
+
+pre..  
+org.xml.sax.helpers.XMLReaderFactory only performs a service lookup of the XMLReader class once. This causes problems if the factory is used more than once. The following test case demonstrates the problem that occurs in JDK 1.7.0_21. The second expected SAXException is not thrown even though the context class loader has not changed:
+
+        @Test
+        public void testCreateXmlReaderTwice() throws SAXException {
+                Thread.currentThread().setContextClassLoader(new ClassLoader() {
+                        @Override
+                        public InputStream getResourceAsStream(String name) {
+                                return new ByteArrayInputStream(&quot;non.existant.class&quot;.getBytes());
+                        }
+                });
+                try {
+                        XMLReaderFactory.createXMLReader();
+                        fail(&quot;Expected SAXException&quot;);
+                } catch (SAXException e) {
+                        assertEquals(ClassNotFoundException.class, e.getCause().getClass());
+                }
+                try {
+                        XMLReaderFactory.createXMLReader();
+                        fail(&quot;Expected SAXException&quot;);
+                } catch (SAXException e) {
+                        assertEquals(ClassNotFoundException.class, e.getCause().getClass());
+                }
+        }
+
+
+In JDK 1.7.0_10 the following test case fails with a SAXException since the classname of the initial lookup was cached:
+
+        @Test
+        public void testCreateXmlReaderFromDefaultClassLoader() throws SAXException {
+                Thread.currentThread().setContextClassLoader(new ClassLoader() {
+                        @Override
+                        public InputStream getResourceAsStream(String name) {
+                                return new ByteArrayInputStream(&quot;non.existant.class&quot;.getBytes());
+                        }
+                });
+                try {
+                        XMLReaderFactory.createXMLReader();
+                        fail(&quot;Expected SAXException&quot;);
+                } catch (SAXException e) {
+                        assertEquals(ClassNotFoundException.class, e.getCause().getClass());
+                }
+
+                Thread.currentThread().setContextClassLoader(null);
+                XMLReaderFactory.createXMLReader();
+        }
+
+On Java 1.6.0_39 both tests pass. Since the result of the lookup depends on the invocation context it should always be performed and results should not be cached. The implementation of org.xml.sax.helpers.XMLReaderFactory in the Apache Xerces distributions does not exhibit this problem.
+
+This bug is particularly problematic in OSGi environment when the factory is used by several bundles with a different class path. This can cause an unexpected class to be loaded.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2252599</commentid>
+    <comment_count>6</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2013-05-06 06:05:46 -0400</bug_when>
+    <thetext>The reviews were submitted. Mylyn commons, context and tasks now uses SAXParserFactory.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

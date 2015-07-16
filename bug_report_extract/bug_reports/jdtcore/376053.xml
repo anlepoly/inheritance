@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>376053</bug_id>
+          
+          <creation_ts>2012-04-04 06:31:00 -0400</creation_ts>
+          <short_desc>[compiler][resource] Strange potential resource leak problems</short_desc>
+          <delta_ts>2012-12-11 03:17:33 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M4</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Markus Keller">markus_keller</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2089435</commentid>
+    <comment_count>0</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-04-04 06:31:19 -0400</bug_when>
+    <thetext>Here&apos;s an example that shows strange resource leak problems:
+
+package xy;
+
+import java.io.FileNotFoundException;
+import java.io.PrintStream;
+
+public class Try {
+    public static void main(String[] args) throws FileNotFoundException {
+        System.setOut(new PrintStream(&quot;log.txt&quot;));
+        
+        if (Math.random() &gt; .5) {
+            return;
+        }
+        System.out.println(&quot;Hello World&quot;);
+        return;
+    }
+}
+
+The problems on the return statements don&apos;t make much sense to me. If I remove the last &quot;return;&quot;, then the problem goes away without any replacement. This is clearly a bug.
+
+If I remove both return statements, then the problem is issued at the &quot;new PrintStream&quot; constructor invocation. Why is the problem not always issued on the closeable expression? If we keep the &quot;... closed at this location&quot; problem, then the message should at least tell on which line the expression occurs.
+
+I found problems of this kind in org.eclipse.ant.internal.core.ant.InternalAntRunner#run(List) and had a hard time finding out what the problem is talking about.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2089439</commentid>
+    <comment_count>1</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-04-04 06:35:00 -0400</bug_when>
+    <thetext>Just to clarify: This is about *potential* resource leaks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2192131</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-08 09:09:13 -0500</bug_when>
+    <thetext>When retesting on today&apos;s HEAD this is what I see:
+
+(In reply to comment #0)
+&gt; The problems on the return statements don&apos;t make much sense to me. If I remove
+&gt; the last &quot;return;&quot;, then the problem goes away without any replacement. This is
+&gt; clearly a bug.
+
+Each return shows the warning. If I remove either one, the other still has the warning.
+This bug seems to be fixed as of today.
+ 
+&gt; If I remove both return statements, then the problem is issued at the &quot;new
+&gt; PrintStream&quot; constructor invocation. 
+
+Still the same.
+The fact that we report a potential leak is independent of the return statements, which means it works as designed.
+
+&gt; Why is the problem not always issued on the closeable expression?
+
+During reporting I apply a number of heuristics to minimize the number of warnings, while keeping &quot;the most specific&quot; warning.
+One of these heuristics is: warnings with a specific location where the leak occurs are more specific than warnings generally against the resource.
+If I change that heuristic in favor of this bug, I get 4 distinct regressions in ResourceLeakTests, the most prominent being test056u
+
+import java.io.FileReader;
+public class X {
+    void foo() throws Exception {
+        FileReader reader1 = new FileReader(&quot;file1&quot;);
+        FileReader reader2 = new FileReader(&quot;file2&quot;);
+        reader2 = reader1;// this disconnects reader 2
+        try (FileReader reader3 = new FileReader(&quot;file3&quot;)) {
+            int ch;
+            while ((ch = reader2.read()) != -1) {
+                System.out.println(ch);
+                reader1.read();
+            }
+            reader2 = reader1; // warning 1 regarding original reader1
+            reader2 = reader1; // warning 2 regarding original reader1
+        } finally {
+            if (reader2 != null) {
+                reader2.close();
+            } else {
+                System.out.println();
+            }
+        }
+    }
+}
+
+(Excuse the contrived test case :) )
+Currently, each reassignment is flagged, because that&apos;s where we loose a reference to a potentially unclosed resource.
+With changed heuristics the warnings move to the declaration of reader1 and no clue is given which of the various instances that are subsequently bound to &apos;reader1&apos; is unclosed.
+
+I&apos;d prefer not to change these heuristics, because each change is likely to bring undesired side-effects for some situations.
+This is a delicate area and I don&apos;t see a cost-benefit ratio in favor of yet more fine tuning.
+
+&gt; If we keep the &quot;... closed at this location&quot; problem, then
+&gt; the message should at least tell on which line the expression occurs.
+
+OK, this is a specific problem with errors mentioning &quot;&lt;unassigned Closeable value&gt;&quot;.
+I&apos;ll take a look if we can say a little more here. Note that this would be a precedent as I can&apos;t recall any message that refers to two code locations, using a line number to refer to one of them.
+Maybe say &quot;&lt;unassigned Closeable value from line 13&gt;&quot;? Suppress the line number, when reporting against this very location?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2192176</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-08 12:55:30 -0500</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; &gt; If we keep the &quot;... closed at this location&quot; problem, then
+&gt; &gt; the message should at least tell on which line the expression occurs.
+&gt; 
+&gt; OK, this is a specific problem with errors mentioning &quot;&lt;unassigned Closeable
+&gt; value&gt;&quot;.
+&gt; I&apos;ll take a look if we can say a little more here. Note that this would be a
+&gt; precedent as I can&apos;t recall any message that refers to two code locations, using
+&gt; a line number to refer to one of them.
+&gt; Maybe say &quot;&lt;unassigned Closeable value from line 13&gt;&quot;? Suppress the line number,
+&gt; when reporting against this very location?
+
+A fix for this has been released for 4.3 M4 via commit ead8e814ab499b7622eb426e1befbcf339b11ce8
+
+Nothing else planned at this point.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2192813</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-12-11 03:17:33 -0500</bug_when>
+    <thetext>Verified for 4.3 M4 using build I20121210-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,756 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>430987</bug_id>
+          
+          <creation_ts>2014-03-24 06:37:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler] Java 8 Compile Error with generic typed arguments</short_desc>
+          <delta_ts>2014-10-29 07:37:16 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>444334</dup_id>
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>critical</bug_severity>
+          <target_milestone>4.5 M3</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Holger Staudacher">hstaudacher</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2379066</commentid>
+    <comment_count>0</comment_count>
+    <who name="Holger Staudacher">hstaudacher</who>
+    <bug_when>2014-03-24 06:37:31 -0400</bug_when>
+    <thetext>While working with mockito I faced an Java 8 compile error for code that has worked with Java 7. I managed to create a standalone snippet to reproduce the code:
+
+public class Bug {
+
+  public static interface Foo&lt;T&gt; {
+    // no content
+  }
+
+  public void compileError() {
+    doSomethingWithFoo( any( Foo.class ), any( Foo.class ) );
+  }
+
+  public void noCompileError() {
+    Foo foo = any( Foo.class );
+    doSomethingWithFoo( foo, foo );
+  }
+
+  public &lt;T&gt; void  doSomethingWithFoo( Foo&lt;T&gt; foo, Foo&lt;T&gt; foo2 ) {
+    // do something
+  }
+
+  public static &lt;T&gt; T any(Class&lt;T&gt; clazz) {
+    return null;
+  }
+
+}
+
+This snippet works with Java 6 and 7 but not with 8.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2379080</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-24 06:58:57 -0400</bug_when>
+    <thetext>Seeing the raw type Foo (from Foo.class) in the mix, I can well imagine that rejecting the program *could* be the correct behavior.
+
+Please try inserting (unchecked) casts to some parameterized version of Foo, to see if it fixes the error.
+
+Basically the signature of doSomethingWithFoo guarantees that both arguments use the same type argument to Foo. With raw types this cannot be established.
+
+Maybe parameterizing the call to doSomethingWithFoo would be the cleanest solution.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2379132</commentid>
+    <comment_count>2</comment_count>
+    <who name="Holger Staudacher">hstaudacher</who>
+    <bug_when>2014-03-24 08:04:21 -0400</bug_when>
+    <thetext>Hi Stephan, 
+yes unchecked casts solve the compile error. That&apos;s what I have done migrating our application. 
+
+Please don&apos;t take this example to serious. i have just created it to make it easy for you to reproduce.
+
+The problem is that most mocking frameworks do make heavy usage of verifications that methods will be called (if good or bad is another discussion ;) ). When having a method signature like doSomethingWithFoo you ran into compile errors that have worked with versions &lt; Java 8 (JDT) which is pretty annoying. E.g. in mockito such a verification would look like this:
+
+verify( bugInstance ).doSomethingWithFoo( any( Foo.class ), any( Foo.class ) );
+
+This call can not be parameterized.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2380102</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-25 17:32:34 -0400</bug_when>
+    <thetext>Here&apos;s what inference sees:
+
+- any(..) returns T
+- for each invocation of any() we create an inference variable representing T, call them T#1 etc
+- passing the result of any(..) into doSomethingWithFoo() creates the constraint
+     T#1 &lt;: Foo&lt;T#0&gt;
+(where T#0 represents the type parameter of doSomethingWithFoo()).
+
+- from passing Foo.class into any(..) we have these constraints:
+     Class&lt;Foo&gt;  Class&lt;T#1&gt;
+- this is reduced to
+     Foo = T#1
+
+Combining the two constraints we get
+     Foo &lt;: Foo&lt;T#0&gt;
+
+This is exactly the form of constraint that is FALSE as per the JLS but erroneously accepted as TRUE by javac (we have confirmation about this from the JLS author). See also slide #49 of https://www.eclipsecon.org/na2014/sites/default/files/slides/JDT%20Embraces%20Lambda%20Expressions%20-%20ECNA%202014.pdf
+
+Rejecting your program is the correct behavior according to the JLS.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2380111</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-25 17:43:52 -0400</bug_when>
+    <thetext>(In reply to Holger Staudacher from comment #2)
+&gt; verify( bugInstance ).doSomethingWithFoo( any( Foo.class ), any( Foo.class )
+&gt; );
+&gt; 
+&gt; This call can not be parameterized.
+
+Seeing that usage of Foo.class syntax inevitably introduces a raw type into the picture, I searched for another workaround and found this:
+
+  public void fix() {
+    this.&lt;Object&gt;doSomethingWithFoo( any( Foo.class ), any( Foo.class ) );
+  }
+
+Raises lots of warnings, but that&apos;s what you should expect.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2380116</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-25 17:48:42 -0400</bug_when>
+    <thetext>Forgot to reply to this part:
+
+(In reply to Holger Staudacher from comment #2)
+&gt; When having a method signature like doSomethingWithFoo you
+&gt; ran into compile errors that have worked with versions &lt; Java 8 (JDT)
+
+Yep, in the past the JLS may have been vague about this (haven&apos;t checked in detail) and both compilers tried to be nice by accepting some programs with incorrect typing. In JLS 8 the situation is much clearer, and ecj at -compliance 1.8 fixes the previous bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2380120</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-25 17:52:35 -0400</bug_when>
+    <thetext>Regression test released via https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=e8f057cb7321ae6a2b7856d93f9b8a4068c22b69</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2393896</commentid>
+    <comment_count>7</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-04-28 07:54:27 -0400</bug_when>
+    <thetext>Verified for 4.4 M7</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467671</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-19 07:33:48 -0400</bug_when>
+    <thetext>I think we should reopen this for reconsideration.
+
+While investigating a fix for 
+
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=444334
+
+I noticed that a candidate fix I have fixes the present bug as well as
+
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=438246
+
+Upon closer inspection, I think the present resolution is incorrect.
+
+Basically there is no difference between compileError and noCompileError
+below other than the nested generic call in argument position, The types
+concerned are the exact same.
+
+The candidate fix I have flags the constraint formulas created in
+CEF.inferPolyInvocationType as using soft type argument constraints.
+
+From https://bugs.openjdk.java.net/browse/JDK-8026527:
+
+While &quot;per JLS 15.12.2.2 and 15.12.2.3 ... a raw type is _convertible to_ a 
+parameterization of that type, but is not a _subtype of_ a parameterization 
+of that type. The specification is clear that subtyping, not some more 
+general conversion, is used to check method invocation bounds.&quot; 
+
+By creating formulas of the form 
+
+ConstraintTypeFormula.create(rTheta, targetType, COMPATIBLE);
+
+we are basically precluding the raw type&apos;s conversion to the 
+parameterization of that type, because CTF.reduce immediately turns that
+formula into a subtype relationship which will fail.
+
+We don&apos;t have a reduction from COMPATIBLE to CONVERTIBLE only to SUBTYPE.
+So the isSoft constraint tagging is *the* reduction to CONVERTIBLE and
+that is missing in CEF.inferPoly*.
+
+I agree that JLS is not clear on these soft constraints and we have to
+go by off the standard and also incomplete recommendations of the form
+http://mail.openjdk.java.net/pipermail/lambda-spec-experts/2013-December/000447.html
+
+but not compiling this program does not sound right to me.
+
+I also think these soft constraints are here to stay irrespective of the 
+resolution to JDK bug 8026527
+
+Another reason to fix: I think the type-token/class literal based coding
+is a common pattern and the grammar necessarily require raw types to be
+used.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467688</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-19 09:21:44 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #8)
+&gt; We don&apos;t have a reduction from COMPATIBLE to CONVERTIBLE only to SUBTYPE.
+&gt; So the isSoft constraint tagging is *the* reduction to CONVERTIBLE and
+&gt; that is missing in CEF.inferPoly*.
+
+As per JLS, CONVERTIBLE is not relevant for inference. Hence there cannot be any reduction rules from or to CONVERTIBLE. Any consideration of CONVERTIBLE will remain a best effort approach to bug compatibility - no more, no less.
+
+&gt; I also think these soft constraints are here to stay irrespective of the 
+&gt; resolution to JDK bug 8026527
+
+Why do you think so? The term &quot;soft&quot; is not part of JLS, it is just an attempt at describing a javac bug. Why should that stay?
+
+Note, that this javac bug is not among the set where javac might be closer to the *intention* of JSR 335, it&apos;s simply wrong behavior.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467697</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-19 10:39:03 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #9)
+
+&gt; As per JLS, CONVERTIBLE is not relevant for inference. Hence there cannot be
+&gt; any reduction rules from or to CONVERTIBLE. Any consideration of CONVERTIBLE
+&gt; will remain a best effort approach to bug compatibility - no more, no less.
+
+I hold it to be a JLS bug that it is silent on soft constraints. It should
+make explicit where constraints should treated as soft and where not.
+
+&gt; &gt; I also think these soft constraints are here to stay irrespective of the 
+&gt; &gt; resolution to JDK bug 8026527
+&gt; 
+&gt; Why do you think so? The term &quot;soft&quot; is not part of JLS, it is just an
+&gt; attempt at describing a javac bug. Why should that stay?
+
+I see that there are two things at play here: (a) javac has bug 
+https://bugs.openjdk.java.net/browse/JDK-8026527 which they may fix at some
+point of time (comment on the bug says &quot;Fixed in Valhalla&quot;, but resolution
+says Unresolved) and
+(b) There are going to be places where even after that bug is resolved,
+there will be need to apply soft constraint semantics for type arguments.
+JLS8 does not banish raw types out of existence - It is legal to pass
+raw types to methods and it is equally legal to call a nested method call
+that returns a raw type. 
+
+In the comment#0 snippet, there is no justification at all to not compile
+method compileError() while compiling noCompileError(), If there is no
+path in JLS that would allow us to compile compileError(), then that is
+a bug in JLS.
+
+&gt; Note, that this javac bug is not among the set where javac might be closer
+&gt; to the *intention* of JSR 335, it&apos;s simply wrong behavior.
+
+I don&apos;t think so. A raw type is convertible to its parameterized type
+and so can be passed as an argument to a method that expects that parameterized type. Arguments don&apos;t have to subtypes of parameters, they
+just need to be convertible.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467704</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-19 11:05:36 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #10)
+&gt; (In reply to Stephan Herrmann from comment #9)
+&gt; 
+&gt; &gt; As per JLS, CONVERTIBLE is not relevant for inference. Hence there cannot be
+&gt; &gt; any reduction rules from or to CONVERTIBLE. Any consideration of CONVERTIBLE
+&gt; &gt; will remain a best effort approach to bug compatibility - no more, no less.
+&gt; 
+&gt; I hold it to be a JLS bug that it is silent on soft constraints. It should
+&gt; make explicit where constraints should treated as soft and where not.
+
+I read Dan&apos;s answer on the mailing list as saying: for inference to be sound *no* constraint should be considered as soft.
+
+
+&gt; &gt; &gt; I also think these soft constraints are here to stay irrespective of the 
+&gt; &gt; &gt; resolution to JDK bug 8026527
+&gt; &gt; 
+&gt; &gt; Why do you think so? The term &quot;soft&quot; is not part of JLS, it is just an
+&gt; &gt; attempt at describing a javac bug. Why should that stay?
+&gt; 
+&gt; I see that there are two things at play here: (a) javac has bug 
+&gt; https://bugs.openjdk.java.net/browse/JDK-8026527 which they may fix at some
+&gt; point of time (comment on the bug says &quot;Fixed in Valhalla&quot;, but resolution
+&gt; says Unresolved) and
+
+Yea, that&apos;s an interesting state for a bug. Sounds like: we have a fix but we are not allowed to release it. I&apos;m guessing: Politics overrides correctness?
+
+
+&gt; (b) There are going to be places where even after that bug is resolved,
+&gt; there will be need to apply soft constraint semantics for type arguments.
+&gt; JLS8 does not banish raw types out of existence - It is legal to pass
+&gt; raw types to methods and it is equally legal to call a nested method call
+&gt; that returns a raw type. 
+
+noCompileError proves that ecj permits raw types as (toplevel) argument types.
+
+&gt; In the comment#0 snippet, there is no justification at all to not compile
+&gt; method compileError() while compiling noCompileError(), If there is no
+&gt; path in JLS that would allow us to compile compileError(), then that is
+&gt; a bug in JLS.
+
+No, it&apos;s an instance of &quot;reduction is not completeness preserving&quot;. We know that inference with or without intermediate assignment can produce different results. Omitting the intermediate assignment connects outer and inner inferences, hence we try to infer T with knowledge about the Class&lt;T#0&gt; thing.
+
+For inference to succeed, we&apos;d need to infer T to &apos;absent&apos;. Since inference can&apos;t do that we need the intermediate assignment to a raw type, which in fact eliminates T from the inner expression.
+
+&gt; &gt; Note, that this javac bug is not among the set where javac might be closer
+&gt; &gt; to the *intention* of JSR 335, it&apos;s simply wrong behavior.
+&gt; 
+&gt; I don&apos;t think so. A raw type is convertible to its parameterized type
+&gt; and so can be passed as an argument to a method that expects that
+&gt; parameterized type. Arguments don&apos;t have to subtypes of parameters, they
+&gt; just need to be convertible.
+
+It&apos;s not the argument alone, that causes inference to fail, the root cause for failure is the contraint Foo &lt;: Foo&lt;T#0&gt;, see comment 3. This constraint *must* be reduced to FALSE for inference to remain sound, as acknowledged in the JDK bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467714</commentid>
+    <comment_count>12</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-19 11:32:06 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #11)
+
+&gt; I read Dan&apos;s answer on the mailing list as saying: for inference to be sound
+&gt; *no* constraint should be considered as soft.
+
+That will part-banish raw types out of existence.
+
+&gt; No, it&apos;s an instance of &quot;reduction is not completeness preserving&quot;. We know
+&gt; that inference with or without intermediate assignment can produce different
+&gt; results. 
+
+I could be wrong, but I think the intermediate assignment is a very Java 7
+thing - Is there another example outside of raw types where such 
+intermediate assignment is necessary to complete inference in Java 8 ?
+(I can believe intermediate assignment can make a material difference,
+but not essential difference for solving the equations.)
+
+&gt; It&apos;s not the argument alone, that causes inference to fail, the root cause
+&gt; for failure is the contraint Foo &lt;: Foo&lt;T#0&gt;, see comment 3. 
+
+My sense is that there is a gap is JLS in this area, I don&apos;t somehow feel
+resolution of https://bugs.openjdk.java.net/browse/JDK-8026527 is going to
+eliminate all cases where some extra constitutional stuff is done by javac.
+I can believe that there is a lot of programs out there that would break
+if it does. 
+
+After the capture bound incorporation questions get answered, I can open
+another line of query for this topic including some compiler engineers
+in the discussion to see if we can get a definitive answer.
+
+I am not suggesting we bend over backwards to be compatible with javac,
+but if it is a well defined minimal set of changes and there is also
+acknowledgement that there is a gap in JLS in these areas ... To me
+at first glance the patch at https://bugs.eclipse.org/bugs/show_bug.cgi?id=444334#c4 sounds reasonable - (Not suggesting we should rush ahead with
+it)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467769</commentid>
+    <comment_count>13</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-19 22:07:10 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #11)
+
+&gt; For inference to succeed, we&apos;d need to infer T to &apos;absent&apos;. Since inference
+&gt; can&apos;t do that we need the intermediate assignment to a raw type, which in
+&gt; fact eliminates T from the inner expression.
+
+[...]
+
+&gt; It&apos;s not the argument alone, that causes inference to fail, the root cause
+&gt; for failure is the contraint Foo &lt;: Foo&lt;T#0&gt;, see comment 3. This constraint
+&gt; *must* be reduced to FALSE for inference to remain sound, as acknowledged in
+&gt; the JDK bug.
+
+OK, I think there is a happy resolution for this without leaning more on the 
+recommendation from Dan to make this or that constraint soft.
+
+I think the bug is in MessageSend.isPolyExpression. The call to the nested
+any() method resolves to the binding Foo#RAW any(Class&lt;Foo#RAW&gt;). Should
+this answer true to isPolyExpression(Foo#RAW any(Class&lt;Foo#RAW&gt;)) ?
+
+I don&apos;t think so. The return type being raw, cannot mention any of the type
+variables of the generic method in its return type.
+
+With that change made, we would treated nested generic calls that return
+raw types equivalently to non-invocation expressions of the same raw type
+used as arguments to an invocation.
+
+This line of reasoning would invalidate my point earlier that soft 
+constraints are here to stay even after the resolution of
+https://bugs.openjdk.java.net/browse/JDK-8026527. Though I would be
+very curious to see how it gets resolved without invalidating many programs
+that would compile in Java 7.
+
+I&apos;ll be post a revised patch for review in the other bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467771</commentid>
+    <comment_count>14</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-19 22:25:07 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #13)
+
+&gt; I don&apos;t think so. The return type being raw, cannot mention any of the type
+&gt; variables of the generic method in its return type.
+
+OIOW, I am making a case that the comment in MessageSend.isPolyExpression
+
+// resolution may have prematurely instantiated the generic method, we need the original, though:
+
+and the associated code to reach past jLO substitutions in the method return
+type make us answer true incorrectly.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2468024</commentid>
+    <comment_count>15</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-20 09:06:29 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #13)
+
+&gt; OK, I think there is a happy resolution for this without leaning more on the 
+&gt; recommendation from Dan to make this or that constraint soft.
+&gt; 
+&gt; I think the bug is in MessageSend.isPolyExpression. The call to the nested
+&gt; any() method resolves to the binding Foo#RAW any(Class&lt;Foo#RAW&gt;). Should
+&gt; this answer true to isPolyExpression(Foo#RAW any(Class&lt;Foo#RAW&gt;)) ?
+&gt; 
+&gt; I don&apos;t think so. The return type being raw, cannot mention any of the type
+&gt; variables of the generic method in its return type.
+
+Not sure. See also https://bugs.eclipse.org/bugs/show_bug.cgi?id=434118#c5</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2468063</commentid>
+    <comment_count>16</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-20 09:59:37 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #15)
+
+&gt; Not sure. See also https://bugs.eclipse.org/bugs/show_bug.cgi?id=434118#c5
+
+I have a sent a query to the spec czar. Awaiting response ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2470895</commentid>
+    <comment_count>17</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-24 04:45:43 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #16)
+&gt; (In reply to Srikanth Sankaran from comment #15)
+&gt; 
+&gt; &gt; Not sure. See also https://bugs.eclipse.org/bugs/show_bug.cgi?id=434118#c5
+&gt; 
+&gt; I have a sent a query to the spec czar. Awaiting response ...
+
+OK, we have clarifications, there is one bug on our side (confirmed) and one 
+bug On JLS side (to be confirmed.)
+
+The discussions with the spec lead pointed to an atomicity problem in the
+way constraints are lifted from the inner call to the outer context. We are
+supposed to reduce the inner call to bound set b3 that would be used in
+inferring the inner method against the target type imposed by the outer 
+call.
+
+In our implemenation, we don&apos;t quite do that, we rather lift the
+inference variables, bounds from type parameters and constraints from the
+argument/parameters &quot;that would effectively amount to b3&quot; This is not 
+quite correct - As a result a bound we expect to see for the correct 
+solution is missing because the constraint whose reduction would have 
+yielded that bound is still unreduced.
+
+Fix is to transfer the bounds and inference variables together and not
+the initial constraints. This should also speed up inference.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471281</commentid>
+    <comment_count>18</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-24 09:47:35 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #17)
+&gt; The discussions with the spec lead pointed to an atomicity problem in the
+&gt; way constraints are lifted from the inner call to the outer context. We are
+&gt; supposed to reduce the inner call to bound set b3 that would be used in
+&gt; inferring the inner method against the target type imposed by the outer 
+&gt; call.
+&gt; 
+&gt; In our implemenation, we don&apos;t quite do that, we rather lift the
+&gt; inference variables, bounds from type parameters and constraints from the
+&gt; argument/parameters &quot;that would effectively amount to b3&quot; This is not 
+&gt; quite correct - As a result a bound we expect to see for the correct 
+&gt; solution is missing because the constraint whose reduction would have 
+&gt; yielded that bound is still unreduced.
+&gt; 
+&gt; Fix is to transfer the bounds and inference variables together and not
+&gt; the initial constraints. This should also speed up inference.
+
+I could use a little help to understand what you mean by &quot;atomicity problem&quot;. In master the inner inference for computing the inner b3 is performed in the same IC18 with the same BoundSet, which is intended to immediately merge all effects of inner into current. Are you saying the effect is to much or too little when doing so?
+
+Which bound do you see missing? Are we dropping an unreduced constraint? When?
+
+Or does your description apply only to master plus pending patches?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471297</commentid>
+    <comment_count>19</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-24 10:04:42 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #18)
+
+&gt; I could use a little help to understand what you mean by &quot;atomicity
+&gt; problem&quot;. In master the inner inference for computing the inner b3 is
+&gt; performed in the same IC18 with the same BoundSet, which is intended to
+&gt; immediately merge all effects of inner into current. Are you saying the
+&gt; effect is to much or too little when doing so?
+&gt; 
+&gt; Which bound do you see missing? Are we dropping an unreduced constraint?
+&gt; When?
+&gt; 
+&gt; Or does your description apply only to master plus pending patches?
+
+No, my description is true for both master and the pending patches.
+
+Basically, to reduce the inner poly to b3, this is what we do:
+
+inferInvocationApplicability(inferenceContext, method, argumentTypes, isDiamond, inferenceContext.inferenceKind);
+
+followed by 
+
+inferPolyInvocationType(inferenceContext, invocation, this.right, method))
+
+the first one transfers the initial constraints, inference variables
+and bounds from type parameters.
+
+while executing inferPolyInvocationType(), the initial constraints lifted
+by the call just above it to inferInvocationApplicability are still
+unreduced. 
+
+There should either be a reduce() and incorporate() calls between
+inferInvocation* and inferPoly* or we should choose a strategy of
+transferring the reduced and incorporated bound set from the inner
+rather than the initial constraints and reducing them in the outer
+context.
+
+In 18.5.2
+
+Otherwise, if R  is an inference variable , and one of the following is true:
+
+...
+
+T is a parameterization of a generic class or interface, G, and B2 
+contains a bound of one of the forms  = S or S &lt;: , where there exists 
+no type of the form G&lt;...&gt; that is a supertype of S, but the raw type 
+|G&lt;...&gt;| is a supertype of S.
+
+
+B2 for the inner call is not existent because we have the constraints
+still unreduced (they are merged with outer&apos;s initial constraints and
+waiting to be reduced)
+
+So we don&apos;t see a bound of the form  = S or S &lt;:  where we should.
+
+This is what I meant by the atomicity problem. We should transfer the
+bounds, instead we transfer the constraints that would reduce to those
+same bounds, but we need to inspect the bounds before they are reduced....
+
+Looking at the patch and then studying this explanation will make it clear.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471312</commentid>
+    <comment_count>20</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-24 10:22:02 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #19)
+
+Thanks, now I know we are looking at the same thing.
+
+While waiting for your answer I wondered, whether we need a reduce() call inside CExprF.inferPolyInvocationType(), which is pretty much the same place that you mention :)
+
+Looking at the patch I wonder how many problems it solves?
+
+- is removal of recordUncheckedConversion()/reportUncheckedConversions()
+  essential for the fix?
+  (I&apos;d like to keep this unless it creates substantial problems)
+
+- changes in CExprF.inferPolyInvocationType() handle the assumed spec bug,
+  right? Could you point to a test case that requires this?
+
+
+I&apos;m just trying to identify the core of the fix so I can understand better.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471316</commentid>
+    <comment_count>21</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-24 10:25:43 -0400</bug_when>
+    <thetext>Also: what exactly is the relation between this bug (containing the explanation) and bug 444334 (containing the patch) ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471393</commentid>
+    <comment_count>22</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-24 11:54:48 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #20)
+&gt; (In reply to Srikanth Sankaran from comment #19)
+
+&gt; - is removal of recordUncheckedConversion()/reportUncheckedConversions()
+&gt;   essential for the fix?
+&gt;   (I&apos;d like to keep this unless it creates substantial problems)
+
+Not really, except that these appear not fully implemented _and_ we are 
+not likely to require these at all. Unchecked conversion/invocation 
+warnings get reported from ASTNode.checkInvocationArguments called by all 
+invocations already. The portion of code short that calls this was 
+short-circuited on master by direct binding update with no reevaluation 
+of inner invocations.
+
+One change related to unchecked conversions is essential. In CEF.inferPoly()
+when we check if the inference context has a record of
+unchecked conversions, we are checking the current (outer) context, that 
+is wrong. This piece of information must be lifted from the inner context. 
+
+&gt; - changes in CExprF.inferPolyInvocationType() handle the assumed spec bug,
+&gt;   right? Could you point to a test case that requires this?
+
+I think you are referring to the
+
+if (rTheta.leafComponentType() instanceof InferenceVariable)
+
+part - right ? 
+
+This is for https://bugs.eclipse.org/bugs/show_bug.cgi?id=438246 with
+test case being GRT.test438246()</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471394</commentid>
+    <comment_count>23</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-24 11:58:08 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #21)
+&gt; Also: what exactly is the relation between this bug (containing the
+&gt; explanation) and bug 444334 (containing the patch) ?
+
+They are just duplicates. I originally started work on bug 444334 and
+my candidate take 1 fix &quot;failed&quot; the regression test added for this bug
+capturing current master behavior - then I reopened this for discussion
+and because I had to justify the reopening started adding commentary here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471395</commentid>
+    <comment_count>24</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-24 12:00:07 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #23)
+&gt; (In reply to Stephan Herrmann from comment #21)
+&gt; &gt; Also: what exactly is the relation between this bug (containing the
+&gt; &gt; explanation) and bug 444334 (containing the patch) ?
+&gt; 
+&gt; They are just duplicates. 
+
+The patch posted at bug 444334 will fix bug 444334 and bug 430987 (this)
+and bug 438246 and contains junits for all of them.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471404</commentid>
+    <comment_count>25</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-24 12:15:53 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #22)
+&gt; (In reply to Stephan Herrmann from comment #20)
+&gt; &gt; (In reply to Srikanth Sankaran from comment #19)
+&gt; 
+&gt; &gt; - is removal of recordUncheckedConversion()/reportUncheckedConversions()
+&gt; &gt;   essential for the fix?
+&gt; &gt;   (I&apos;d like to keep this unless it creates substantial problems)
+&gt; 
+&gt; Not really, except that these appear not fully implemented _and_ we are 
+&gt; not likely to require these at all. Unchecked conversion/invocation 
+&gt; warnings get reported from ASTNode.checkInvocationArguments called by all 
+&gt; invocations already. The portion of code short that calls this was 
+&gt; short-circuited on master by direct binding update with no reevaluation 
+&gt; of inner invocations.
+
+My idea was to perhaps use the responsible constraint for improved error reporting in terms of trying to tell the user, *why* we are reporting unchecked conversion. If we decide that reports from ASTNode.checkInvocationArguments give sufficient explanation, then this is not needed, true.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471485</commentid>
+    <comment_count>26</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-24 14:39:01 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #17)
+
+&gt; OK, we have clarifications, there is one bug on our side (confirmed) and one 
+&gt; bug On JLS side (to be confirmed.)
+
+Confirmed JLS bug: https://bugs.openjdk.java.net/browse/JDK-8062082</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471795</commentid>
+    <comment_count>27</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-25 12:56:21 -0400</bug_when>
+    <thetext>Patch under review on behalf of https://bugs.eclipse.org/bugs/show_bug.cgi?id=444334 and includes a junit for the test case from here.
+
+*** This bug has been marked as a duplicate of bug 444334 ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472134</commentid>
+    <comment_count>28</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-27 02:39:27 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #25)
+
+&gt; My idea was to perhaps use the responsible constraint for improved error
+&gt; reporting in terms of trying to tell the user, *why* we are reporting
+&gt; unchecked conversion. If we decide that reports from
+&gt; ASTNode.checkInvocationArguments give sufficient explanation, then this is
+&gt; not needed, true.
+
+I&apos;ll leave in these methods for now. Will add a reminder to myself at
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=444334.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2473486</commentid>
+    <comment_count>29</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-10-29 07:37:16 -0400</bug_when>
+    <thetext>Verified for 4.5 M3 using  I20141027-2000 build.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

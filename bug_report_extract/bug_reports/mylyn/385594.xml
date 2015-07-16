@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>385594</bug_id>
+          
+          <creation_ts>2012-07-20 09:17:00 -0400</creation_ts>
+          <short_desc>Limit Remove From Context action to appropriate Context Editor</short_desc>
+          <delta_ts>2012-09-18 00:34:10 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>14</classification_id>
+          <classification>Mylyn</classification>
+          <product>Mylyn Context</product>
+          <component>Framework</component>
+          <version>3.9</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords>contributed</keywords>
+          <priority>P3</priority>
+          <bug_severity>minor</bug_severity>
+          <target_milestone>3.9</target_milestone>
+          <dependson>387156</dependson>
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Sebastian Schmidt">sebastian.schmidt2</reporter>
+          <assigned_to name="Sebastian Schmidt">sebastian.schmidt2</assigned_to>
+          <cc>benjamin.muskalla</cc>
+    
+    <cc>sebastian.schmidt2</cc>
+    
+    <cc>shawn.minto</cc>
+    
+    <cc>steffen.pingel</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2139546</commentid>
+    <comment_count>0</comment_count>
+    <who name="Sebastian Schmidt">sebastian.schmidt2</who>
+    <bug_when>2012-07-20 09:17:42 -0400</bug_when>
+    <thetext>If a context is active, actions for &quot;Mark as Landmark&quot; and &quot;Remove from Context&quot; are added to the Context Editor with the help of objectContributions.
+Because it is allowed to open multiple Context Editors while one context is active, we have to make sure that those actions are only available in the Context Editor of the active context.
+
+If I understand it correctly, the way this currently works is that the actions are contributed to each Context Editor and later &quot;known&quot; contributions (from Java/Resource bridges) are removed manually in 
+
+ContextEditorFormPage.fillContextMenu(IMenuManager manager):
+
+if (!isActiveTask()) { // formPage doesn&apos;t belong to active task
+	manager.remove(&quot;org.eclipse.mylyn.java.ui.interest.remove.element&quot;);
+	manager.remove(&quot;org.eclipse.mylyn.java.ui.interest.increase.element&quot;);			
+	manager.remove(&quot;org.eclipse.mylyn.java.ui.interest.increase.element&quot;);
+	manager.remove(&quot;org.eclipse.mylyn.resources.ui.ui.interest.remove.element&quot;);
+}
+
+I&apos;m currently out of ideas how to expand this for breakpoints. Adding
+manager.remove(&quot;org.eclipse.debug.ui.interest.remove.element&quot;);
+manager.remove(&quot;org.eclipse.debug.ui.interest.increase.element&quot;);
+would help... but is there a better way to get the same result? I&apos;m not seeing one unfortunately, but would like to avoid hacking o.e.mylyn.ui classes for every ContextContributor there is (or every ContextContributor which might show up in the future).
+
+Marked as Minor because the side effect when ignoring this problem is not that big. What happens right now: 
+1. create two contexts with the same breakpoint attached
+2. activate context 1
+3. open context editor of context 2
+4. delete breakpoint in context editor of context 2
+=&gt; results in breakpoint getting deleted in context 1, because the remove action uses the active context</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2140046</commentid>
+    <comment_count>1</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2012-07-23 05:52:33 -0400</bug_when>
+    <thetext>The current implementation seems wrong to me. Is there any way that we could pass the context to the command so that it could operate on the right context? If not we could consider removing all contributions that match a certain ID pattern, e.g. *.interest.[remove|increase] or register the black listed commands through yet another extension.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2140083</commentid>
+    <comment_count>2</comment_count>
+    <who name="Sebastian Schmidt">sebastian.schmidt2</who>
+    <bug_when>2012-07-23 07:24:19 -0400</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; The current implementation seems wrong to me. Is there any way that we could
+&gt; pass the context to the command so that it could operate on the right context?
+&gt; If not we could consider removing all contributions that match a certain ID
+&gt; pattern, e.g. *.interest.[remove|increase] or register the black listed
+&gt; commands through yet another extension.
+
+If we go the way to pass context to the actions and allow to modify non-active contexts, IMHO we also have to:
+
+- Update the actions to pass the context to InteractionContextManager (ICM). 
+
+The ICM API currently allows to specify the context when manipulating interest of an element. The AbstractInterestManipulationAction for example uses ContextCorePlugin.getContextManager().manipulateInterestForElements(nodes, increment, false, preserveUninteresting, SOURCE_ID, getContext(), true);
+This might be updated to reflect different contexts without a problem.
+
+Than, deleteElements is currently only possible for active contexts using the ICM API. It provides deleteElement(IInteractionElement element) and deleteElements(Collection&lt;IInteractionElement&gt; elements), both without the option to pass non-active contexts. Thus, I created a patch for that: https://git.eclipse.org/r/6916
+
+- Update the background context save job to save non-active contexts after manipulation. Don&apos;t know how/where to do this.
+
+Maybe just finding a pattern might be easier? :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2140229</commentid>
+    <comment_count>3</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2012-07-23 10:53:38 -0400</bug_when>
+    <thetext>Those sound like the right steps. Modifying the actions should be reasonably straight forward and the context API changes are almost done. To me, the remaining question is whether there is a way to obtain the context that is manipulated in the command/action?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2140460</commentid>
+    <comment_count>4</comment_count>
+    <who name="Sebastian Schmidt">sebastian.schmidt2</who>
+    <bug_when>2012-07-23 16:33:06 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; Those sound like the right steps. Modifying the actions should be reasonably
+&gt; straight forward and the context API changes are almost done. To me, the
+&gt; remaining question is whether there is a way to obtain the context that is
+&gt; manipulated in the command/action?
+
+The CommonViewer allows to add and query arbitrary data [1] (setData/getData). One way might be to add the context during viewer creation (createViewer method in ContextEditorFormPage) and query it when an action is executed (if we find a way to receive the Viewer from within an action). Not tested yet and certainly not a very nice solution, but the only one I can think of right now.
+
+[1] http://help.eclipse.org/indigo/index.jsp?topic=%2Forg.eclipse.platform.doc.isv%2Freference%2Fapi%2Forg%2Feclipse%2Fjface%2Fviewers%2FViewer.html</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2141475</commentid>
+    <comment_count>5</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2012-07-24 18:56:25 -0400</bug_when>
+    <thetext>Using setData() sounds like a reasonable work-around to me to get Remove from Context working for non-active task contexts.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2149615</commentid>
+    <comment_count>6</comment_count>
+    <who name="Sebastian Schmidt">sebastian.schmidt2</who>
+    <bug_when>2012-08-17 14:08:10 -0400</bug_when>
+    <thetext>Proposed patch: https://git.eclipse.org/r/#/c/7274/</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2149842</commentid>
+    <comment_count>7</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2012-08-19 09:16:55 -0400</bug_when>
+    <thetext>* AbstractInterestManipulationAction.getContext(): Needs null checks. The changes break the action outside the task editor, e.g. I get this NPE in the package explorer:
+
+java.lang.NullPointerException
+	at org.eclipse.mylyn.internal.context.ui.actions.AbstractInterestManipulationAction.getContext(AbstractInterestManipulationAction.java:124)
+	at org.eclipse.mylyn.internal.context.ui.actions.AbstractInterestManipulationAction.run(AbstractInterestManipulationAction.java:67)
+
+* I noticed that the plugin.xml changes cause actions to show in the package explorer when not context is active which is not desired. 
+
+I&apos;m wondering if need to extend the enablement expression to detect the context of the action, i.e. always show in the task editor and only show when a context is active outside of the editor.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2149862</commentid>
+    <comment_count>8</comment_count>
+    <who name="Sebastian Schmidt">sebastian.schmidt2</who>
+    <bug_when>2012-08-19 16:04:14 -0400</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; * AbstractInterestManipulationAction.getContext(): Needs null checks. The
+&gt; changes break the action outside the task editor, e.g. I get this NPE in the
+&gt; package explorer:
+
+Thanks! I wasn&apos;t aware that the action is also bound to other views. Fixed this in a new PatchSet.
+
+&gt; * I noticed that the plugin.xml changes cause actions to show in the package
+&gt; explorer when not context is active which is not desired. 
+&gt;
+&gt; I&apos;m wondering if need to extend the enablement expression to detect the
+&gt; context of the action, i.e. always show in the task editor and only show
+&gt; when a context is active outside of the editor.
+
+Sounds good. How would you do this? Is there a way to add an expression like &quot;targetID=o.e.m.taskeditor&quot; to the enablements?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161055</commentid>
+    <comment_count>9</comment_count>
+    <who name="Steffen Pingel">steffen.pingel</who>
+    <bug_when>2012-09-18 00:34:10 -0400</bug_when>
+    <thetext>I don&apos;t see any straight forward way to enable the actions just for the context editor when no context is active. It looks like the existing contributions would need to be converted into commands which have a richer context but it&apos;s not worth doing at this point.
+
+The review at https://git.eclipse.org/r/#change,7274 was merged into master.  Thanks for your contribution!</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

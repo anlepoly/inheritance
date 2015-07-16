@@ -1,0 +1,351 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>456459</bug_id>
+          
+          <creation_ts>2014-12-31 17:46:00 -0500</creation_ts>
+          <short_desc>Discrepancy between Eclipse compiler and javac - Enums, interfaces, and generics</short_desc>
+          <delta_ts>2015-01-28 00:27:45 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>minor</bug_severity>
+          <target_milestone>4.5 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Eric Rizzo">eclipse-bugs</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>saammana</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2501346</commentid>
+    <comment_count>0</comment_count>
+    <who name="Eric Rizzo">eclipse-bugs</who>
+    <bug_when>2014-12-31 17:46:05 -0500</bug_when>
+    <thetext>The following code compiles (and runs tests as expected) in Eclipse:
+
+    import java.util.EnumSet;
+	public class EnumTest {
+	
+		static enum Cloneables implements Cloneable {
+			One, Two, Three;
+		}
+	
+		public &lt;T extends Cloneable&gt; T getOne(Class enumType) {
+			EnumSet&lt;? extends T&gt; set = EnumSet.allOf(enumType);
+			return set.iterator().next();
+		}
+	}
+
+However, compiling with either `javac` (JDK 7) directly or via Maven fails with the following error:
+
+    type argument ? extends T is not within bounds of type-variable E
+
+To be honest, the complexity of enums + interfaces + type-parameters (generics) all at play at once threw me off as I was writing the code, but I thought I had finally gotten it right.
+I&apos;m not sure if this *should* work or not, if the discrepancy is a bug in Eclipse or javac.
+
+The goal is to write calling code like this:
+
+    Cloneable something = enumTest.getOne(Cloneables.class);
+
+For example, in Eclipse the following test compiles and passes:
+
+    @Test
+    public void testGetFirst() {
+	    assertSame(Cloneables.One, getOne(Cloneables.class));
+    }</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501351</commentid>
+    <comment_count>1</comment_count>
+    <who name="Eric Rizzo">eclipse-bugs</who>
+    <bug_when>2014-12-31 18:43:42 -0500</bug_when>
+    <thetext>For reference, the following works in both Eclipse and javac:
+
+public &lt;T extends Enum&lt;T&gt; &amp; Cloneable&gt; T getOne(Class&lt;T&gt; enumType) {
+    EnumSet&lt;T&gt; set = EnumSet.allOf(enumType);
+    return set.iterator().next();
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501384</commentid>
+    <comment_count>2</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2015-01-01 06:11:28 -0500</bug_when>
+    <thetext>Same error with java8 (1.8.0_40-ea)
+
+EnumTest.java:9: error: type argument ? extends T is not within bounds of type-variable E
+	EnumSet&lt;? extends T&gt; set = EnumSet.allOf(enumType);
+	        ^
+  where T,E are type-variables:
+    T extends Cloneable declared in method &lt;T&gt;getOne(Class)
+    E extends Enum&lt;E&gt; declared in class EnumSet
+Note: EnumTest.java uses unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+1 error</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501393</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-01 08:27:33 -0500</bug_when>
+    <thetext>(In reply to Eric Rizzo from comment #1)
+&gt; For reference, the following works in both Eclipse and javac:
+&gt; 
+&gt; public &lt;T extends Enum&lt;T&gt; &amp; Cloneable&gt; T getOne(Class&lt;T&gt; enumType) {
+&gt;     EnumSet&lt;T&gt; set = EnumSet.allOf(enumType);
+&gt;     return set.iterator().next();
+&gt; }
+
+Not only does it work with both compilers, it also avoids the plethora of warnings re raw types and unchecked conversions, which the original example exhibits.
+
+Working with raw types is a minefield and 10+ years after the introduction of generics I don&apos;t see any excuse for entering that field :)
+
+We&apos;ve already invested big efforts at aligning ecj with javac in this regard, knowing that javac permits more programs with raw types than JLS mandates.
+
+The interesting twist about this example is: this time ecj permits a program that javac rejects &lt;shrug&gt;.
+
+Bottomline: I&apos;m not sure if time spent on this discrepancy is time well invested.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501544</commentid>
+    <comment_count>4</comment_count>
+    <who name="Eric Rizzo">eclipse-bugs</who>
+    <bug_when>2015-01-02 09:45:14 -0500</bug_when>
+    <thetext>We&apos;ll just have to agree to disagree on the merit of raw types; I find many cases where using them is desirable. Java &quot;generics&quot; are so screwed up, their usage sucks more often than I&apos;d like; if they&apos;d done something different than the type erasure implementation then maybe I&apos;d agree with you.
+
+In any case, I don&apos;t agree that it would be a waste to address this discrepancy; IMO *any* code that ecj accepts *must* be JLS compliant and *should* be JDK compatible as far as possible (as long as it&apos;s not reproducing a javac bug). If you allow ecj to tolerate corner cases that are not legal, its credibility will be eroded.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501562</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-02 11:40:23 -0500</bug_when>
+    <thetext>You probably know this paragraph from JLS Sect. 4.8:
+
+  &quot;The use of raw types is allowed only as a concession to compatibility of legacy code. The use of raw types in code written after the introduction of generics into the Java programming language is strongly discouraged. It is possible that future versions of the Java programming language will disallow the use of raw types.&quot;
+
+:)
+
+(And no, I&apos;m not saying erasure is a great concept, don&apos;t get me wrong).
+
+
+Sure, we want ecj to be JLS compliant and javac compatible. Unfortunately, this goal is a contradiction in terms, given some well-known bugs in javac regarding both raw types and wildcard captures (both may have a finger in the pie in this bug). Regarding Java programs with raw types, &quot;correctness&quot; of a compiler is extremely hard to determine, if not impossible.
+
+I read your comment as suggesting that JLS compliance should always dominate and I can only agree. I&apos;m just asking myself, which bug fixes get us more quality for the money (er, spare time) ?
+Fine tuning the border line between simulating javac bugs and adhering to JLS tends to be the most difficult part of the business - like: simulating one javac bug is more expensive than fixing 5 genuine ecj bugs.
+
+
+Here&apos;s an offer: I am willing to analyse, on what grounds ecj is accepting the program, but I may need help in discussing how this relates to JLS, and in finding - perhaps reverse engineering - the rules, that will allow us to reject this program without rejecting lots of other programs which javac accepts. Or perhaps, unearth the rules that clarify that this program *is* legal. Are you ready to help figure out the gory details? How important is this issue to you?
+
+
+Fortunately, when avoiding raw types, we are on much safer grounds: JLS, javac and ecj much more agree on those &quot;nice&quot; programs, as this bug well demonstrates.
+And if you *must* use raw types, everything *is* already accepted under the caveat that the compiler *cannot* guarantee type safety, so you have to manually double check anyway :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501591</commentid>
+    <comment_count>6</comment_count>
+    <who name="Eric Rizzo">eclipse-bugs</who>
+    <bug_when>2015-01-02 15:58:08 -0500</bug_when>
+    <thetext>That&apos;s a very reasonable response. I do understand the balancing act the JDT team performs relating to finite people/time and seemingly infinite bugs and enhancements.
+
+I do admit this is a pretty dark corner case, and am willing to help out as much as I can; I&apos;m not sure how much help I can be since I&apos;m not a JLS or compiler junkie. I also understand if this is low in priority on the ecj backlog. My primary point in Comment # 4 was concern that corner cases in general would be swept aside as too obscure or difficult in relation to other things.
+
+I would like to know if this case is a bug in ecj or javac, so anything I can do toward that answer, I will. Let me know what I can do.
+
+By the way, I was *not* aware of that clause in the JLS; it&apos;s unfortnate, IMO, because the syntax and implementation they chose is clumsy at time. Oh well, at least now I understand why JDT enables the raw-type-usage warnings by default (which I always disable on a new project :-)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501663</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-03 11:27:49 -0500</bug_when>
+    <thetext>(In reply to Eric Rizzo from comment #6)
+&gt; ... at least now I understand why JDT enables the raw-type-usage warnings
+&gt; by default (which I always disable on a new project :-)
+
+You have been warned! :)
+
+
+
+Now to the core issue, javac reporting:
+
+    type argument ? extends T is not within bounds of type-variable E
+
+They seem to see a violation of well-formedness wrt JLS 4.5
+( https://docs.oracle.com/javase/specs/jls/se8/html/jls-4.html#jls-4.5 )
+
+The process to check legality of a concrete parameterization is:
+
+(a) given class C&lt;F1,F2,...Fn&gt; with bounds per type parameter B1,B2,...Bn
+(b) given an instantiation C&lt;T1,T2,...Tn&gt;
+(c) perform capture on C&lt;T1,T2,...Tn&gt; to obtain C&lt;X1,X2,...Xn&gt;
+(d) define a substitution theta [F1:=X1,F2:=X2,...Fn:=Xn]
+(e) check for each i that: Xi &lt;: theta Bi (multiple checks if Bi is composite)
+
+Applied to comment 0:
+
+(a) C=EnumSet, F1=E, B1=Enum&lt;E&gt;
+(b) T1=? extends T (T declared as &lt;T extends Cloneable&gt; of getOne(..))
+(c) X1=captureof ? extends T
+(d) theta = [E:=captureof ? extends T]
+(e) theta B1 = Enum&lt;captureof ? extends T&gt;
+   check:
+      capture ? extends T &lt;: Enum&lt;captureof ? extends T&gt;
+
+This capture is a capture of type variable E declared by EnumSet. Due to the bound &apos;extends Enum&lt;E&gt;&apos; the capture has an implicit supertype of Enum&lt;captureof...&gt;. This raises the question, whether a capture can *ever* violate the declared bound of the type parameter?
+
+Yes, it can, e.g., by saying:
+//---
+import java.util.EnumSet;
+public class EnumTest {
+	
+		static enum Cloneables implements Cloneable {
+			One, Two, Three;
+		}
+	
+		public void getOne(Class enumType) {
+			EnumSet&lt;? extends EnumTest&gt; set = null;
+		}
+}
+//---
+
+ecj answers:
+
+Bound mismatch: The type ? extends EnumTest is not a valid substitute for the bounded parameter &lt;E extends Enum&lt;E&gt;&gt; of the type EnumSet&lt;E&gt;
+
+Now the capture&apos;s full name is
+   captureof ? extends Enum&lt;captureof ...&gt; &amp; EnumTest
+
+This is rejected because Enum &amp; EnumTest are provably distinct, and hence the capture is not well-formed. I.e., if the capture adds a new bound that is incompatible with the type parameter&apos;s bound. That&apos;s illegal.
+
+In an old bug I found this: bug 202404 comment 1, in which the spec lead demonstrates how checking for this kind of situation boils down to checking well-formedness of the capture. He used glb(T1,T2) for the intersection of two super types. If glb is known to be the empty set, then a type is not well-formed. But that&apos;s not the case in comment 0.
+
+
+Hence I conclude: that program is legal per JLS. The bug is javac&apos;s.
+
+OTOH, I did find one situation where javac complains and ecj doesn&apos;t, where my understanding is that javac is right:
+
+//---
+class A {};
+class B {};
+public class X&lt;T extends A&gt; {
+	&lt;U extends B&gt; void m() {
+		X&lt;? extends U&gt; l = null;
+	}
+}
+//---
+
+Here we have a conflict between the two upper bounds A and B (indirectly), which are provably distinct and hence glb is undefined / empty set. Difference being: *classes* A and B are disjoint, whereas *interface* Cloneable and class Enum do have an intersection.
+
+I&apos;ve fixed this last example, added regression tests for the other variants (with no code changes) and that will be it, unless s.o. points out a mistake in my reasoning :)
+
+See https://git.eclipse.org/r/38922
+
+
+BTW: I found this existing case, showing a similar difference between javac &amp; ecj:
+
+class X&lt;T extends Number, S extends T&gt; {
+        X&lt;? extends Long,? extends S&gt; x;
+}
+
+Error reads pretty silly:
+
+X.java:2: error: type argument ? extends S is not within bounds of type-variable S
+        X&lt;? extends Long,? extends S&gt; x;
+                         ^
+  where S,T are type-variables:
+    S extends T declared in class X
+    T extends Number declared in class X
+
+I guess that&apos;s the same javac bug. Feel free to report a bug against javac.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501665</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-03 11:31:44 -0500</bug_when>
+    <thetext>Note to self (or other team member coming across this topic):
+
+Our implementation does not really perform capture as required by JLS.
+
+I found this documented in
+(Philipe Mulet from bug 202404 comment #2)
+&gt; The bound check is not truly performing a capture conversion, and rather
+&gt; tries to emulate it (to avoid creating captures on the fly).
+
+I guess that simulation is sufficient for its purpose, no need to completely rewrite.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501701</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-03 16:25:06 -0500</bug_when>
+    <thetext>Released for 4.5 M5 via commit 8a7f6aa7d6ef15bfdd326f675a8cb27b25fa00be
+
+Summary for reviewers:
+
+I hold that accepting the example from comment 0 is correct, no code change here.
+
+Only the second example from comment 7 called for action to report a genuine bound problem.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501967</commentid>
+    <comment_count>10</comment_count>
+    <who name="Eric Rizzo">eclipse-bugs</who>
+    <bug_when>2015-01-05 09:15:04 -0500</bug_when>
+    <thetext>I suspect (but am not sure) that this is related to http://bugs.java.com/bugdatabase/view_bug.do?bug_id=8012039</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501971</commentid>
+    <comment_count>11</comment_count>
+    <who name="Eric Rizzo">eclipse-bugs</who>
+    <bug_when>2015-01-05 09:18:07 -0500</bug_when>
+    <thetext>See also http://bugs.java.com/bugdatabase/view_bug.do?bug_id=7190296</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2502106</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-05 14:13:24 -0500</bug_when>
+    <thetext>Thanks for the links. Looks very similar indeed, only that this bug here doesn&apos;t even require any assignment etc., just the bound check of a specific parameterization of a generic type suffices to reproduce (see e.g., the last example in comment 7.
+
+Still I hope once they &quot;consider making compiler compliant to the spec in this very area in JDK 8&quot; (or 9) that will cover all related examples.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511104</commentid>
+    <comment_count>13</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-28 00:27:45 -0500</bug_when>
+    <thetext>Verified for 4.5 M5 with build I20150127-0900</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

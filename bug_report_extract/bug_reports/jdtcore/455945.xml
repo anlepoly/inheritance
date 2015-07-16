@@ -1,0 +1,231 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>455945</bug_id>
+          
+          <creation_ts>2014-12-22 05:55:00 -0500</creation_ts>
+          <short_desc>[1.8][generics] Wrong compiler error reported when trying to infer generic type within a lambda</short_desc>
+          <delta_ts>2015-03-17 10:27:41 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows NT</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/38710</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=06338d59e18dd650cacadfb53051f533c530fabf</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M6</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Lukas Eder">lukas.eder</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>p_ansell</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>1</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2499798</commentid>
+    <comment_count>0</comment_count>
+    <who name="Lukas Eder">lukas.eder</who>
+    <bug_when>2014-12-22 05:55:47 -0500</bug_when>
+    <thetext>The following program doesn&apos;t compile with Eclipse but compiles fine with javac:
+
+---------------------------------------------------------
+package test;
+
+import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
+
+public class Test {
+
+    static &lt;T&gt; Tuple2&lt;Seq&lt;T&gt;, Seq&lt;T&gt;&gt; splitAtDoesntCompile(Stream&lt;T&gt; stream, long position) {
+        return seq(stream)
+            .zipWithIndex()
+            .partition(t -&gt; t.v2 &lt; position)
+            .map((v1, v2) -&gt; tuple(
+                v1.map(t -&gt; t.v1),
+                v2.map(t -&gt; t.v1)
+            ));
+    }
+
+    static &lt;T&gt; Tuple2&lt;Seq&lt;T&gt;, Seq&lt;T&gt;&gt; splitAtCompiles(Stream&lt;T&gt; stream, long position) {
+        return seq(stream)
+            .zipWithIndex()
+            .partition(t -&gt; t.v2 &lt; position)
+            .map((v1, v2) -&gt; Test.&lt;Seq&lt;T&gt;, Seq&lt;T&gt;&gt;tuple(
+                v1.map(t -&gt; t.v1),
+                v2.map(t -&gt; t.v1)
+            ));
+    }
+
+    static &lt;T&gt; Seq&lt;T&gt; seq(Stream&lt;T&gt; stream) {
+    	return null;
+    }
+
+    static &lt;T1, T2&gt; Tuple2&lt;T1, T2&gt; tuple(T1 v1, T2 v2) {
+    	return null;
+    }
+}
+
+interface I&lt;T&gt; {
+	T get();
+	&lt;U&gt; I&lt;U&gt; map(Function&lt;T, U&gt; f);
+}
+
+interface Seq&lt;T&gt; {
+	Seq&lt;Tuple2&lt;T, Long&gt;&gt; zipWithIndex();
+	Tuple2&lt;Seq&lt;T&gt;, Seq&lt;T&gt;&gt; partition(Predicate&lt;? super T&gt; predicate);
+	&lt;R&gt; Seq&lt;R&gt; map(Function&lt;? super T, ? extends R&gt; mapper);
+}
+
+class Tuple2&lt;T1, T2&gt; {
+	T1 v1;
+	T2 v2;
+	
+	&lt;R&gt; R map(BiFunction&lt;T1, T2, R&gt; function) {
+		return null;
+	}
+}
+---------------------------------------------------------
+
+The problematic call is the call to Test.tuple() from within the lambda. The Eclipse compiler doesn&apos;t seem to be able to correctly infer the generic types Test.&lt;Seq&lt;T&gt;, Seq&lt;T&gt;&gt;tuple().</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2499799</commentid>
+    <comment_count>1</comment_count>
+    <who name="Lukas Eder">lukas.eder</who>
+    <bug_when>2014-12-22 05:57:31 -0500</bug_when>
+    <thetext>For the record, the API displayed in this test is a reduced version of the jOO API here:
+https://github.com/jOOQ/jOOL
+
+Perhaps, the issue could be further reduced to a minimal test case, but I wasn&apos;t able to do so, easily.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2499871</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-22 09:37:52 -0500</bug_when>
+    <thetext>Thanks, I can reproduce and the example seems well suited for analysis.
+
+Your solution using explicit type argument looks good. Let&apos;s see if the compiler can infer this information from the nested type-less lambdas.
+
+Interestingly, ecj up-to 4.5M2 *did* accept this example, only since the big update in M3 do we reject it.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500050</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-22 18:38:22 -0500</bug_when>
+    <thetext>During invocation type inference for the call to tuple(..) I see a surprisingly asymmetric boundset:
+Type Bounds:
+	Dependency R#0 :&gt; Tuple2&lt;T1#0,T2#1&gt;
+	Dependency R#0 :&gt; Tuple2&lt;Seq&lt;T&gt;,T2#1&gt;
+	Dependency R#0 :&gt; Tuple2&lt;T1#0,Seq&lt;java.lang.Object&gt;&gt;
+	TypeBound  R#0 :&gt; Tuple2&lt;Seq&lt;T&gt;,Seq&lt;java.lang.Object&gt;&gt;
+	Dependency T1#0 :&gt; Seq&lt;R#0&gt;
+	TypeBound  T1#0 :&gt; Seq&lt;T&gt;
+	TypeBound  T1#0 = Seq&lt;T&gt;
+	TypeBound  R#0 = java.lang.Object
+	Dependency T2#1 :&gt; Seq&lt;R#0&gt;
+	TypeBound  T2#1 :&gt; Seq&lt;java.lang.Object&gt;
+	TypeBound  T2#1 = Seq&lt;java.lang.Object&gt;
+	TypeBound  R#0 :&gt; T
+	TypeBound  R#0 = T
+
+From here tuple(..) is instantiated as
+  static Tuple2&lt;Seq&lt;T&gt;,Seq&lt;java.lang.Object&gt;&gt; tuple(Seq&lt;T&gt;, Seq&lt;java.lang.Object&gt;) 
+The j.l.Object part sure looks wrong, given that the bound set includes:
+	Dependency T2#1 :&gt; Seq&lt;R#0&gt;
+	TypeBound  R#0 = T
+
+Looks like incorporation missed to derive
+	Dependency T2#1 :&gt; Seq&lt;T&gt;
+
+At a closer look we have two disjoint inference variables named R#0, created from infering v1.map(..) vs. v2.map(..).
+Both are pulled into outer inference for tuple(..) but no constraint defines any correlation between both R#0;s.
+
+The R#0 for v1.map(..) is instantiated to T, but for the other R#0 we have no choice but fall back to j.l.Object.
+
+The root for the asymmetry can be found in an ill-defined theta used in 18.5.2, which is not a function, since the same R has two R#0.
+Perhaps recent amendments to JLS 18.5.2 missed to refine the definition of theta.
+
+I&apos;ll try if we can work around this issue.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500200</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-23 05:18:49 -0500</bug_when>
+    <thetext>See https://git.eclipse.org/r/38710 for an experimental fix.
+
+In that change I modified the definition of theta in JLS 18.5.1, when used via https://bugs.openjdk.java.net/browse/JDK-8038747 : to take into account the invocation through which an inference variable was introduced.
+This succeeds in distinguishing the two R#0 inference variables mentioned in comment 3.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511620</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-28 14:32:49 -0500</bug_when>
+    <thetext>Deferring while waiting for an answer from the spec author.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531432</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-14 16:38:15 -0400</bug_when>
+    <thetext>I have a vague confirmation from the spec author that my understanding of distinguishing inference variable per call site matches his intention.
+
+I cleaned up the code and let Hudson have his say.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531435</commentid>
+    <comment_count>7</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-03-14 17:57:43 -0400</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/38710 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=06338d59e18dd650cacadfb53051f533c530fabf</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531436</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-14 17:58:37 -0400</bug_when>
+    <thetext>Released for 4.5M6</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2532902</commentid>
+    <comment_count>9</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-03-17 10:27:41 -0400</bug_when>
+    <thetext>Verified for 4.5 M6 with build I20150316-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

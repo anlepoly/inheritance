@@ -1,0 +1,364 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>364450</bug_id>
+          
+          <creation_ts>2011-11-22 05:24:00 -0500</creation_ts>
+          <short_desc>Dubious class path error triggers a full rebuild</short_desc>
+          <delta_ts>2012-01-23 08:47:28 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.4.2</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard>To be verified for 3.6.2+J7, 3.6.2+,3.5.2+</status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>3.4.2+</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Szymon Ptaszkiewicz">szymon.ptaszkiewicz</reporter>
+          <assigned_to name="Ayushman Jain">amj87.iitr</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>john.kim</cc>
+    
+    <cc>satyam.kandula</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="47482"
+          type_id="1"
+          status="+"
+          setter="srikanth_sankaran"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2030079</commentid>
+    <comment_count>0</comment_count>
+    <who name="Szymon Ptaszkiewicz">szymon.ptaszkiewicz</who>
+    <bug_when>2011-11-22 05:24:57 -0500</bug_when>
+    <thetext>The following test case should show two fatal errors regarding unresolved w.I. If we do some change e.g. change the type of w.W#i from w.I to I, and then undo this change, we will get two build path errors:
+
+1. &quot;The project was not built since its build path is incomplete. Cannot find the class file for w.I. Fix the build path then try building this project&quot;
+
+2. &quot;The type w.I cannot be resolved. It is indirectly referenced from required .class files&quot;
+
+We can observe the same problem, if we change the order of imports in a.A instead of changing the type of w.W#i. After the clean correct errors are shows again.
+
+----------%&lt;-----------
+package a;
+
+import w.I;
+import w.W;
+
+public class A {
+}
+
+package w;
+
+public class W {
+	private w.I i;
+}
+----------%&lt;-----------</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2030891</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-11-23 09:26:54 -0500</bug_when>
+    <thetext>This looks like a case of there being some instability in the error messages
+reported in the full build case vs incremental build case.
+
+Not clear, at least not patently clear, that either set of messages is 
+misleading/incorrect.
+
+I&apos;ll study this in more detail.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2034261</commentid>
+    <comment_count>2</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-01 02:19:01 -0500</bug_when>
+    <thetext>An easier way to reproduce - in A.java, press space and save -&gt; error appears, again press space and save -&gt; error disappears.
+First impressions - this seems to happen because of a race condition between reconciler and the compiler.
+The second &quot;indirectly referenced from required .class files&quot; error occurs when compiler finishes after reconciler. While when the reconciler finishes last, there is only 1 error. This is because the compiler tries to build the binary type binding for W, that was found in W.class, and finds an unresolved reference to w.I in the class file. On the other hand, the reconciler just gets the source type W.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2034290</commentid>
+    <comment_count>3</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-01 03:36:16 -0500</bug_when>
+    <thetext>Digging deeper it looks like reconciler behaves consistently. The problem is in fact in the resource deltas. In one case, the deltas correspond to both W.java and A.java. In this case W.java is resolved first and hence is available when A.java begins to resolve. In the other case, the deltas correspons to only A.java, and W is picked up from classfile. Don&apos;t know why the resource deltas behave differently every alternate time.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2034326</commentid>
+    <comment_count>4</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-01 05:34:36 -0500</bug_when>
+    <thetext>This is why behaviour differs every alternate time:
+1. When we do a clean build all source files are build and thus there is no &quot;indirect reference from .class file&quot; error
+2. The next time we modify and save A, only A is built (incremental build), and W is picked up from its class file. This causes the &quot;indirect reference from .class file&quot; error which is a build path error.
+3. Once again when we modify and save A, the incremental java builder figures out there&apos;s a buildpath error since the last build, and goes back to building ALL sources, taking us back to 1.
+
+So, I think we should avoid reporting the &quot;indirectly referenced from .class files&quot; error somehow.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2036885</commentid>
+    <comment_count>5</comment_count>
+    <who name="John Mising name">john.kim</who>
+    <bug_when>2011-12-06 21:32:47 -0500</bug_when>
+    <thetext>I would like to describe the impact of the issue that users are experiencing.
+This improper build path error makes the Java builder runs as full build whenever there is a change in any sources that belong to the project. Therefore it results in build performance degradation.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2036890</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-12-06 22:40:55 -0500</bug_when>
+    <thetext>Ayush, please follow up just as soon as M4 is cooked and shipped.
+Thanks for marking me for review.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2036896</commentid>
+    <comment_count>7</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-07 00:43:44 -0500</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; I would like to describe the impact of the issue that users are experiencing.
+&gt; This improper build path error makes the Java builder runs as full build
+&gt; whenever there is a change in any sources that belong to the project. Therefore
+&gt; it results in build performance degradation.
+
+I understand the problem. We&apos;ve been focusing on shipping M4 this week so I couldn&apos;t get much time on this. I will follow up on my analysis soon.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2038200</commentid>
+    <comment_count>8</comment_count>
+      <attachid>208136</attachid>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-09 01:56:50 -0500</bug_when>
+    <thetext>Created attachment 208136
+proposed fix v1.0 + regression tests
+
+This is what happens in A.java after typing a space and saving (after a full build):
+1. Import w.I is found to be bogus and I is put in the cache as a not found type.
+2. Import w.W is found and compiler starts to resolve W from the already compiled W.class file.
+3. The compiler finds a missing w.I again in W.class and goes to org.eclipse.jdt.internal.compiler.lookup.LookupEnvironment.getTypeFromCompoundName(char[][], boolean, boolean). Here, it looks into the cache and finds a not found type, thereby eliciting a classpath error.
+However, this is not needed because if the type was already in the cache as a not found type, we&apos;ve already complained against it. This is where the patch helps.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2038202</commentid>
+    <comment_count>9</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-09 02:06:21 -0500</bug_when>
+    <thetext>The following strategies were considered and rejected, in consultation with Satyam:
+1. To not generate a .class file for W since it has an unresolved type error. However, this will make the incremental builds really slow since there will be more CU&apos;s to process.
+2. To have the compiler&apos;s NameEnvironment always use sources when sources are available instead of using .class files, just like the reconciler&apos;s SearchableEnvironment. However =&gt; again performance hit since resolving binary classes is faster.
+
+The current patch seems like the best solution and passes all tests.
+Srikanth, please review, its a one line change. Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2039880</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-12-13 07:31:59 -0500</bug_when>
+    <thetext>Brought about by https://bugs.eclipse.org/bugs/show_bug.cgi?id=196200.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2039919</commentid>
+    <comment_count>11</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-12-13 08:39:08 -0500</bug_when>
+    <thetext>Fix and tests look good. Basically, a class path error is indicated
+when we are unable to locate some type now, which we could locate 
+properly earlier while building some other piece (a binary class file).
+That is not the case here.
+
+Thanks for the quick resolution, Ayush.
+
+Dani, this is reported against 3.4.2, what streams should we release it
+in ourselves and for what streams a source patch is enough ? 
+
+(It is a one-line fix btw)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2040436</commentid>
+    <comment_count>12</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-14 01:30:08 -0500</bug_when>
+    <thetext>Released in master via commit b78c9eb519121b68605325fd214ba23170967998.
+
+Released in maintenance via commit 626c55af72d40b07c0ba5d8332f9d48da304abca.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2040450</commentid>
+    <comment_count>13</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2011-12-14 02:34:56 -0500</bug_when>
+    <thetext>(In reply to comment #11)
+&gt; Fix and tests look good. Basically, a class path error is indicated
+&gt; when we are unable to locate some type now, which we could locate 
+&gt; properly earlier while building some other piece (a binary class file).
+&gt; That is not the case here.
+&gt; 
+&gt; Thanks for the quick resolution, Ayush.
+&gt; 
+&gt; Dani, this is reported against 3.4.2, what streams should we release it
+&gt; in ourselves and for what streams a source patch is enough ? 
+
+All branches &gt;= R3_4_maintenance including R3_6_maintenance_Java7.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2040543</commentid>
+    <comment_count>14</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-14 06:41:04 -0500</bug_when>
+    <thetext>Released in R3_6_maintenance_Java7 branch via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=R3_6_maintenance_Java7&amp;id=8aff1e27a0c9b4c7936da57c5f115401c96583e6</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2040545</commentid>
+    <comment_count>15</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-14 06:44:27 -0500</bug_when>
+    <thetext>Released in R3_6_maintenance branch via commit c251eb3f1fc1878627fdc704bb1636e70f3db615</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2040547</commentid>
+    <comment_count>16</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-14 06:52:05 -0500</bug_when>
+    <thetext>Released in R3_5_maintenance branch via commit b00a5c1a34864630f0714dfada5ae77cda61169d</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2040580</commentid>
+    <comment_count>17</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-14 08:12:30 -0500</bug_when>
+    <thetext>(In reply to comment #16)
+&gt; Released in R3_5_maintenance branch via commit
+&gt; b00a5c1a34864630f0714dfada5ae77cda61169d
+
+Released into R3_5_maintenance CVS branch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2040860</commentid>
+    <comment_count>18</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-14 15:06:26 -0500</bug_when>
+    <thetext>Released in R3_4_maintenance(CVS).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2040863</commentid>
+    <comment_count>19</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-14 15:08:03 -0500</bug_when>
+    <thetext>Phew!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052643</commentid>
+    <comment_count>20</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-19 01:48:05 -0500</bug_when>
+    <thetext>Verified for 3.7.2RC2 using build M20120118-0800</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2054367</commentid>
+    <comment_count>21</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-23 08:47:28 -0500</bug_when>
+    <thetext>Verified for 3.8M5 using build I20120122-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>208136</attachid>
+            <date>2011-12-09 01:56:00 -0500</date>
+            <delta_ts>2011-12-09 01:56:50 -0500</delta_ts>
+            <desc>proposed fix v1.0 + regression tests</desc>
+            <filename>HEAD--Fixed-bug-364450-Misleading-build-path-errors.patch</filename>
+            <type>text/plain</type>
+            <size>3394</size>
+            <attacher name="Ayushman Jain">amj87.iitr</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmJ1aWxkZXIvc3JjL29yZy9l
+Y2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2J1aWxkZXIvSW5jcmVtZW50YWxUZXN0cy5qYXZhIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUudGVzdHMuYnVpbGRlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvYnVpbGRlci9JbmNyZW1lbnRhbFRlc3RzLmphdmEKaW5kZXggN2IzNjU0My4uNTU0Nzg1
+ZiAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuYnVpbGRlci9zcmMvb3Jn
+L2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvYnVpbGRlci9JbmNyZW1lbnRhbFRlc3RzLmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuYnVpbGRlci9zcmMvb3JnL2VjbGlwc2UvamR0
+L2NvcmUvdGVzdHMvYnVpbGRlci9JbmNyZW1lbnRhbFRlc3RzLmphdmEKQEAgLTEwNTMsNCArMTA1
+MywzNiBAQAogCQkJSmF2YUNvcmUuc2V0T3B0aW9ucyhvcHRpb25zKTsKIAkJfQogCX0KKwkKKwkv
+LyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9MzY0NDUwCisJ
+Ly8gSW5jcmVtZW50YWwgYnVpbGQgc2hvdWxkIG5vdCBnZW5lcmF0ZSBidWlsZHBhdGggZXJyb3IK
+KwlwdWJsaWMgdm9pZCB0ZXN0QnVnMzY0NDUwKCkgdGhyb3dzIEphdmFNb2RlbEV4Y2VwdGlvbiB7
+CisJCUlQYXRoIHByb2plY3RQYXRoID0gZW52LmFkZFByb2plY3QoIlByb2plY3QiKTsgLy8kTk9O
+LU5MUy0xJAorCQllbnYuYWRkRXh0ZXJuYWxKYXJzKHByb2plY3RQYXRoLCBVdGlsLmdldEphdmFD
+bGFzc0xpYnMoKSk7CisJCWVudi5zZXRPdXRwdXRGb2xkZXIocHJvamVjdFBhdGgsICJiaW4iKTsg
+Ly8kTk9OLU5MUy0xJAorCisJCUlQYXRoIHdQYXRoID0gZW52LmFkZENsYXNzKHByb2plY3RQYXRo
+LCAidyIsICJXIiwgLy8kTk9OLU5MUy0xJCAvLyROT04tTkxTLTIkCisJCQkicGFja2FnZSB3O1xu
+IiArCisJCQkicHVibGljIGNsYXNzIFcge1xuIiArCisJCQkiCXByaXZhdGUgdy5JIGk7fSIpOyAv
+LyROT04tTkxTLTEkCisKKwkJSVBhdGggYVBhdGggPSBlbnYuYWRkQ2xhc3MocHJvamVjdFBhdGgs
+ICJhIiwgIkEiLCAvLyROT04tTkxTLTEkIC8vJE5PTi1OTFMtMiQKKwkJCSJwYWNrYWdlIGE7XG4i
+ICsKKwkJCSJpbXBvcnQgdy5JO1xuIiArCisJCQkiaW1wb3J0IHcuVztcbiIgKworCQkJInB1Ymxp
+YyBjbGFzcyBBIHt9Iik7IC8vJE5PTi1OTFMtMSQKKworCQlmdWxsQnVpbGQocHJvamVjdFBhdGgp
+OworCQlleHBlY3RpbmdTcGVjaWZpY1Byb2JsZW1Gb3Iod1BhdGgsIG5ldyBQcm9ibGVtKCJXIiwg
+IncuSSBjYW5ub3QgYmUgcmVzb2x2ZWQgdG8gYSB0eXBlIiwgd1BhdGgsIDM3LCA0MCwgQ2F0ZWdv
+cml6ZWRQcm9ibGVtLkNBVF9UWVBFLCBJTWFya2VyLlNFVkVSSVRZX0VSUk9SKSk7IC8vJE5PTi1O
+TFMtMSQgLy8kTk9OLU5MUy0yJAorCQlleHBlY3RpbmdTcGVjaWZpY1Byb2JsZW1Gb3IoYVBhdGgs
+IG5ldyBQcm9ibGVtKCJBIiwgIlRoZSBpbXBvcnQgdy5JIGNhbm5vdCBiZSByZXNvbHZlZCIsIGFQ
+YXRoLCAxOCwgMjEsIENhdGVnb3JpemVkUHJvYmxlbS5DQVRfSU1QT1JULCBJTWFya2VyLlNFVkVS
+SVRZX0VSUk9SKSk7IC8vJE5PTi1OTFMtMSQgLy8kTk9OLU5MUy0yJAorCisJCWFQYXRoID0gZW52
+LmFkZENsYXNzKHByb2plY3RQYXRoLCAiYSIsICJBIiwgLy8kTk9OLU5MUy0xJCAvLyROT04tTkxT
+LTIkCisJCQkJInBhY2thZ2UgYTtcbiIgKworCQkJCSJpbXBvcnQgdy5JO1xuIiArCisJCQkJImlt
+cG9ydCB3Llc7XG4iICsKKwkJCQkicHVibGljIGNsYXNzIEEge30iKTsgLy8kTk9OLU5MUy0xJAor
+CisJCWluY3JlbWVudGFsQnVpbGQocHJvamVjdFBhdGgpOworCQlleHBlY3RpbmdTcGVjaWZpY1By
+b2JsZW1Gb3IoYVBhdGgsIG5ldyBQcm9ibGVtKCJBIiwgIlRoZSBpbXBvcnQgdy5JIGNhbm5vdCBi
+ZSByZXNvbHZlZCIsIGFQYXRoLCAxOCwgMjEsIENhdGVnb3JpemVkUHJvYmxlbS5DQVRfSU1QT1JU
+LCBJTWFya2VyLlNFVkVSSVRZX0VSUk9SKSk7IC8vJE5PTi1OTFMtMSQgLy8kTk9OLU5MUy0yJAor
+CX0KIH0KZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xp
+cHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvTG9va3VwRW52aXJvbm1lbnQuamF2YSBi
+L29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9j
+b21waWxlci9sb29rdXAvTG9va3VwRW52aXJvbm1lbnQuamF2YQppbmRleCBmNGI5OWQ4Li4xMzVj
+YjBjIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBz
+ZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL0xvb2t1cEVudmlyb25tZW50LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFs
+L2NvbXBpbGVyL2xvb2t1cC9Mb29rdXBFbnZpcm9ubWVudC5qYXZhCkBAIC0xMjY3LDcgKzEyNjcs
+MTQgQEAKIAkJcGFja2FnZUJpbmRpbmcuYWRkVHlwZShiaW5kaW5nKTsKIAl9IGVsc2UgaWYgKGJp
+bmRpbmcgPT0gVGhlTm90Rm91bmRUeXBlKSB7CiAJCS8vIHJlcG9ydCB0aGUgbWlzc2luZyBjbGFz
+cyBmaWxlIGZpcnN0Ci0JCXRoaXMucHJvYmxlbVJlcG9ydGVyLmlzQ2xhc3NQYXRoQ29ycmVjdChj
+b21wb3VuZE5hbWUsIHRoaXMudW5pdEJlaW5nQ29tcGxldGVkLCB0aGlzLm1pc3NpbmdDbGFzc0Zp
+bGVMb2NhdGlvbik7CisJCWlmICghd2FzTWlzc2luZ1R5cGUpIHsKKwkJCS8vIGlmIGEgbWlzc2lu
+ZyB0eXBlIHJlZmVyZW5jZWQgaW4gYSAuY2xhc3MgZmlsZSB3YXMgYWxzbyByZWZlcmVuY2VkIGZy
+b20gdGhlIHVuaXRzIAorCQkJLy8gYmVpbmcgY3VycmVudGx5IGNvbXBpbGVkIGFuZCB3YXMgcHV0
+IGluIHRoZSBjYWNoZSBhcyBhIG5vdCBmb3VuZCB0eXBlLAorCQkJLy8gdGhlbiB3ZSBzaG91bGQg
+bm90IHJlcG9ydCBhIGNsYXNzcGF0aCBlcnJvciwgc2luY2UgdGhlIGN1cnJlbnQgY29tcGlsYXRp
+b24gdW5pdHMgCisJCQkvLyB3aWxsIGFscmVhZHkgaGF2ZSB0aGUgdW5yZXNvbHZlZCBlcnJvci4K
+KwkJCS8vIHNlZSBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9
+MzY0NDUwCisJCQl0aGlzLnByb2JsZW1SZXBvcnRlci5pc0NsYXNzUGF0aENvcnJlY3QoY29tcG91
+bmROYW1lLCB0aGlzLnVuaXRCZWluZ0NvbXBsZXRlZCwgdGhpcy5taXNzaW5nQ2xhc3NGaWxlTG9j
+YXRpb24pOworCQl9CiAJCS8vIGNyZWF0ZSBhIHByb3h5IGZvciB0aGUgbWlzc2luZyBCaW5hcnlU
+eXBlCiAJCWJpbmRpbmcgPSBjcmVhdGVNaXNzaW5nVHlwZShudWxsLCBjb21wb3VuZE5hbWUpOwog
+CX0gZWxzZSBpZiAoIWlzUGFyYW1ldGVyaXplZCkgew==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

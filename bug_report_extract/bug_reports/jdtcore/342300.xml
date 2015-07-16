@@ -1,0 +1,298 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>342300</bug_id>
+          
+          <creation_ts>2011-04-08 10:31:00 -0400</creation_ts>
+          <short_desc>[null]Spurious &quot;null pointer access&quot; warning on unboxing</short_desc>
+          <delta_ts>2011-04-25 04:35:13 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.7</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>3.7 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Noel Grandin">noelgrandin</reporter>
+          <assigned_to name="Ayushman Jain">amj87.iitr</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="40695"
+          type_id="1"
+          status="+"
+          setter="stephan.herrmann"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>1910853</commentid>
+    <comment_count>0</comment_count>
+    <who name="Noel Grandin">noelgrandin</who>
+    <bug_when>2011-04-08 10:31:43 -0400</bug_when>
+    <thetext>Build Identifier: 20110218-0911
+
+
+public class Test {
+
+    public static void initPattern(String p, Character escapeChar) {
+        int len = p.length();
+        for (int i = 0; i &lt; len; i++) {
+            char c = p.charAt(i);
+            if (escapeChar != null &amp;&amp; escapeChar == c) { // &lt;&lt; warning on escapeChar
+                c = p.charAt(++i);
+            }
+        }
+    }
+
+}
+
+
+Reproducible: Always
+
+Steps to Reproduce:
+1. Put the above into the node
+2. Notice the compiler warning.
+3.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1910877</commentid>
+    <comment_count>1</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-04-08 11:02:29 -0400</bug_when>
+    <thetext>Does not happen when the for loop is commented out. This means we&apos;re recording an incorrect null reference to be checked during the deferred null check.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1911640</commentid>
+    <comment_count>2</comment_count>
+      <attachid>192941</attachid>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-04-11 11:37:24 -0400</bug_when>
+    <thetext>Created attachment 192941
+proposed fix v1.0 + tests
+
+In the given case, the problem occurs because of incorrectly recording a null reference for escapeChar at the condition escapeChar == c. The status of escapeChar here in flowInfo is &quot;protected non null&quot; because of the earlier escapeChar != null condition. We should make sure that null reference for such cases are not recorded for deferred null checks in loops.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1911645</commentid>
+    <comment_count>3</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-04-11 11:41:19 -0400</bug_when>
+    <thetext>Stephan, can you please review? Its a small patch. Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1911770</commentid>
+    <comment_count>4</comment_count>
+      <attachid>192964</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-04-11 15:04:31 -0400</bug_when>
+    <thetext>Created attachment 192964
+alternative patch
+
+While analyzing the patch I found an alternative solution.
+I&apos;m not saying this one is better, just: it seems to fix the same issue.
+
+I was asking myself, what exactly are those methods in FlowInfo testing.
+Specifically, UnconditionalFlowInfo.isPotentiallyNonNull() answers true
+for these states:
+	0010	pot. non null
+	0011	pot. nn &amp; pot. un
+	0110	pot. n &amp; pot. nn
+	0111    pot. n &amp; pot. nn &amp; pot. un
+	1010	def. non null
+	1011	pot. nn &amp; prot. nn
+but not for:
+	1111	prot. non null
+I see no reason why it answers true for def. non null but false for 
+prot. non null. The patch changes this and with this all of
+NullReferenceTest actually pass (without the patch in comment 2).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1911774</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-04-11 15:10:45 -0400</bug_when>
+    <thetext>Regardless of my alternative patch (which would still require more scrutiny) 
+the patch in comment 2 looks good to me.
+It has only limited impact and for that reason it may be better suitable
+at this point in the cycle.
+
+Given the code comment I found the patch easy to understand and attempts 
+to find a counter example failed.
+
+I&apos;ll leave it up to you to either release your patch as is or follow up
+on my sketch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1911936</commentid>
+    <comment_count>6</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-04-12 01:20:03 -0400</bug_when>
+    <thetext>Thanks Stephan! 
+Infact, I had already considered the approach that you have mentioned above. But, I wasn&apos;t 100% sure why pot. non null (or null) does not have protected non null(or null) under its gambit. Maybe its intentional, maybe not.
+Anyhow since I was sure of the implications of my patch atleast I did not go the more adventurous way. So, lets stick to my patch as of now, and I&apos;ll keep the ambiguity in mind. I&apos;ll add a TODO comment to that effect.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1911937</commentid>
+    <comment_count>7</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-04-12 01:29:54 -0400</bug_when>
+    <thetext>Released in HEAD for 3.7M7</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1918296</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-04-25 04:35:13 -0400</bug_when>
+    <thetext>Verified for 3.7 M7 using build I20110421-1800</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>192941</attachid>
+            <date>2011-04-11 11:37:00 -0400</date>
+            <delta_ts>2011-04-11 11:37:24 -0400</delta_ts>
+            <desc>proposed fix v1.0 + tests</desc>
+            <filename>patch342300.txt</filename>
+            <type>text/plain</type>
+            <size>3568</size>
+            <attacher name="Ayushman Jain">amj87.iitr</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMA0KI1Agb3JnLmVjbGlwc2UuamR0LmNvcmUN
+CkluZGV4OiBjb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvZmxvdy9M
+b29waW5nRmxvd0NvbnRleHQuamF2YQ0KPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQ0KUkNTIGZpbGU6IC9jdnNyb290L2Vj
+bGlwc2Uvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVy
+bmFsL2NvbXBpbGVyL2Zsb3cvTG9vcGluZ0Zsb3dDb250ZXh0LmphdmEsdg0KcmV0cmlldmluZyBy
+ZXZpc2lvbiAxLjU2DQpkaWZmIC11IC1yMS41NiBMb29waW5nRmxvd0NvbnRleHQuamF2YQ0KLS0t
+IGNvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9mbG93L0xvb3BpbmdG
+bG93Q29udGV4dC5qYXZhCTggTWFyIDIwMTEgMTY6NDY6MDEgLTAwMDAJMS41Ng0KKysrIGNvbXBp
+bGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9mbG93L0xvb3BpbmdGbG93Q29u
+dGV4dC5qYXZhCTExIEFwciAyMDExIDE1OjIyOjM3IC0wMDAwDQpAQCAtNTQ4LDcgKzU0OCwxMCBA
+QA0KIAkJY2FzZSBDQU5fT05MWV9OVUxMIHwgSU5fQVNTSUdOTUVOVDoNCiAJCWNhc2UgQ0FOX09O
+TFlfTlVMTCB8IElOX0lOU1RBTkNFT0Y6DQogCQkJaWYgKGZsb3dJbmZvLmlzUG90ZW50aWFsbHlO
+b25OdWxsKGxvY2FsKQ0KLQkJCQkJfHwgZmxvd0luZm8uaXNQb3RlbnRpYWxseVVua25vd24obG9j
+YWwpKSB7DQorCQkJCQl8fCBmbG93SW5mby5pc1BvdGVudGlhbGx5VW5rbm93bihsb2NhbCkNCisJ
+CQkJCXx8IGZsb3dJbmZvLmlzUHJvdGVjdGVkTm9uTnVsbChsb2NhbCkpIHsNCisJCQkJLy8gaWYg
+dmFyaWFibGUgaXMgbm90IG51bGwsIHdlIGFyZSBub3QgaW50ZXJlc3RlZCBpbiByZWNvcmRpbmcg
+bnVsbCByZWZlcmVuY2UgZm9yIGRlZmVycmVkIGNoZWNrcy4NCisJCQkJLy8gVGhpcyBpcyBiZWNh
+dXNlIENBTl9PTkxZX05VTEwgbWVhbnMgd2UncmUgb25seSBpbnRlcmVzdGVkIGluIGNhc2VzIHdo
+ZW4gdmFyaWFibGUgY2FuIGJlIG51bGwuDQogCQkJCXJldHVybjsNCiAJCQl9DQogCQkJaWYgKGZs
+b3dJbmZvLmlzRGVmaW5pdGVseU51bGwobG9jYWwpKSB7DQojUCBvcmcuZWNsaXBzZS5qZHQuY29y
+ZS50ZXN0cy5jb21waWxlcg0KSW5kZXg6IHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9j
+b21waWxlci9yZWdyZXNzaW9uL051bGxSZWZlcmVuY2VUZXN0LmphdmENCj09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0NClJD
+UyBmaWxlOiAvY3Zzcm9vdC9lY2xpcHNlL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBp
+bGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051
+bGxSZWZlcmVuY2VUZXN0LmphdmEsdg0KcmV0cmlldmluZyByZXZpc2lvbiAxLjExOA0KZGlmZiAt
+dSAtcjEuMTE4IE51bGxSZWZlcmVuY2VUZXN0LmphdmENCi0tLSBzcmMvb3JnL2VjbGlwc2UvamR0
+L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsUmVmZXJlbmNlVGVzdC5qYXZhCTkg
+TWFyIDIwMTEgMTM6NTc6NTAgLTAwMDAJMS4xMTgNCisrKyBzcmMvb3JnL2VjbGlwc2UvamR0L2Nv
+cmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsUmVmZXJlbmNlVGVzdC5qYXZhCTExIEFw
+ciAyMDExIDE1OjIyOjM5IC0wMDAwDQpAQCAtMTQ1MzAsNCArMTQ1MzAsNTIgQEANCiAJCSJEZWFk
+IGNvZGVcbiIgKyANCiAJCSItLS0tLS0tLS0tXG4iKTsNCiB9DQorLy8gaHR0cHM6Ly9idWdzLmVj
+bGlwc2Uub3JnL2J1Z3Mvc2hvd19idWcuY2dpP2lkPTM0MjMwMA0KK3B1YmxpYyB2b2lkIHRlc3RC
+dWczNDIzMDAoKSB0aHJvd3MgRXhjZXB0aW9uIHsNCisJaWYgKHRoaXMuY29tcGxpYW5jZUxldmVs
+ID49IENsYXNzRmlsZUNvbnN0YW50cy5KREsxXzUpIHsNCisJCXRoaXMucnVuQ29uZm9ybVRlc3Qo
+DQorCQkJbmV3IFN0cmluZ1tdIHsNCisJCQkJIlguamF2YSIsDQorCQkJCSJwdWJsaWMgY2xhc3Mg
+WCB7XG4iICsgDQorCQkJCSIJcHVibGljIHN0YXRpYyB2b2lkIGluaXRQYXR0ZXJuKFN0cmluZyBw
+LCBDaGFyYWN0ZXIgZXNjYXBlQ2hhcikge1xuIiArIA0KKwkJCQkiCQlpbnQgbGVuID0gcC5sZW5n
+dGgoKTtcbiIgKw0KKwkJCQkiCQlmb3IgKGludCBpID0gMDsgaSA8IGxlbjsgaSsrKSB7XG4iICsN
+CisJCQkJIgkJCWNoYXIgYyA9IHAuY2hhckF0KGkpO1xuIiArDQorCQkJCSIJCQlpZiAoZXNjYXBl
+Q2hhciAhPSBudWxsICYmIGVzY2FwZUNoYXIgPT0gYykge1xuIiArCS8vIHF1aWV0DQorCQkJCSIJ
+CQkJYyA9IHAuY2hhckF0KCsraSk7XG4iICsNCisJCQkJIgkJCX1cbiIgKyANCisJCQkJIgkgICAg
+fVxuIiArIA0KKwkJCQkiCX1cbiIgKyANCisJCQkJIn0iLA0KKwkJCX0sDQorCQkJIiIpOw0KKwl9
+DQorfQ0KKy8vIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy9idWdzL3Nob3dfYnVnLmNnaT9pZD0z
+NDIzMDANCisvLyBUbyBtYWtlIHN1cmUgb25seSB0aGUgcmVkdW5kYW50IG51bGwgY2hlY2sgaXMg
+Z2l2ZW4gYW5kIG5vdCBhIHBvdGVudGlhbCBOUEUNCitwdWJsaWMgdm9pZCB0ZXN0QnVnMzQyMzAw
+YigpIHRocm93cyBFeGNlcHRpb24gew0KKwlpZiAodGhpcy5jb21wbGlhbmNlTGV2ZWwgPj0gQ2xh
+c3NGaWxlQ29uc3RhbnRzLkpESzFfNSkgew0KKwkJdGhpcy5ydW5OZWdhdGl2ZVRlc3QoDQorCQkJ
+bmV3IFN0cmluZ1tdIHsNCisJCQkJIlguamF2YSIsDQorCQkJCSJwdWJsaWMgY2xhc3MgWCB7XG4i
+ICsgDQorCQkJCSIJcHVibGljIHN0YXRpYyB2b2lkIGluaXRQYXR0ZXJuKFN0cmluZyBwLCBDaGFy
+YWN0ZXIgZXNjYXBlQ2hhcikge1xuIiArIA0KKwkJCQkiCQlpbnQgbGVuID0gcC5sZW5ndGgoKTtc
+biIgKw0KKwkJCQkiCQlmb3IgKGludCBpID0gMDsgaSA8IGxlbjsgaSsrKSB7XG4iICsNCisJCQkJ
+IgkJCWNoYXIgYyA9IHAuY2hhckF0KGkpO1xuIiArDQorCQkJCSIJCQlpZiAoZXNjYXBlQ2hhciAh
+PSBudWxsICYmIGVzY2FwZUNoYXIgIT0gbnVsbCkge1xuIiArCS8vIGxvb2sgaGVyZQ0KKwkJCQki
+CQkJCWMgPSBwLmNoYXJBdCgrK2kpO1xuIiArDQorCQkJCSIJCQl9XG4iICsgDQorCQkJCSIJICAg
+IH1cbiIgKyANCisJCQkJIgl9XG4iICsgDQorCQkJCSJ9IiwNCisJCQl9LA0KKwkJCSItLS0tLS0t
+LS0tXG4iICsgDQorCQkJIjEuIEVSUk9SIGluIFguamF2YSAoYXQgbGluZSA2KVxuIiArIA0KKwkJ
+CSIJaWYgKGVzY2FwZUNoYXIgIT0gbnVsbCAmJiBlc2NhcGVDaGFyICE9IG51bGwpIHtcbiIgKyAN
+CisJCQkiCSAgICAgICAgICAgICAgICAgICAgICAgICAgXl5eXl5eXl5eXlxuIiArIA0KKwkJCSJS
+ZWR1bmRhbnQgbnVsbCBjaGVjazogVGhlIHZhcmlhYmxlIGVzY2FwZUNoYXIgY2Fubm90IGJlIG51
+bGwgYXQgdGhpcyBsb2NhdGlvblxuIiArIA0KKwkJCSItLS0tLS0tLS0tXG4iKTsNCisJfQ0KK30N
+CiB9DQpcIE5vIG5ld2xpbmUgYXQgZW5kIG9mIGZpbGUNCg==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>192964</attachid>
+            <date>2011-04-11 15:04:00 -0400</date>
+            <delta_ts>2011-04-11 15:04:31 -0400</delta_ts>
+            <desc>alternative patch</desc>
+            <filename>Bug_342300_SH1.patch</filename>
+            <type>text/plain</type>
+            <size>1299</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZQpJ
+bmRleDogY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Zsb3cvVW5j
+b25kaXRpb25hbEZsb3dJbmZvLmphdmEKPT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQpSQ1MgZmlsZTogL2N2c3Jvb3QvZWNs
+aXBzZS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvZmxvdy9VbmNvbmRpdGlvbmFsRmxvd0luZm8uamF2YSx2CnJldHJpZXZpbmcg
+cmV2aXNpb24gMS43NApkaWZmIC11IC1yMS43NCBVbmNvbmRpdGlvbmFsRmxvd0luZm8uamF2YQot
+LS0gY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Zsb3cvVW5jb25k
+aXRpb25hbEZsb3dJbmZvLmphdmEJNyBBcHIgMjAxMSAxMDoyMTowNiAtMDAwMAkxLjc0CisrKyBj
+b21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvZmxvdy9VbmNvbmRpdGlv
+bmFsRmxvd0luZm8uamF2YQkxMSBBcHIgMjAxMSAxOTowMToyNCAtMDAwMApAQCAtODcyLDcgKzg3
+Miw3IEBACiAJaW50IHBvc2l0aW9uOwogCWlmICgocG9zaXRpb24gPSBsb2NhbC5pZCArIHRoaXMu
+bWF4RmllbGRDb3VudCkgPCBCaXRDYWNoZVNpemUpIHsKIAkJLy8gdXNlIGJpdHMKLQkJcmV0dXJu
+ICgodGhpcy5udWxsQml0MyAmICh+dGhpcy5udWxsQml0MSB8IH50aGlzLm51bGxCaXQyKSkKKwkJ
+cmV0dXJuICgodGhpcy5udWxsQml0MyAmICh+dGhpcy5udWxsQml0MSB8IH50aGlzLm51bGxCaXQy
+IHwgdGhpcy5udWxsQml0NCkpCiAJCQkgICAgJiAoMUwgPDwgcG9zaXRpb24pKSAhPSAwOwogCX0K
+IAkvLyB1c2UgZXh0cmEgdmVjdG9yCkBAIC04ODUsNyArODg1LDcgQEAKIAkJcmV0dXJuIGZhbHNl
+OyAvLyBpZiBub3QgZW5vdWdoIHJvb20gaW4gdmVjdG9yLCB0aGVuIG5vdCBpbml0aWFsaXplZAog
+CX0KIAlyZXR1cm4gKCh0aGlzLmV4dHJhWzRdW3ZlY3RvckluZGV4XQotCQkgICAgICAgICYgKH50
+aGlzLmV4dHJhWzJdW3ZlY3RvckluZGV4XSB8IH50aGlzLmV4dHJhWzNdW3ZlY3RvckluZGV4XSkp
+CisJCSAgICAgICAgJiAofnRoaXMuZXh0cmFbMl1bdmVjdG9ySW5kZXhdIHwgfnRoaXMuZXh0cmFb
+M11bdmVjdG9ySW5kZXhdIHwgdGhpcy5leHRyYVs1XVt2ZWN0b3JJbmRleF0pKQogCQkgICAgJiAo
+MUwgPDwgKHBvc2l0aW9uICUgQml0Q2FjaGVTaXplKSkpICE9IDA7CiB9CiAK
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

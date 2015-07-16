@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>420080</bug_id>
+          
+          <creation_ts>2013-10-22 09:54:00 -0400</creation_ts>
+          <short_desc>[1.8] Overridden Default method is reported as duplicated</short_desc>
+          <delta_ts>2013-11-03 04:53:22 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jay Arthanareeswaran">jarthana</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2321674</commentid>
+    <comment_count>0</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-10-22 09:54:37 -0400</bug_when>
+    <thetext>This code produces compilation errors:
+
+public abstract class TestClass extends ParentClass {
+}
+
+interface TestInterface {
+	default int intMethod(){return 1;}
+}
+
+class SuperParentClass {
+	public int intMethod(){return 1;}
+}
+
+abstract class ParentClass extends SuperParentClass implements TestInterface {
+	abstract void parentMethod(String s);
+}
+
+The reported errors (twice) being:
+
+&quot;Duplicate methods named intMethod with the parameters () and () are inherited from the types SuperParentClass and TestInterface&quot;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2321691</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-22 10:07:26 -0400</bug_when>
+    <thetext>Thanks, I&apos;ll take a stab at it.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2321698</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-22 10:13:25 -0400</bug_when>
+    <thetext>Smaller test case:
+
+// --
+public class X extends G implements I {
+}
+
+interface I {
+	default int foo (){
+		return 0;
+	}
+}
+
+class G {
+	public int foo() {
+		return 0;
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2321921</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-10-22 18:09:24 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #2)
+&gt; Smaller test case:
+&gt; 
+&gt; // --
+&gt; public class X extends G implements I {
+&gt; }
+&gt; 
+&gt; interface I {
+&gt; 	default int foo (){
+&gt; 		return 0;
+&gt; 	}
+&gt; }
+&gt; 
+&gt; class G {
+&gt; 	public int foo() {
+&gt; 		return 0;
+&gt; 	}
+&gt; }
+
+X does not have a method that overrides I.foo.
+
+I believe reporting this as an error is the expected outcome.
+Do you want me to dig out the paragraph in the spec?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2321933</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-10-22 19:41:37 -0400</bug_when>
+    <thetext>I was a bit too quick, let me back up:
+
+// Three interfaces:
+interface I {
+	default int foo (){
+ 		return 0;
+	}
+}
+interface IG {
+	public int foo();
+}
+interface IX extends I, IG {
+}
+
+Here ecj and javac agree to reject IX:
+
+&quot;The default method foo() inherited from I conflicts with another method inherited from IG&quot;
+
+This is because &quot;It is a compile-time error if an interface I inherits a default method whose signature is override-equivalent with another method inherited by I. This is the case whether the other method is abstract or default.&quot; (9.4.1)
+
+
+Where ecj and javac disagree is the case of classes. For this case the spec says: &quot;It is a compile-time error if a class C inherits a default method whose signature is override-equivalent with another method inherited by C, unless there exists an abstract method declared in a superclass of C and inherited by C that is override-equivalent with the two methods.&quot; (8.4.8.4)
+
+Question is: does X inherit both methods?
+
+This seems to be true for the following case:
+
+// Two interfaces, one class
+interface I {
+	default int foo (){
+		return 0;
+	}
+}
+interface IG {
+	public int foo();
+}
+abstract class X implements I, IG {
+}
+
+Again ecj and javac agree to reject.
+
+Difference occurs only with one interface and two classes (comment 2).
+
+Why is this different? In the example from comment 2 X does *not* inherit I.foo because X already inherits a concrete method (G.foo) with override equivalent signature (see 8.4.8).
+
+=&gt; ecj is wrong.
+
+For completeness: when changing G.foo to abstract (and hence also G and X), then both methods are inherited, but the exception from above applies (&quot;unless there exists an abstract method declared in a superclass of C and inherited by C that is override-equivalent with the two methods.&quot;). To witness:
+
+// One interface, two classes, super class method is abstract:
+
+interface I {
+	default int foo (){
+		return 0;
+	}
+}
+abstract class G {
+	abstract public int foo();
+}
+abstract class X extends G implements I {
+}
+
+This is accepted by both compilers.
+
+
+My guess is: MethodVerifier15.checkInheritedMethods() is correct, but perhaps MethodVerifier.computeInheritedMethods() must be changed. The latter method has not been significantly changed in BETA_JAVA8 except for for static interface methods.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2321934</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-10-22 19:44:08 -0400</bug_when>
+    <thetext>Can a solution wait till after ECE?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2321968</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-10-23 00:53:15 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #5)
+&gt; Can a solution wait till after ECE?
+
+I guess it will have to - I did spend some time on it, but it is going to 
+require more time than I have. 
+
+I noticed that some of the state maintained in org.eclipse.jdt.internal.compiler.lookup.MethodVerifier15.checkInheritedMethods(MethodBinding[], int, boolean[]) may not be appropriate for a fix. I think
+we need a nested loop there.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2325454</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-11-01 02:41:24 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #6)
+
+&gt; I think we need a nested loop there.
+
+Stephan, I request this to be prioritized above part G work. Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2325630</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-11-01 11:46:25 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #7)
+&gt; (In reply to Srikanth Sankaran from comment #6)
+&gt; 
+&gt; &gt; I think we need a nested loop there.
+&gt; 
+&gt; Stephan, I request this to be prioritized above part G work. Thanks.
+
+ack.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2325936</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-11-02 19:56:23 -0400</bug_when>
+    <thetext>As a quick measure I&apos;m adding a new &quot;boolean[] isInherited&quot; into checkMethods().
+This is populated by a special check inside isSkippableOrOverridden() to reflect the new rule in 8.4.8.
+Methods marked as not-inherited are then skipped during check for name clash.
+(This two-step process basically corresponds to the nested loops mentioned in comment 6, I guess - without adding a new loop :) )
+
+Ideally, in some leisure moment I&apos;d attempt a rewrite of checkMethods() to look more like the new specification. I have to admit, I don&apos;t fully understand, e.g., the business of skip[idx], which is only checked in the i-loop, not in the j-loop (look for &quot;second round&quot;). This is (modulo refactorings done for default methods) essentially inherited from our predecessors, and it feels more and more clumsy when comparing to the current spec.
+But it seems that every single bug in method verification can be causes in this single method. Ergo, such a rewrite is a major tasks of its own.
+
+Fix released via commit http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=35293aa2c53e258bd9815d912253aad7aabdda8f</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2325963</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-11-03 04:53:22 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #9)
+
+&gt; Ideally, in some leisure moment I&apos;d attempt a rewrite of checkMethods() to
+&gt; look more like the new specification. 
+
+I was telling Jay just a week ago that we should rewrite the entire method
+contract verification code. After Java 8 work is complete we can look into this
+and based on workload at that time decide who can work on it.
+
+&gt; Fix released via commit
+
+Thanks !</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

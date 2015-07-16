@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>435689</bug_id>
+          
+          <creation_ts>2014-05-23 18:59:00 -0400</creation_ts>
+          <short_desc>[1.8][inference] Type inference not occurring with lambda expression and method reference</short_desc>
+          <delta_ts>2015-01-28 02:31:52 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3.2</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4.1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Jonathan">jhalterman</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="63123"
+          type_id="1"
+          status="+"
+          setter="jarthana"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2406573</commentid>
+    <comment_count>0</comment_count>
+    <who name="Jonathan">jhalterman</who>
+    <bug_when>2014-05-23 18:59:21 -0400</bug_when>
+    <thetext>JDT fails to infer a type from a method reference inside a lambda expression in the following case:
+
+static class Foo&lt;T&gt; {
+  &lt;U&gt; void apply(Function&lt;T, Consumer&lt;U&gt;&gt; bar) {}
+}
+
+static class Bar {
+  void setBar(String bar){}
+}
+
+new Foo&lt;Bar&gt;().apply(bar -&gt; bar::setBar);
+
+While this works with javac, a compile error message is given in Eclipse:
+
+&quot;The type FailingTestTest.Bar does not define setBar(Object) that is applicable here&quot;
+
+When explicitly parameterized things compile fine.
+
+new Foo&lt;Bar&gt;().&lt;String&gt;apply(bar -&gt; bar::setBar);</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2417139</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-06-15 12:59:08 -0400</bug_when>
+    <thetext>Thanks for the example.
+
+Although an inference solution obviously exists, there&apos;s still a slight chance that rejecting the program is the correct behavior as per JLS.
+
+I&apos;ll take a look.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2431804</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-24 15:28:39 -0400</bug_when>
+    <thetext>I found the problem: we are not recognizing bar::setBar as an exact method reference, and hence this element doesn&apos;t participate in type inference. T is inferred to Object, we expect a Consumer&lt;Object&gt; but bar::setBar is a Consumer&lt;String&gt;. Hence the incompatibility reported.
+
+I see two difficulties in recognizing that bar::setBar is indeed exact:
+
+
+The relevant assignment to ReferenceExpression#exactMethodBinding is guarded by one too many if&apos;s, see the outer if in http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/tree/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/ast/ReferenceExpression.java?id=6dc3139df48b05a697942ac75c097b0346555e03#n389
+
+
+Initially, RE.isExactMethodReference() is asked before the RE is even resolved, viz. from 
+ReferenceExpression.isExactMethodReference() line: 690	
+ConstraintExpressionFormula.inputVariables(InferenceContext18) line: 457	
+ConstraintExpressionFormula.inputVariables(InferenceContext18) line: 440	
+ConstraintExpressionFormula(ConstraintFormula).outputVariables(InferenceContext18) line: 61	
+InferenceContext18.allOutputVariables(Set&lt;ConstraintFormula&gt;) line: 1343	
+InferenceContext18.inferInvocationType(BoundSet, TypeBinding, InvocationSite, MethodBinding) line: 402	
+InferenceContext18.inferInvocationType(Invocation, TypeBinding[], ParameterizedGenericMethodBinding) line: 526	
+MethodScope(Scope).inferInvocationType(InvocationSite, MethodBinding, TypeBinding[]) line: 5150	
+
+At this point no bindings are set, including #exactMethodBinding, hence we believe the RE is inexact.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2431855</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-24 17:03:31 -0400</bug_when>
+    <thetext>Released for 4.5 M1 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/org.eclipse.jdt.core?id=bd3f044e1dea55ab9b1dfed3ef25e6b3e161dec9
+
+Problem 1 is solved by moving the assignment to exactMethodBinding out of the outer if.
+
+Problem 2 is fixed by always (tentatively) resolving a lambda before accessing its body(). This avoids the specific leak where an RE could escape unresolved into late phases of the inference.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2433979</commentid>
+    <comment_count>4</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-07-31 03:51:06 -0400</bug_when>
+    <thetext>Stephan, should this be considered for 4.4.1?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434046</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-31 04:47:06 -0400</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #4)
+&gt; Stephan, should this be considered for 4.4.1?
+
+It&apos;s a clear bug in type inference for method references and the fix is simple, so, yes, might be good to backport.
+
+Oops, when I&apos;ll touch it again, I need to find what happened to the regression test ;-/
+
+I&apos;ll attach a patch incl. the test given your +1 for backport.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434055</commentid>
+    <comment_count>6</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-07-31 04:55:19 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #5)
+&gt; I&apos;ll attach a patch incl. the test given your +1 for backport.
+
+Thanks Stephan. I have set the target accordingly.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434071</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-31 05:18:09 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #5)
+&gt; Oops, when I&apos;ll touch it again, I need to find what happened to the
+&gt; regression test ;-/
+
+Oops x2: tests exist, just the link in comment 3 was inappropriate, correct link is http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=bd3f044e1dea55ab9b1dfed3ef25e6b3e161dec9</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434960</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-03 09:06:11 -0400</bug_when>
+    <thetext>Reopening for the backport</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434961</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-03 09:07:34 -0400</bug_when>
+    <thetext>@Jay, even though you asked in the first place, do I get a formal +1 for 4.4.1? :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435023</commentid>
+    <comment_count>10</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-08-04 01:56:38 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #9)
+&gt; @Jay, even though you asked in the first place, do I get a formal +1 for
+&gt; 4.4.1? :)
+
++1 for 4.4.1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2436702</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-07 09:31:06 -0400</bug_when>
+    <thetext>Released for 4.4.1 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=R4_4_maintenance&amp;id=404b4fc38d68f02c11e12cc21a8e792bbe4b0cbe</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2444772</commentid>
+    <comment_count>12</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-08-28 05:51:13 -0400</bug_when>
+    <thetext>Verified Fixed for Eclipse Luna SR1 4.4.1 Build id: M20140827-0800</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511142</commentid>
+    <comment_count>13</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2015-01-28 02:31:52 -0500</bug_when>
+    <thetext>Verified for Eclipse Mars 4.5 M5 Build id: I20150126-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

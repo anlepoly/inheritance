@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>427357</bug_id>
+          
+          <creation_ts>2014-02-04 07:05:00 -0500</creation_ts>
+          <short_desc>[1.8][dom ast] &apos;this&apos; parameter unavailable in AST for static method declaration</short_desc>
+          <delta_ts>2014-02-21 09:08:51 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>426988</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Noopur Gupta">noopur_gupta</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="61528"
+          type_id="1"
+          status="+"
+          setter="srikanth_sankaran"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2358433</commentid>
+    <comment_count>0</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2014-02-04 07:05:28 -0500</bug_when>
+    <thetext>abstract class Test2 {
+	abstract void m0(Test2 this, int i);
+	
+	void m1(int i, Test2 this) { }
+	static void m2(Test2 this, int i) { }
+	
+	Function&lt;String, String&gt; f1= (String s, Function this) -&gt; s;
+	Function&lt;String, String&gt; f2= (Function this, String s) -&gt; s;
+}
+
+Here, &apos;this&apos; parameter info is present as given below:
+- In #m0: present in RECEIVER_TYPE_PROPERTY, not present in parameters list.
+- In #m1: not present in RECEIVER_TYPE_PROPERTY, present in parameters list.
+- In #m2: not present in RECEIVER_TYPE_PROPERTY, not present in parameters list.
+- In f1 and f2: present in parameters list of LambdaExpression.
+
+Cases for #m0 and f1/f2 are fine.
+Case for #m1 also seems Ok?
+In case of #m2, &apos;this&apos; parameter info is not present anywhere in the AST, which is wrong.
+
+When &apos;this&apos; parameter is added at an incorrect location, it should be present at a consistent place somewhere in the AST.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2358441</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-04 07:39:48 -0500</bug_when>
+    <thetext>Jay, thanks for following up.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2358697</commentid>
+    <comment_count>2</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-02-04 13:15:10 -0500</bug_when>
+    <thetext>When the &apos;this&apos; parameter is in a grammatically illegal position (in lambda&apos;s parameter list, or not the first parameter in a method declaration), then recovery is nice but not absolutely necessary.
+
+The critical example is the static method m2, where the source conforms to the Java 8 grammar. In this case, the AST should contain the receiverType, so that we can e.g. offer a quick fix that removes the &apos;static&apos; modifier or the receiver parameter.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2358937</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-05 03:50:39 -0500</bug_when>
+    <thetext>So, just to confirm that I got the requirement right - we only need to address the case of method m2, where the (disallowed) receiver appears as the first parameter, right?
+
+So, if the receiver appears in the AST as RECEIVER_TYPE and the MethodDeclaration node is set as MALFORMED, is it okay?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359023</commentid>
+    <comment_count>4</comment_count>
+      <attachid>239656</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-05 07:02:48 -0500</bug_when>
+    <thetext>Created attachment 239656
+Fix + Test
+
+Patch simply gets rid of the code that sets the AbstractMethodDeclaration#receiver to null when it&apos;s the first formal parameter in all cases except in a lambda expression. And I haven&apos;t bothered to set the nodes to malformed. Hope this is fine.
+
+In other words:
+
+In Lambda:
+   1. The receiver parameter would be part of PARAMETERS regardless of where it occurs (1st parameter or otherwise)
+All other places:
+   1. If it&apos;s first parameter, it&apos;s exposed via RECEIVER_TYPE property.
+   2. Otherwise, it&apos;s part of PARAMETERS property</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359539</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-06 05:58:34 -0500</bug_when>
+    <thetext>Fix and tests available here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=aa70d91abcd9d16b058d62bcd2e8b6cfb7fb819c
+
+(Jay, by mistake I released this in my name, sorry)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366735</commentid>
+    <comment_count>6</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-02-21 07:46:52 -0500</bug_when>
+    <thetext>test427357 in  ASTConverter18Test.java
+
+passed with the code imported from SR2.
+
+File -&gt; import -&gt; plugi development -&gt; plugin &amp; fragments
+-&gt; next -&gt; the active target platform -&gt; 
+import as projects with src folder
+
+I could not figure out a way to open up AST view with BETA_JAVA8 bundles for AST.
+
+The wiki page only specifies till 3.7.1 (http://www.eclipse.org/jdt/ui/astview/).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366737</commentid>
+    <comment_count>7</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-02-21 07:47:14 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC1 Eclipse Kepler 4.3.2(RC4) Build id: M20140212-0800 +  
+Eclipse Java Development Tools Patch for Java 8 Support (BETA)	
+1.0.0.v20140220-2054.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366791</commentid>
+    <comment_count>8</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-02-21 09:08:51 -0500</bug_when>
+    <thetext>(In reply to shankha banerjee from comment #6)
+&gt; I could not figure out a way to open up AST view with BETA_JAVA8 bundles for
+&gt; AST.
+
+We usually only produce an official ASTView version after the next jdt.core release is done. But to just see the ASTNode structure, you can also use an older version of the ASTView plug-in. The trick to get a JLS8 AST is to select &quot;Use SharedASTProvider.getAST&quot; from the view menu.
+
+If you need the latest version of the ASTView, you need to check it out from the eclipse.jdt.ui repo and then either use it in a runtime workbench, or export the plug-in into your Eclipse install (File &gt; Export... &gt; Deployable Plug-ins... &gt; Destination: Install into host).
+
+
+(In reply to Jayaprakash Arthanareeswaran from comment #4)
+&gt; And I haven&apos;t bothered
+&gt; to set the nodes to malformed. Hope this is fine.
+
+Yes, for a receiver parameter in a static/abstract method, that&apos;s fine (since that&apos;s not a syntax error). But if the &apos;this&apos; appears as name of a method parameter, then we should mark the name as malformed. Fixed that with http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=0f16652d495864a2012fd0fc0ed568e6ea4bc1e1</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>239656</attachid>
+            <date>2014-02-05 07:02:00 -0500</date>
+            <delta_ts>2014-02-05 07:02:48 -0500</delta_ts>
+            <desc>Fix + Test</desc>
+            <filename>Bug-427357.patch</filename>
+            <type>text/plain</type>
+            <size>4115</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9kb20vQVNUQ29udmVydGVyMThUZXN0LmphdmEgYi9vcmcuZWNs
+aXBzZS5qZHQuY29yZS50ZXN0cy5tb2RlbC9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMv
+ZG9tL0FTVENvbnZlcnRlcjE4VGVzdC5qYXZhCmluZGV4IDk2MDRkZDMuLjQ1YzIxZWEgMTAwNjQ0
+Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNsaXBzZS9q
+ZHQvY29yZS90ZXN0cy9kb20vQVNUQ29udmVydGVyMThUZXN0LmphdmEKKysrIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Rv
+bS9BU1RDb252ZXJ0ZXIxOFRlc3QuamF2YQpAQCAtNDAyMywzICs0MDIzLDQ4IEBACiAJCWFzc2Vy
+dEVxdWFscygiTm90IGEgdmFyaWFibGUgZGVjbGFyYXRpb24gZnJhZ21lbnQiLCBBU1ROb2RlLlZB
+UklBQkxFX0RFQ0xBUkFUSU9OX0ZSQUdNRU5ULCBhc3ROb2RlLmdldE5vZGVUeXBlKCkpOwogCX0K
+KwkvLyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9NDI3MzU3
+CisJcHVibGljIHZvaWQgdGVzdEJ1ZzQyNzM1NygpIHRocm93cyBKYXZhTW9kZWxFeGNlcHRpb24g
+eworCQlTdHJpbmcgY29udGVudHMgPQorCQkJInB1YmxpYyBjbGFzcyBYIHtcbiIgKworCQkJIglw
+dWJsaWMgc3RhdGljIHZvaWQgZm9vKFggdGhpcywgaW50IGkpe31cbiIgKworCQkJIglwdWJsaWMg
+dm9pZCBmb28oSW5uZXIgdGhpcyl7fVxuIiArCisJCQkiCUkgSSA9IG5ldyBJKCkge1xuIiArCisJ
+CQkiCQlwdWJsaWMgdm9pZCBiYXIoSSB0aGlzLCBpbnQgaSkge31cbiIgKworCQkJIgl9O1xuIiAr
+CisJCQkiCXN0YXRpYyBjbGFzcyBJbm5lciB7XG4iICsKKwkJCSIJCXB1YmxpYyBJbm5lcihUZXN0
+MiBUZXN0Mi50aGlzKXt9XG4iICsKKwkJCSIJCXB1YmxpYyBJbm5lcihJbm5lciBJbm5lci50aGlz
+LCBpbnQgaSl7fVxuIiArIAorCQkJIgl9XG4iICsKKwkJCSJ9XG4iKworCQkJImludGVyZmFjZSBJ
+IHt9IjsKKwkJdGhpcy53b3JraW5nQ29weSA9IGdldFdvcmtpbmdDb3B5KCIvQ29udmVydGVyMTgv
+c3JjL1guamF2YSIsIHRydWUpOworCQlBU1ROb2RlIG5vZGUgPSBidWlsZEFTVChjb250ZW50cywg
+dGhpcy53b3JraW5nQ29weSwgZmFsc2UpOworCQlhc3NlcnRFcXVhbHMoIk5vdCBhIGNvbXBpbGF0
+aW9uIHVuaXQiLCBBU1ROb2RlLkNPTVBJTEFUSU9OX1VOSVQsIG5vZGUuZ2V0Tm9kZVR5cGUoKSk7
+CisJCUNvbXBpbGF0aW9uVW5pdCB1bml0ID0gKENvbXBpbGF0aW9uVW5pdCkgbm9kZTsKKwkJVHlw
+ZURlY2xhcmF0aW9uIHR5cGVEZWNsID0gKFR5cGVEZWNsYXJhdGlvbikgdW5pdC50eXBlcygpLmdl
+dCgwKTsKKwkJTWV0aG9kRGVjbGFyYXRpb24gbWV0aG9kID0gKE1ldGhvZERlY2xhcmF0aW9uKSB0
+eXBlRGVjbC5ib2R5RGVjbGFyYXRpb25zKCkuZ2V0KDApOworCQlUeXBlIHJlY2VpdmVyID0gbWV0
+aG9kLmdldFJlY2VpdmVyVHlwZSgpOworCQlhc3NlcnROb3ROdWxsKCJSZWNlaXZlciBzaG91bGQg
+bm90IGJlIG51bGwiLCByZWNlaXZlcik7CisJCWFzc2VydEVxdWFscygiSW5jb3JyZWN0IHJlY2Vp
+dmVyIHR5cGUiLCAiWCIsIHJlY2VpdmVyLnRvU3RyaW5nKCkpOworCQkKKwkJbWV0aG9kID0gKE1l
+dGhvZERlY2xhcmF0aW9uKSB0eXBlRGVjbC5ib2R5RGVjbGFyYXRpb25zKCkuZ2V0KDEpOworCQly
+ZWNlaXZlciA9IG1ldGhvZC5nZXRSZWNlaXZlclR5cGUoKTsKKwkJYXNzZXJ0Tm90TnVsbCgiUmVj
+ZWl2ZXIgc2hvdWxkIG5vdCBiZSBudWxsIiwgcmVjZWl2ZXIpOworCisJCUZpZWxkRGVjbGFyYXRp
+b24gZmllbGQgPSAoRmllbGREZWNsYXJhdGlvbikgdHlwZURlY2wuYm9keURlY2xhcmF0aW9ucygp
+LmdldCgyKTsKKwkJQ2xhc3NJbnN0YW5jZUNyZWF0aW9uIGFub255bW91c0luc3QgPSAgKENsYXNz
+SW5zdGFuY2VDcmVhdGlvbiApICgoVmFyaWFibGVEZWNsYXJhdGlvbkZyYWdtZW50KSBmaWVsZC5m
+cmFnbWVudHMoKS5nZXQoMCkpLmdldEluaXRpYWxpemVyKCk7CisJCUFub255bW91c0NsYXNzRGVj
+bGFyYXRpb24gYW5vbnltb3VzRGVjbCA9IGFub255bW91c0luc3QuZ2V0QW5vbnltb3VzQ2xhc3NE
+ZWNsYXJhdGlvbigpOworCQltZXRob2QgPSAoTWV0aG9kRGVjbGFyYXRpb24pIGFub255bW91c0Rl
+Y2wuYm9keURlY2xhcmF0aW9ucygpLmdldCgwKTsKKwkJcmVjZWl2ZXIgPSBtZXRob2QuZ2V0UmVj
+ZWl2ZXJUeXBlKCk7CisJCWFzc2VydE5vdE51bGwoIlJlY2VpdmVyIHNob3VsZCBub3QgYmUgbnVs
+bCIsIHJlY2VpdmVyKTsKKwkJYXNzZXJ0RXF1YWxzKCJJbmNvcnJlY3QgcmVjZWl2ZXIgdHlwZSIs
+ICJJIiwgcmVjZWl2ZXIudG9TdHJpbmcoKSk7CisJCXR5cGVEZWNsID0gKFR5cGVEZWNsYXJhdGlv
+bikgdHlwZURlY2wuYm9keURlY2xhcmF0aW9ucygpLmdldCgzKTsKKwkJbWV0aG9kID0gKE1ldGhv
+ZERlY2xhcmF0aW9uKSB0eXBlRGVjbC5ib2R5RGVjbGFyYXRpb25zKCkuZ2V0KDApOworCQlyZWNl
+aXZlciA9IG1ldGhvZC5nZXRSZWNlaXZlclR5cGUoKTsKKwkJYXNzZXJ0Tm90TnVsbCgiUmVjZWl2
+ZXIgc2hvdWxkIG5vdCBiZSBudWxsIiwgcmVjZWl2ZXIpOworCQlhc3NlcnRFcXVhbHMoIkluY29y
+cmVjdCByZWNlaXZlciB0eXBlIiwgIlRlc3QyIiwgcmVjZWl2ZXIudG9TdHJpbmcoKSk7CisJCW1l
+dGhvZCA9IChNZXRob2REZWNsYXJhdGlvbikgdHlwZURlY2wuYm9keURlY2xhcmF0aW9ucygpLmdl
+dCgxKTsKKwkJcmVjZWl2ZXIgPSBtZXRob2QuZ2V0UmVjZWl2ZXJUeXBlKCk7CisJCWFzc2VydE5v
+dE51bGwoIlJlY2VpdmVyIHNob3VsZCBub3QgYmUgbnVsbCIsIHJlY2VpdmVyKTsKKwl9CiB9CmRp
+ZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQv
+aW50ZXJuYWwvY29tcGlsZXIvYXN0L0Fic3RyYWN0TWV0aG9kRGVjbGFyYXRpb24uamF2YSBiL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21w
+aWxlci9hc3QvQWJzdHJhY3RNZXRob2REZWNsYXJhdGlvbi5qYXZhCmluZGV4IGIxNTdjYWUuLjI1
+MzI2ZjcgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xp
+cHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvQWJzdHJhY3RNZXRob2REZWNsYXJhdGlvbi5q
+YXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9p
+bnRlcm5hbC9jb21waWxlci9hc3QvQWJzdHJhY3RNZXRob2REZWNsYXJhdGlvbi5qYXZhCkBAIC01
+NjAsNSArNTYwLDQgQEAKIAkJaWYgKHRoaXMuaXNTdGF0aWMoKSB8fCBkZWNsYXJpbmdDbGFzcy5p
+c0Fub255bW91c1R5cGUoKSkgewogCQkJdGhpcy5zY29wZS5wcm9ibGVtUmVwb3J0ZXIoKS5kaXNh
+bGxvd2VkVGhpc1BhcmFtZXRlcih0aGlzLnJlY2VpdmVyKTsKLQkJCXRoaXMucmVjZWl2ZXIgPSBu
+dWxsOwogCQkJcmV0dXJuOyAvLyBObyBuZWVkIHRvIGRvIGZ1cnRoZXIgdmFsaWRhdGlvbgogCQl9
+CkBAIC01NzAsNSArNTY5LDQgQEAKIAkJCQkJfHwgKGRlY2xhcmluZ0NsYXNzLnRhZ0JpdHMgJiAo
+VGFnQml0cy5Jc0xvY2FsVHlwZSB8IFRhZ0JpdHMuSXNNZW1iZXJUeXBlKSkgPT0gMCkgeyAvKiBu
+ZWl0aGVyIG1lbWJlciBub3IgbG9jYWwgdHlwZSAqLwogCQkJCXRoaXMuc2NvcGUucHJvYmxlbVJl
+cG9ydGVyKCkuZGlzYWxsb3dlZFRoaXNQYXJhbWV0ZXIodGhpcy5yZWNlaXZlcik7Ci0JCQkJdGhp
+cy5yZWNlaXZlciA9IG51bGw7CiAJCQkJcmV0dXJuOyAvLyBObyBuZWVkIHRvIGRvIGZ1cnRoZXIg
+dmFsaWRhdGlvbgogCQkJfQpAQCAtNTg5LDUgKzU4Nyw0IEBACiAJCWlmIChUeXBlQmluZGluZy5u
+b3RFcXVhbHMoZW5jbG9zaW5nUmVjZWl2ZXIsIHJlc29sdmVkUmVjZWl2ZXJUeXBlKSkgewogCQkJ
+dGhpcy5zY29wZS5wcm9ibGVtUmVwb3J0ZXIoKS5pbGxlZ2FsVHlwZUZvckV4cGxpY2l0VGhpcyh0
+aGlzLnJlY2VpdmVyLCBlbmNsb3NpbmdSZWNlaXZlcik7Ci0JCQl0aGlzLnJlY2VpdmVyID0gbnVs
+bDsKIAkJfQogCX0=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

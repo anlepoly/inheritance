@@ -1,0 +1,907 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>411098</bug_id>
+          
+          <creation_ts>2013-06-19 05:37:00 -0400</creation_ts>
+          <short_desc>[compiler][resource] Invalid Resource Leak Warning using ternary operator inside try-with-resource</short_desc>
+          <delta_ts>2015-04-02 07:51:57 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Nikolay Metchev">nikolaymetchev</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>nikolaymetchev</cc>
+    
+    <cc>paul.crockett</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="59379"
+          type_id="1"
+          status="+"
+          setter="stephan.herrmann"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2274286</commentid>
+    <comment_count>0</comment_count>
+    <who name="Nikolay Metchev">nikolaymetchev</who>
+    <bug_when>2013-06-19 05:37:36 -0400</bug_when>
+    <thetext>The following code complains that the FileInputStream may leak. It is inside a try-with-resource statement therefore as far as I can tell this warning is erroneous.
+
+------------------------------------------
+import java.io.FileInputStream;
+
+class Bug {
+  void a(boolean b) throws Exception {
+    try(FileInputStream in = b ? new FileInputStream(&quot;a&quot;) : null){}
+  }
+}
+
+---------------
+Version: 4.3.0
+Build id: I20130516-2200</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298346</commentid>
+    <comment_count>1</comment_count>
+      <attachid>234696</attachid>
+    <who name="Nikolay Metchev">nikolaymetchev</who>
+    <bug_when>2013-08-23 08:26:54 -0400</bug_when>
+    <thetext>Created attachment 234696
+propsed patch
+
+This contribution complies with http://www.eclipse.org/legal/CoO.php
+
+This fixes the issue. However I didn&apos;t see a clean way of implementing this functionality without using the dreaded instanceof operator. Let me know what you think.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298438</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-23 10:49:24 -0400</bug_when>
+    <thetext>Thanks, Nikolay!
+
+I&apos;ll take a look at your patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298449</commentid>
+    <comment_count>3</comment_count>
+      <attachid>234706</attachid>
+    <who name="Nikolay Metchev">nikolaymetchev</who>
+    <bug_when>2013-08-23 10:59:06 -0400</bug_when>
+    <thetext>Created attachment 234706
+use visitor pattern
+
+This contribution complies with http://www.eclipse.org/legal/CoO.php
+
+Doh...
+Use the visitor pattern.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298714</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-25 09:33:17 -0400</bug_when>
+    <thetext>The direction taken looks OK, the contribution is much appreciated!
+The visitor approach, however, is over-eager:
+
+import java.io.*;
+
+class A {
+  void a(boolean b) throws Exception {
+    try(FileInputStream in = create(new FileInputStream(&quot;a&quot;))){}
+  }
+  FileInputStream create(FileInputStream ignored) throws IOException {
+    return new FileInputStream(&quot;b&quot;); 
+  }
+}
+
+Here we *should* see a warning, because the argument to create() is indeed ignored, i.e., it leaks. Descending into all AST nodes is too much, so the previous patch is probably a better starting point. (Once consolidated I&apos;m thinking of a new polymorphic method directly on the involved AST nodes, if they are few).
+
+
+Looking at similar examples we *may* actually want to dig a little deeper:
+
+
+class B {
+  void testB(boolean b) throws Exception {
+    FileInputStream in = b ? new FileInputStream(&quot;a&quot;) : null;
+    in.close();
+  }
+}
+
+=&gt; This, too, gives a bogus warning. So there&apos;s probably s.t. generally wrong with conditional expressions in the initialization of a local variable, not just in a t-w-r.
+
+
+class C {
+  void testC(boolean b) throws Exception {
+    FileInputStream in = null;
+    try {
+      in = b ? new FileInputStream(&quot;a&quot;) : null;
+    } finally {
+      in.close();
+    }
+  }
+}
+
+=&gt; This one, for comparison, works (not inside the initialization of a local).
+
+Nikolay, do you want to continue your analysis, to find out what&apos;s the difference between testB() and testC()? You should expect this next analysis to be a bit more complex than the first step you already made. Of course you&apos;re welcome to ask questions regarding the current implementation etc.
+
+Otherwise, we may just take the limited fix from comment 1 for now, and I&apos;ll make further improvements when I find the time.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298722</commentid>
+    <comment_count>5</comment_count>
+    <who name="Nikolay Metchev">nikolaymetchev</who>
+    <bug_when>2013-08-25 11:44:17 -0400</bug_when>
+    <thetext>I&apos;ll see if I can come up with something better. Thanks for the feedback.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2299907</commentid>
+    <comment_count>6</comment_count>
+    <who name="Nikolay Metchev">nikolaymetchev</who>
+    <bug_when>2013-08-28 06:15:50 -0400</bug_when>
+    <thetext>Stephen,
+I&apos;ve had a deeper look and have come up with this so far:
+I still think the visitor pattern is the way to go. The 1st case you have presented can be handled by overriding visit(MessageSend, BlockScope) to return false.
+
+As for the generic problem with ConditionalExpressions it seems to stem from the 
+method FakedTrackingVariable#getCloseTrackingVariable().
+At the beginning of that method there are checks for CastExpression and Assignment but none for ConditionalExpression. The problem is that a conditional has potentially multiple instances of FackedTrackingVariable buried within. My instinct would be to change this method to return a list of such variables. This will involve all the callers changing and I can&apos;t quite tell how feasible that is. Hopefully there are enough unit tests around this to make it possible.
+
+The other option would be to somehow allow for two FakedTrackingVariables to be combined into one. There already seems to be 2 fields innerTracker and outerTracker that resemble this but I don&apos;t think I can reuse those.
+
+Thoughts?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2299968</commentid>
+    <comment_count>7</comment_count>
+      <attachid>234850</attachid>
+    <who name="Nikolay Metchev">nikolaymetchev</who>
+    <bug_when>2013-08-28 08:31:49 -0400</bug_when>
+    <thetext>Created attachment 234850
+propsed patch
+
+I have some code which makes all the test cases listed pass. Please take a look and let me know if it makes sense or if it can be improved.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2307734</commentid>
+    <comment_count>8</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-09-17 05:55:57 -0400</bug_when>
+    <thetext>Too late for M2.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2322540</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-10-24 07:02:06 -0400</bug_when>
+    <thetext>I&apos;m awfully sorry I didn&apos;t find the time to look at the latest patch.
+Rescheduling to M4.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2339135</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-08 15:34:22 -0500</bug_when>
+    <thetext>Finally, I found the time to look into the updated patch.
+
+The contribution looks good with good test coverage.
+
+Interestingly the changes in TryStatement don&apos;t seem to be necessary anymore, because special handling of ConditionalExpression in FTV takes care of all we need here.
+
+I&apos;ve released the patch minus the unneeded part for 4.4 M4 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=2e2587440cf19d8bb150ea041d5a3f7055142622</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2339136</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-08 15:36:46 -0500</bug_when>
+    <thetext>Some more observation:
+- The approach works well with two allocations
+  Rsrc rc = f ? new Rsrc(&quot;foo&quot;) : new Rsrc(&quot;bar&quot;);
+because both allocations share the same tracking variable &quot;rc&quot;. Good!
+
+- When, however, these allocations contain nested resources, e.g.:
+  Rsrc rc = f ? new Rsrc(new InnerRsrc(&quot;foo&quot;)) : new RC(new InnerRsc(&quot;bar&quot;));
+we end up with three tracking vars (OK), but within the outer tracking var, the field innerTracker gets overwritten, thus loosing one reference. Result: bogus warning against the 1st inner (which doesn&apos;t get notified of the close).
+
+Changing field #innerTracker from single to list is not trivial due to many usages of this field, but I found a simpler way to address this issue:
+
+I added special treatment when analyseCloseableAllocation() is about to overwrite an existing innerTracker:
+- compare null status of both innerTrackers and pick the one with more uncertainty
+- keep the picked one in allocation.closeTracker.innerTracker
+- remove the other one from the scope because its not considered relevant any more
+
+I also simplified the newly added code a tiny bit.
+
+These changes are released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=9d40dd626300d68abf0ae6003507991754449fcf
+
+This closes the issue, thanks Nikolay!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2340269</commentid>
+    <comment_count>12</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-12-11 01:47:30 -0500</bug_when>
+    <thetext>The test case provided in Comment 0 compiles without any warnings.
+
+Verified for Eclipse   Luna 4.4M4 Build id: I20131209-2000</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2340395</commentid>
+    <comment_count>13</comment_count>
+    <who name="Nikolay Metchev">nikolaymetchev</who>
+    <bug_when>2013-12-11 06:27:08 -0500</bug_when>
+    <thetext>Hello Stephan, 
+Sorry about my slow response.
+
+
+(In reply to Stephan Herrmann from comment #11)
+&gt; - When, however, these allocations contain nested resources, e.g.:
+&gt;   Rsrc rc = f ? new Rsrc(new InnerRsrc(&quot;foo&quot;)) : new RC(new InnerRsc(&quot;bar&quot;));
+&gt; we end up with three tracking vars (OK), but within the outer tracking var,
+&gt; the field innerTracker gets overwritten, thus loosing one reference. Result:
+&gt; bogus warning against the 1st inner (which doesn&apos;t get notified of the
+&gt; close).
+This example you have given is in fact not bogus. I ran the following code and the inner resources do not get closed. With the latest code changes Only a warning for the 2nd Resource shows instead of for both. Are you sure we needed to remove the tracked variable?:
+
+import java.io.Closeable;
+
+public class ResourceTest implements Closeable {
+	private final String name;
+
+	public ResourceTest(String name) {
+		this.name = name;
+	}
+
+	public ResourceTest(Closeable c1, Closeable c2, String name) {
+		this.name = name;
+	}
+
+	public static void main(String[] args) {
+		try (ResourceTest m = new ResourceTest(new ResourceTest(&quot;A&quot;), new ResourceTest(&quot;B&quot;), &quot;C&quot;)) {
+		}
+	}
+
+	@Override
+	public void close() {
+		System.out.println(&quot;Closing &quot; + name);
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2340563</commentid>
+    <comment_count>14</comment_count>
+    <who name="Nikolay Metchev">nikolaymetchev</who>
+    <bug_when>2013-12-11 10:32:06 -0500</bug_when>
+    <thetext>In fact it always picks the 2nd argument e.g.:
+
+//warning on A
+ResourceTest m = new ResourceTest(null, new ResourceTest(&quot;A&quot;), &quot;C&quot;) 
+ResourceTest m = new ResourceTest(new ResourceTest(&quot;B&quot;), new ResourceTest(&quot;A&quot;), &quot;C&quot;) 
+
+//no warning
+ResourceTest m = new ResourceTest(new ResourceTest(&quot;A&quot;),null, &quot;C&quot;)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2340577</commentid>
+    <comment_count>15</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-12-11 10:47:09 -0500</bug_when>
+    <thetext>I don&apos;t know the details of the bug, but does this mean the fix is not complete? Or could we do with a follow-up bug instead of reopening this one? I am asking because we are close to the milestone and don&apos;t have much time for more fix.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2340610</commentid>
+    <comment_count>16</comment_count>
+    <who name="Nikolay Metchev">nikolaymetchev</who>
+    <bug_when>2013-12-11 11:29:06 -0500</bug_when>
+    <thetext>Sorry...
+Maybe I shouldn&apos;t have re-opened it.
+
+I can open a new bug if you want.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2340820</commentid>
+    <comment_count>17</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-12-11 17:32:39 -0500</bug_when>
+    <thetext>(In reply to Nikolay Metchev from comment #16)
+&gt; I can open a new bug if you want.
+
+Yes, I&apos;d prefer this, please. Actually, I don&apos;t see any ternary expressions in your recent examples, which speaks even more for filing a new bug :)
+
+And: thanks for challenging my solution. If the latest solution is wrong, we should indeed improve it. But note, that we have special handling for known &quot;wrapper resources&quot; which contain other resources that will be closed transitively. Your example ResourceTest is not one of the well-known resource wrappers, so - by design - you will see different result than if you use, e.g., BufferedReader.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2340926</commentid>
+    <comment_count>18</comment_count>
+    <who name="Nikolay Metchev">nikolaymetchev</who>
+    <bug_when>2013-12-12 05:35:36 -0500</bug_when>
+    <thetext>OK my example was completely wrong. I didn&apos;t realise there was special handling of well known transitive types. 
+Your code change seems to work fine with those types. However if other closeables are used that don&apos;t have transitive closure a warning might be generated. Right now a warning isn&apos;t generated:
+
+import java.io.Closeable;
+
+public class ResourceTest implements Closeable {
+	ResourceTest() {}
+	ResourceTest(Closeable c1) {}
+	void m(){
+		boolean b = false;
+		try(ResourceTest r = b ? new ResourceTest(new ResourceTest()) : new ResourceTest(new ResourceTest())){}
+	}
+	@Override
+	public void close(){}
+}
+
+Should I file a bug for this case?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2343719</commentid>
+    <comment_count>19</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-12-19 04:54:54 -0500</bug_when>
+    <thetext>Something is wrong with that fix. It now reports potential leaks as real leaks:
+
+import java.io.PrintWriter;
+public class Bug {
+	PrintWriter fWriter;
+	void bug(boolean useField) {
+		PrintWriter bug= useField ? fWriter : null;
+		System.out.println(bug);
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2346319</commentid>
+    <comment_count>20</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2014-01-07 02:57:35 -0500</bug_when>
+    <thetext>Ping!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2349406</commentid>
+    <comment_count>21</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-01-14 08:57:49 -0500</bug_when>
+    <thetext>Test and point fix released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=bb2219f73a65d80105bc92727133ff8011c4e284
+
+
+We were creating a FakedTrackingVariable for a ternary, even if no allocation was contained. Fixed by looking into the ternary, checking for contained allocation(s).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2349416</commentid>
+    <comment_count>22</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2014-01-14 09:05:27 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #21)
+&gt; Test and point fix released via
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/
+&gt; ?id=bb2219f73a65d80105bc92727133ff8011c4e284
+&gt; 
+&gt; 
+&gt; We were creating a FakedTrackingVariable for a ternary, even if no
+&gt; allocation was contained. Fixed by looking into the ternary, checking for
+&gt; contained allocation(s).
+
+Thanks Stephan!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2352212</commentid>
+    <comment_count>23</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-01-21 02:12:20 -0500</bug_when>
+    <thetext>Verified for Version: Eclipse Luna (4.4 M5) Build id: I20140120-2000</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2541465</commentid>
+    <comment_count>24</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-02 07:51:57 -0400</bug_when>
+    <thetext>*** Bug 410441 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>234696</attachid>
+            <date>2013-08-23 08:26:00 -0400</date>
+            <delta_ts>2013-08-23 10:59:06 -0400</delta_ts>
+            <desc>propsed patch</desc>
+            <filename>eclipse.jdt.core.411098.patch</filename>
+            <type>text/plain</type>
+            <size>4904</size>
+            <attacher name="Nikolay Metchev">nikolaymetchev</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL1Jlc291cmNlTGVha1Rl
+c3RzLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2Vj
+bGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9SZXNvdXJjZUxlYWtUZXN0
+cy5qYXZhCmluZGV4IGM0Njk5YmEuLjcyMjYzNWMgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21w
+aWxlci9yZWdyZXNzaW9uL1Jlc291cmNlTGVha1Rlc3RzLmphdmEKKysrIGIvb3JnLmVjbGlwc2Uu
+amR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Nv
+bXBpbGVyL3JlZ3Jlc3Npb24vUmVzb3VyY2VMZWFrVGVzdHMuamF2YQpAQCAtNSwxMCArNSwxMiBA
+QAogICogd2hpY2ggYWNjb21wYW5pZXMgdGhpcyBkaXN0cmlidXRpb24sIGFuZCBpcyBhdmFpbGFi
+bGUgYXQKICAqIGh0dHA6Ly93d3cuZWNsaXBzZS5vcmcvbGVnYWwvZXBsLXYxMC5odG1sCiAgKgog
+ICogQ29udHJpYnV0b3JzOgogICogICAgIFN0ZXBoYW4gSGVycm1hbm4gLSBpbml0aWFsIEFQSSBh
+bmQgaW1wbGVtZW50YXRpb24KKyAqICAgICBOaWtvbGF5IE1ldGNoZXYgKG5pa29sYXltZXRjaGV2
+QGdtYWlsLmNvbSkgLSBDb250cmlidXRpb25zIGZvcgorICoJCQkJCQkJCWJ1ZyA0MTEwOTggLSBb
+Y29tcGlsZXJdW3Jlc291cmNlXSBJbnZhbGlkIFJlc291cmNlIExlYWsgV2FybmluZyB1c2luZyB0
+ZXJuYXJ5IG9wZXJhdG9yIGluc2lkZSB0cnktd2l0aC1yZXNvdXJjZQogICoqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKiovCiBwYWNrYWdlIG9yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyLnJl
+Z3Jlc3Npb247CiAKIGltcG9ydCBqYXZhLmlvLklPRXhjZXB0aW9uOwogaW1wb3J0IGphdmEubmV0
+LlVSTDsKQEAgLTQ0NzYsNiArNDQ3OCwyNiBAQAogCQkiLS0tLS0tLS0tLVxuIiwKIAkJbnVsbCwK
+IAkJdHJ1ZSwKIAkJb3B0aW9ucyk7CiB9CisKK3B1YmxpYyB2b2lkIHRlc3RCdWc0MTEwOTgoKSB7
+CisJaWYgKHRoaXMuY29tcGxpYW5jZUxldmVsIDwgQ2xhc3NGaWxlQ29uc3RhbnRzLkpESzFfNykg
+cmV0dXJuOyAvLyB0LXctciB1c2VkCisJTWFwIG9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMo
+KTsKKwlvcHRpb25zLnB1dChDb21waWxlck9wdGlvbnMuT1BUSU9OX1JlcG9ydFBvdGVudGlhbGx5
+VW5jbG9zZWRDbG9zZWFibGUsIENvbXBpbGVyT3B0aW9ucy5FUlJPUik7CisJb3B0aW9ucy5wdXQo
+Q29tcGlsZXJPcHRpb25zLk9QVElPTl9SZXBvcnRVbmNsb3NlZENsb3NlYWJsZSwgQ29tcGlsZXJP
+cHRpb25zLkVSUk9SKTsKKwlydW5Db25mb3JtVGVzdCgKKwkJbmV3IFN0cmluZ1tdIHsKKwkJCSJB
+LmphdmEiLAorCQkJImltcG9ydCBqYXZhLmlvLio7XG4iICsgCisJCQkiXG4iICsgCisJCQkiY2xh
+c3MgQSB7XG4iICsgCisJCQkiICB2b2lkIGEoYm9vbGVhbiBiKSB0aHJvd3MgRXhjZXB0aW9uIHtc
+biIgKyAKKwkJCSIgICAgdHJ5KEZpbGVJbnB1dFN0cmVhbSBpbiA9IGIgPyBuZXcgRmlsZUlucHV0
+U3RyZWFtKFwiYVwiKSA6IG51bGwpe31cbiIgKyAKKwkJCSIgIH1cbiIgKyAKKwkJCSJ9IgorCQl9
+LAorCQlvcHRpb25zCisJCSk7Cit9CiB9CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L1RyeVN0YXRl
+bWVudC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0
+L2ludGVybmFsL2NvbXBpbGVyL2FzdC9UcnlTdGF0ZW1lbnQuamF2YQppbmRleCA4YmZkZDY3Li5h
+MGE4Mjg0IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNs
+aXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L1RyeVN0YXRlbWVudC5qYXZhCisrKyBiL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21w
+aWxlci9hc3QvVHJ5U3RhdGVtZW50LmphdmEKQEAgLTE5LDEwICsxOSwxMiBAQAogICoJCQkJCQkJ
+CWJ1ZyA0MDEwOTIgLSBbY29tcGlsZXJdW251bGxdIFdyb25nIHdhcm5pbmcgIlJlZHVuZGFudCBu
+dWxsIGNoZWNrIiBpbiBvdXRlciBjYXRjaCBvZiBuZXN0ZWQgdHJ5CiAgKgkJCQkJCQkJYnVnIDQw
+Mjk5MyAtIFtudWxsXSBGb2xsb3cgdXAgb2YgYnVnIDQwMTA4ODogTWlzc2luZyB3YXJuaW5nIGFi
+b3V0IHJlZHVuZGFudCBudWxsIGNoZWNrCiAgKgkJCQkJCQkJYnVnIDM4NDM4MCAtIEZhbHNlIHBv
+c2l0aXZlIG9uIGEgPz8gUG90ZW50aWFsIG51bGwgcG9pbnRlciBhY2Nlc3MgPz8gYWZ0ZXIgYSBj
+b250aW51ZQogICogICAgIEplc3BlciBTdGVlbiBNb2xsZXIgLSBDb250cmlidXRpb25zIGZvcgog
+ICoJCQkJCQkJCWJ1ZyA0MDQxNDYgLSBbMS43XVtjb21waWxlcl0gbmVzdGVkIHRyeS1jYXRjaC1m
+aW5hbGx5LWJsb2NrcyBsZWFkcyB0byB1bnJ1bm5hYmxlIEphdmEgYnl0ZSBjb2RlCisgKiAgICAg
+Tmlrb2xheSBNZXRjaGV2IChuaWtvbGF5bWV0Y2hldkBnbWFpbC5jb20pIC0gQ29udHJpYnV0aW9u
+cyBmb3IKKyAqCQkJCQkJCQlidWcgNDExMDk4IC0gW2NvbXBpbGVyXVtyZXNvdXJjZV0gSW52YWxp
+ZCBSZXNvdXJjZSBMZWFrIFdhcm5pbmcgdXNpbmcgdGVybmFyeSBvcGVyYXRvciBpbnNpZGUgdHJ5
+LXdpdGgtcmVzb3VyY2UKICAqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqLwogcGFja2FnZSBvcmcuZWNs
+aXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuYXN0OwogCiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0
+LmNvcmUuY29tcGlsZXIuQ2hhck9wZXJhdGlvbjsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50
+ZXJuYWwuY29tcGlsZXIuQVNUVmlzaXRvcjsKQEAgLTE0MCwxMCArMTQyLDExIEBACiAKIAkJRmxv
+d0luZm8gdHJ5SW5mbyA9IGZsb3dJbmZvLmNvcHkoKTsKIAkJZm9yIChpbnQgaSA9IDA7IGkgPCBy
+ZXNvdXJjZXNMZW5ndGg7IGkrKykgewogCQkJZmluYWwgTG9jYWxEZWNsYXJhdGlvbiByZXNvdXJj
+ZSA9IHRoaXMucmVzb3VyY2VzW2ldOwogCQkJdHJ5SW5mbyA9IHJlc291cmNlLmFuYWx5c2VDb2Rl
+KGN1cnJlbnRTY29wZSwgaGFuZGxpbmdDb250ZXh0LCB0cnlJbmZvKTsKKwkJCXJlbW92ZVRyYWNr
+aW5nVmFyaWFibGVzKHJlc291cmNlLmluaXRpYWxpemF0aW9uKTsgLy8gcmVzb3VyY2VzIGNhbm5v
+dCBsZWFrCiAJCQl0aGlzLnBvc3RSZXNvdXJjZXNJbml0U3RhdGVJbmRleGVzW2ldID0gY3VycmVu
+dFNjb3BlLm1ldGhvZFNjb3BlKCkucmVjb3JkSW5pdGlhbGl6YXRpb25TdGF0ZXModHJ5SW5mbyk7
+CiAJCQlMb2NhbFZhcmlhYmxlQmluZGluZyByZXNvdXJjZUJpbmRpbmcgPSByZXNvdXJjZS5iaW5k
+aW5nOwogCQkJcmVzb3VyY2VCaW5kaW5nLnVzZUZsYWcgPSBMb2NhbFZhcmlhYmxlQmluZGluZy5V
+U0VEOyAvLyBJcyBpbXBsaWNpdGx5IHVzZWQgYW55d2F5cy4KIAkJCWlmIChyZXNvdXJjZUJpbmRp
+bmcuY2xvc2VUcmFja2VyICE9IG51bGwpIHsKIAkJCQkvLyB0aGlzIHdhcyBmYWxzZSBhbGFybSwg
+d2UgZG9uJ3QgbmVlZCB0byB0cmFjayB0aGUgcmVzb3VyY2UKQEAgLTMzOCwxMCArMzQxLDI3IEBA
+CiAJCQkJY3VycmVudFNjb3BlLm1ldGhvZFNjb3BlKCkucmVjb3JkSW5pdGlhbGl6YXRpb25TdGF0
+ZXMobWVyZ2VkSW5mbyk7CiAJCQlyZXR1cm4gbWVyZ2VkSW5mbzsKIAkJfQogCX0KIH0KK3ByaXZh
+dGUgdm9pZCByZW1vdmVUcmFja2luZ1ZhcmlhYmxlcyhDb25kaXRpb25hbEV4cHJlc3Npb24gY29u
+ZGl0aW9uYWwpIHsKKwlyZW1vdmVUcmFja2luZ1ZhcmlhYmxlcyhjb25kaXRpb25hbC52YWx1ZUlm
+RmFsc2UpOworCXJlbW92ZVRyYWNraW5nVmFyaWFibGVzKGNvbmRpdGlvbmFsLnZhbHVlSWZUcnVl
+KTsKK30KK3ByaXZhdGUgdm9pZCByZW1vdmVUcmFja2luZ1ZhcmlhYmxlcyhFeHByZXNzaW9uIGV4
+cHJlc3Npb24pIHsKKwlpZiAoZXhwcmVzc2lvbiBpbnN0YW5jZW9mIEFsbG9jYXRpb25FeHByZXNz
+aW9uKSB7CisJCXJlbW92ZVRyYWNraW5nVmFyaWFibGUoKEFsbG9jYXRpb25FeHByZXNzaW9uKSBl
+eHByZXNzaW9uKTsKKwl9CisJZWxzZSBpZiAoZXhwcmVzc2lvbiBpbnN0YW5jZW9mIENvbmRpdGlv
+bmFsRXhwcmVzc2lvbikgeworCQlyZW1vdmVUcmFja2luZ1ZhcmlhYmxlcygoQ29uZGl0aW9uYWxF
+eHByZXNzaW9uKSBleHByZXNzaW9uKTsKKwl9Cit9Citwcml2YXRlIHZvaWQgcmVtb3ZlVHJhY2tp
+bmdWYXJpYWJsZShBbGxvY2F0aW9uRXhwcmVzc2lvbiBleHByZXNzaW9uKSB7CisJaWYgKGV4cHJl
+c3Npb24uY2xvc2VUcmFja2VyICE9IG51bGwpIHsKKwkJdGhpcy5zY29wZS5tZXRob2RTY29wZSgp
+LnJlbW92ZVRyYWNraW5nVmFyKGV4cHJlc3Npb24uY2xvc2VUcmFja2VyKTsKKwl9Cit9CiBwcml2
+YXRlIE1ldGhvZEJpbmRpbmcgZmluZENsb3NlTWV0aG9kKGZpbmFsIExvY2FsRGVjbGFyYXRpb24g
+cmVzb3VyY2UsIExvY2FsVmFyaWFibGVCaW5kaW5nIHJlc291cmNlQmluZGluZykgewogCU1ldGhv
+ZEJpbmRpbmcgY2xvc2VNZXRob2QgPSBudWxsOwogCVR5cGVCaW5kaW5nIHR5cGUgPSByZXNvdXJj
+ZUJpbmRpbmcudHlwZTsKIAlpZiAodHlwZSAhPSBudWxsICYmIHR5cGUuaXNWYWxpZEJpbmRpbmco
+KSkgewogCQlSZWZlcmVuY2VCaW5kaW5nIGJpbmRpbmcgPSAoUmVmZXJlbmNlQmluZGluZykgdHlw
+ZTs=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>234706</attachid>
+            <date>2013-08-23 10:59:00 -0400</date>
+            <delta_ts>2013-08-28 08:31:49 -0400</delta_ts>
+            <desc>use visitor pattern</desc>
+            <filename>eclipse.jdt.core.411098-2.patch</filename>
+            <type>text/plain</type>
+            <size>4602</size>
+            <attacher name="Nikolay Metchev">nikolaymetchev</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL1Jlc291cmNlTGVha1Rl
+c3RzLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2Vj
+bGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9SZXNvdXJjZUxlYWtUZXN0
+cy5qYXZhCmluZGV4IGM0Njk5YmEuLjcyMjYzNWMgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21w
+aWxlci9yZWdyZXNzaW9uL1Jlc291cmNlTGVha1Rlc3RzLmphdmEKKysrIGIvb3JnLmVjbGlwc2Uu
+amR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Nv
+bXBpbGVyL3JlZ3Jlc3Npb24vUmVzb3VyY2VMZWFrVGVzdHMuamF2YQpAQCAtNSwxMCArNSwxMiBA
+QAogICogd2hpY2ggYWNjb21wYW5pZXMgdGhpcyBkaXN0cmlidXRpb24sIGFuZCBpcyBhdmFpbGFi
+bGUgYXQKICAqIGh0dHA6Ly93d3cuZWNsaXBzZS5vcmcvbGVnYWwvZXBsLXYxMC5odG1sCiAgKgog
+ICogQ29udHJpYnV0b3JzOgogICogICAgIFN0ZXBoYW4gSGVycm1hbm4gLSBpbml0aWFsIEFQSSBh
+bmQgaW1wbGVtZW50YXRpb24KKyAqICAgICBOaWtvbGF5IE1ldGNoZXYgKG5pa29sYXltZXRjaGV2
+QGdtYWlsLmNvbSkgLSBDb250cmlidXRpb25zIGZvcgorICoJCQkJCQkJCWJ1ZyA0MTEwOTggLSBb
+Y29tcGlsZXJdW3Jlc291cmNlXSBJbnZhbGlkIFJlc291cmNlIExlYWsgV2FybmluZyB1c2luZyB0
+ZXJuYXJ5IG9wZXJhdG9yIGluc2lkZSB0cnktd2l0aC1yZXNvdXJjZQogICoqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKiovCiBwYWNrYWdlIG9yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyLnJl
+Z3Jlc3Npb247CiAKIGltcG9ydCBqYXZhLmlvLklPRXhjZXB0aW9uOwogaW1wb3J0IGphdmEubmV0
+LlVSTDsKQEAgLTQ0NzYsNiArNDQ3OCwyNiBAQAogCQkiLS0tLS0tLS0tLVxuIiwKIAkJbnVsbCwK
+IAkJdHJ1ZSwKIAkJb3B0aW9ucyk7CiB9CisKK3B1YmxpYyB2b2lkIHRlc3RCdWc0MTEwOTgoKSB7
+CisJaWYgKHRoaXMuY29tcGxpYW5jZUxldmVsIDwgQ2xhc3NGaWxlQ29uc3RhbnRzLkpESzFfNykg
+cmV0dXJuOyAvLyB0LXctciB1c2VkCisJTWFwIG9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMo
+KTsKKwlvcHRpb25zLnB1dChDb21waWxlck9wdGlvbnMuT1BUSU9OX1JlcG9ydFBvdGVudGlhbGx5
+VW5jbG9zZWRDbG9zZWFibGUsIENvbXBpbGVyT3B0aW9ucy5FUlJPUik7CisJb3B0aW9ucy5wdXQo
+Q29tcGlsZXJPcHRpb25zLk9QVElPTl9SZXBvcnRVbmNsb3NlZENsb3NlYWJsZSwgQ29tcGlsZXJP
+cHRpb25zLkVSUk9SKTsKKwlydW5Db25mb3JtVGVzdCgKKwkJbmV3IFN0cmluZ1tdIHsKKwkJCSJB
+LmphdmEiLAorCQkJImltcG9ydCBqYXZhLmlvLio7XG4iICsgCisJCQkiXG4iICsgCisJCQkiY2xh
+c3MgQSB7XG4iICsgCisJCQkiICB2b2lkIGEoYm9vbGVhbiBiKSB0aHJvd3MgRXhjZXB0aW9uIHtc
+biIgKyAKKwkJCSIgICAgdHJ5KEZpbGVJbnB1dFN0cmVhbSBpbiA9IGIgPyBuZXcgRmlsZUlucHV0
+U3RyZWFtKFwiYVwiKSA6IG51bGwpe31cbiIgKyAKKwkJCSIgIH1cbiIgKyAKKwkJCSJ9IgorCQl9
+LAorCQlvcHRpb25zCisJCSk7Cit9CiB9CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L1RyeVN0YXRl
+bWVudC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0
+L2ludGVybmFsL2NvbXBpbGVyL2FzdC9UcnlTdGF0ZW1lbnQuamF2YQppbmRleCA4YmZkZDY3Li41
+NGI0NGMyIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNs
+aXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L1RyeVN0YXRlbWVudC5qYXZhCisrKyBiL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21w
+aWxlci9hc3QvVHJ5U3RhdGVtZW50LmphdmEKQEAgLTE5LDEwICsxOSwxMiBAQAogICoJCQkJCQkJ
+CWJ1ZyA0MDEwOTIgLSBbY29tcGlsZXJdW251bGxdIFdyb25nIHdhcm5pbmcgIlJlZHVuZGFudCBu
+dWxsIGNoZWNrIiBpbiBvdXRlciBjYXRjaCBvZiBuZXN0ZWQgdHJ5CiAgKgkJCQkJCQkJYnVnIDQw
+Mjk5MyAtIFtudWxsXSBGb2xsb3cgdXAgb2YgYnVnIDQwMTA4ODogTWlzc2luZyB3YXJuaW5nIGFi
+b3V0IHJlZHVuZGFudCBudWxsIGNoZWNrCiAgKgkJCQkJCQkJYnVnIDM4NDM4MCAtIEZhbHNlIHBv
+c2l0aXZlIG9uIGEgPz8gUG90ZW50aWFsIG51bGwgcG9pbnRlciBhY2Nlc3MgPz8gYWZ0ZXIgYSBj
+b250aW51ZQogICogICAgIEplc3BlciBTdGVlbiBNb2xsZXIgLSBDb250cmlidXRpb25zIGZvcgog
+ICoJCQkJCQkJCWJ1ZyA0MDQxNDYgLSBbMS43XVtjb21waWxlcl0gbmVzdGVkIHRyeS1jYXRjaC1m
+aW5hbGx5LWJsb2NrcyBsZWFkcyB0byB1bnJ1bm5hYmxlIEphdmEgYnl0ZSBjb2RlCisgKiAgICAg
+Tmlrb2xheSBNZXRjaGV2IChuaWtvbGF5bWV0Y2hldkBnbWFpbC5jb20pIC0gQ29udHJpYnV0aW9u
+cyBmb3IKKyAqCQkJCQkJCQlidWcgNDExMDk4IC0gW2NvbXBpbGVyXVtyZXNvdXJjZV0gSW52YWxp
+ZCBSZXNvdXJjZSBMZWFrIFdhcm5pbmcgdXNpbmcgdGVybmFyeSBvcGVyYXRvciBpbnNpZGUgdHJ5
+LXdpdGgtcmVzb3VyY2UKICAqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqLwogcGFja2FnZSBvcmcuZWNs
+aXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuYXN0OwogCiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0
+LmNvcmUuY29tcGlsZXIuQ2hhck9wZXJhdGlvbjsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50
+ZXJuYWwuY29tcGlsZXIuQVNUVmlzaXRvcjsKQEAgLTE0MCwxMCArMTQyLDExIEBACiAKIAkJRmxv
+d0luZm8gdHJ5SW5mbyA9IGZsb3dJbmZvLmNvcHkoKTsKIAkJZm9yIChpbnQgaSA9IDA7IGkgPCBy
+ZXNvdXJjZXNMZW5ndGg7IGkrKykgewogCQkJZmluYWwgTG9jYWxEZWNsYXJhdGlvbiByZXNvdXJj
+ZSA9IHRoaXMucmVzb3VyY2VzW2ldOwogCQkJdHJ5SW5mbyA9IHJlc291cmNlLmFuYWx5c2VDb2Rl
+KGN1cnJlbnRTY29wZSwgaGFuZGxpbmdDb250ZXh0LCB0cnlJbmZvKTsKKwkJCXJlbW92ZVRyYWNr
+aW5nVmFyaWFibGVzKHJlc291cmNlLmluaXRpYWxpemF0aW9uKTsgLy8gcmVzb3VyY2VzIGNhbm5v
+dCBsZWFrCiAJCQl0aGlzLnBvc3RSZXNvdXJjZXNJbml0U3RhdGVJbmRleGVzW2ldID0gY3VycmVu
+dFNjb3BlLm1ldGhvZFNjb3BlKCkucmVjb3JkSW5pdGlhbGl6YXRpb25TdGF0ZXModHJ5SW5mbyk7
+CiAJCQlMb2NhbFZhcmlhYmxlQmluZGluZyByZXNvdXJjZUJpbmRpbmcgPSByZXNvdXJjZS5iaW5k
+aW5nOwogCQkJcmVzb3VyY2VCaW5kaW5nLnVzZUZsYWcgPSBMb2NhbFZhcmlhYmxlQmluZGluZy5V
+U0VEOyAvLyBJcyBpbXBsaWNpdGx5IHVzZWQgYW55d2F5cy4KIAkJCWlmIChyZXNvdXJjZUJpbmRp
+bmcuY2xvc2VUcmFja2VyICE9IG51bGwpIHsKIAkJCQkvLyB0aGlzIHdhcyBmYWxzZSBhbGFybSwg
+d2UgZG9uJ3QgbmVlZCB0byB0cmFjayB0aGUgcmVzb3VyY2UKQEAgLTMzOCwxMCArMzQxLDIyIEBA
+CiAJCQkJY3VycmVudFNjb3BlLm1ldGhvZFNjb3BlKCkucmVjb3JkSW5pdGlhbGl6YXRpb25TdGF0
+ZXMobWVyZ2VkSW5mbyk7CiAJCQlyZXR1cm4gbWVyZ2VkSW5mbzsKIAkJfQogCX0KIH0KKworcHJp
+dmF0ZSB2b2lkIHJlbW92ZVRyYWNraW5nVmFyaWFibGVzKEFTVE5vZGUgZXhwcmVzc2lvbikgewor
+CWV4cHJlc3Npb24udHJhdmVyc2UobmV3IEFTVFZpc2l0b3IoKSB7CisJCXB1YmxpYyBib29sZWFu
+IHZpc2l0KEFsbG9jYXRpb25FeHByZXNzaW9uIGFsbG9jYXRpb25FeHByZXNzaW9uLCBCbG9ja1Nj
+b3BlIGJsb2NrU2NvcGUpIHsKKwkJCWlmIChhbGxvY2F0aW9uRXhwcmVzc2lvbi5jbG9zZVRyYWNr
+ZXIgIT0gbnVsbCkgeworCQkJCWJsb2NrU2NvcGUubWV0aG9kU2NvcGUoKS5yZW1vdmVUcmFja2lu
+Z1ZhcihhbGxvY2F0aW9uRXhwcmVzc2lvbi5jbG9zZVRyYWNrZXIpOworCQkJfQorCQkJcmV0dXJu
+IHRydWU7CisJCX0KKwl9LCB0aGlzLnNjb3BlKTsKK30KKwogcHJpdmF0ZSBNZXRob2RCaW5kaW5n
+IGZpbmRDbG9zZU1ldGhvZChmaW5hbCBMb2NhbERlY2xhcmF0aW9uIHJlc291cmNlLCBMb2NhbFZh
+cmlhYmxlQmluZGluZyByZXNvdXJjZUJpbmRpbmcpIHsKIAlNZXRob2RCaW5kaW5nIGNsb3NlTWV0
+aG9kID0gbnVsbDsKIAlUeXBlQmluZGluZyB0eXBlID0gcmVzb3VyY2VCaW5kaW5nLnR5cGU7CiAJ
+aWYgKHR5cGUgIT0gbnVsbCAmJiB0eXBlLmlzVmFsaWRCaW5kaW5nKCkpIHsKIAkJUmVmZXJlbmNl
+QmluZGluZyBiaW5kaW5nID0gKFJlZmVyZW5jZUJpbmRpbmcpIHR5cGU7
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>234850</attachid>
+            <date>2013-08-28 08:31:00 -0400</date>
+            <delta_ts>2013-08-28 08:31:49 -0400</delta_ts>
+            <desc>propsed patch</desc>
+            <filename>eclipse.jdt.core.411098-3.patch</filename>
+            <type>text/plain</type>
+            <size>14800</size>
+            <attacher name="Nikolay Metchev">nikolaymetchev</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL1Jlc291cmNlTGVha1Rl
+c3RzLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2Vj
+bGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9SZXNvdXJjZUxlYWtUZXN0
+cy5qYXZhCmluZGV4IGM0Njk5YmEuLmNiZWNiMTYgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21w
+aWxlci9yZWdyZXNzaW9uL1Jlc291cmNlTGVha1Rlc3RzLmphdmEKKysrIGIvb3JnLmVjbGlwc2Uu
+amR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2Nv
+bXBpbGVyL3JlZ3Jlc3Npb24vUmVzb3VyY2VMZWFrVGVzdHMuamF2YQpAQCAtNSwxMCArNSwxMiBA
+QAogICogd2hpY2ggYWNjb21wYW5pZXMgdGhpcyBkaXN0cmlidXRpb24sIGFuZCBpcyBhdmFpbGFi
+bGUgYXQKICAqIGh0dHA6Ly93d3cuZWNsaXBzZS5vcmcvbGVnYWwvZXBsLXYxMC5odG1sCiAgKgog
+ICogQ29udHJpYnV0b3JzOgogICogICAgIFN0ZXBoYW4gSGVycm1hbm4gLSBpbml0aWFsIEFQSSBh
+bmQgaW1wbGVtZW50YXRpb24KKyAqICAgICBOaWtvbGF5IE1ldGNoZXYgKG5pa29sYXltZXRjaGV2
+QGdtYWlsLmNvbSkgLSBDb250cmlidXRpb25zIGZvcgorICoJCQkJCQkJCWJ1ZyA0MTEwOTggLSBb
+Y29tcGlsZXJdW3Jlc291cmNlXSBJbnZhbGlkIFJlc291cmNlIExlYWsgV2FybmluZyB1c2luZyB0
+ZXJuYXJ5IG9wZXJhdG9yIGluc2lkZSB0cnktd2l0aC1yZXNvdXJjZQogICoqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKiovCiBwYWNrYWdlIG9yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyLnJl
+Z3Jlc3Npb247CiAKIGltcG9ydCBqYXZhLmlvLklPRXhjZXB0aW9uOwogaW1wb3J0IGphdmEubmV0
+LlVSTDsKQEAgLTQ0NzYsNiArNDQ3OCwxNDggQEAKIAkJIi0tLS0tLS0tLS1cbiIsCiAJCW51bGws
+CiAJCXRydWUsCiAJCW9wdGlvbnMpOwogfQorCitwdWJsaWMgdm9pZCB0ZXN0QnVnNDExMDk4X3Rl
+c3QxKCkgeworCWlmICh0aGlzLmNvbXBsaWFuY2VMZXZlbCA8IENsYXNzRmlsZUNvbnN0YW50cy5K
+REsxXzcpIHJldHVybjsgLy8gdC13LXIgdXNlZAorCU1hcCBvcHRpb25zID0gZ2V0Q29tcGlsZXJP
+cHRpb25zKCk7CisJb3B0aW9ucy5wdXQoQ29tcGlsZXJPcHRpb25zLk9QVElPTl9SZXBvcnRQb3Rl
+bnRpYWxseVVuY2xvc2VkQ2xvc2VhYmxlLCBDb21waWxlck9wdGlvbnMuRVJST1IpOworCW9wdGlv
+bnMucHV0KENvbXBpbGVyT3B0aW9ucy5PUFRJT05fUmVwb3J0VW5jbG9zZWRDbG9zZWFibGUsIENv
+bXBpbGVyT3B0aW9ucy5FUlJPUik7CisJcnVuQ29uZm9ybVRlc3QoCisJCW5ldyBTdHJpbmdbXSB7
+CisJCQkiQS5qYXZhIiwKKwkJCSJpbXBvcnQgamF2YS5pby4qO1xuIiArIAorCQkJIlxuIiArIAor
+CQkJImNsYXNzIEEge1xuIiArIAorCQkJIiAgdm9pZCBhKGJvb2xlYW4gYikgdGhyb3dzIEV4Y2Vw
+dGlvbiB7XG4iICsgCisJCQkiICAgIHRyeShGaWxlSW5wdXRTdHJlYW0gaW4gPSBiID8gbmV3IEZp
+bGVJbnB1dFN0cmVhbShcImFcIikgOiBudWxsKXt9XG4iICsgCisJCQkiICB9XG4iICsgCisJCQki
+fSIKKwkJfSwKKwkJb3B0aW9ucworCQkpOworfQorcHVibGljIHZvaWQgdGVzdEJ1ZzQxMTA5OF90
+ZXN0MigpIHsKKwlpZiAodGhpcy5jb21wbGlhbmNlTGV2ZWwgPCBDbGFzc0ZpbGVDb25zdGFudHMu
+SkRLMV83KSByZXR1cm47IC8vIHQtdy1yIHVzZWQKKwlNYXAgb3B0aW9ucyA9IGdldENvbXBpbGVy
+T3B0aW9ucygpOworCW9wdGlvbnMucHV0KENvbXBpbGVyT3B0aW9ucy5PUFRJT05fUmVwb3J0UG90
+ZW50aWFsbHlVbmNsb3NlZENsb3NlYWJsZSwgQ29tcGlsZXJPcHRpb25zLkVSUk9SKTsKKwlvcHRp
+b25zLnB1dChDb21waWxlck9wdGlvbnMuT1BUSU9OX1JlcG9ydFVuY2xvc2VkQ2xvc2VhYmxlLCBD
+b21waWxlck9wdGlvbnMuRVJST1IpOworCXJ1bk5lZ2F0aXZlVGVzdCgKKwkJbmV3IFN0cmluZ1td
+IHsKKwkJCSJBLmphdmEiLAorCQkJImltcG9ydCBqYXZhLmlvLio7XG4iKworCQkJImNsYXNzIEEg
+e1xuIiArIAorCQkJIiAgdm9pZCBhKGJvb2xlYW4gYikgdGhyb3dzIEV4Y2VwdGlvbiB7XG4iICsg
+CisJCQkiICAgIHRyeShGaWxlSW5wdXRTdHJlYW0gaW4gPSBjcmVhdGUobmV3IEZpbGVJbnB1dFN0
+cmVhbShcImFcIikpKXt9XG4iICsgCisJCQkiICB9XG4iICsgCisJCQkiICBGaWxlSW5wdXRTdHJl
+YW0gY3JlYXRlKEZpbGVJbnB1dFN0cmVhbSBpZ25vcmVkKSB0aHJvd3MgSU9FeGNlcHRpb24ge1xu
+IiArIAorCQkJIiAgICByZXR1cm4gbmV3IEZpbGVJbnB1dFN0cmVhbShcImJcIik7IFxuIiArIAor
+CQkJIiAgfVxuIiArIAorCQkJIn0iCisJCX0sCisJCSItLS0tLS0tLS0tXG4iICsgCisJCSIxLiBF
+UlJPUiBpbiBBLmphdmEgKGF0IGxpbmUgNClcbiIgKyAKKwkJIgl0cnkoRmlsZUlucHV0U3RyZWFt
+IGluID0gY3JlYXRlKG5ldyBGaWxlSW5wdXRTdHJlYW0oXCJhXCIpKSl7fVxuIiArIAorCQkiCSAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXG4i
+ICsgCisJCSJQb3RlbnRpYWwgcmVzb3VyY2UgbGVhazogJzx1bmFzc2lnbmVkIENsb3NlYWJsZSB2
+YWx1ZT4nIG1heSBub3QgYmUgY2xvc2VkXG4iICsgCisJCSItLS0tLS0tLS0tXG4iLAorCQludWxs
+LAorCQl0cnVlLAorCQlvcHRpb25zCisJCSk7Cit9CitwdWJsaWMgdm9pZCB0ZXN0QnVnNDExMDk4
+X3Rlc3QzKCkgeworCWlmICh0aGlzLmNvbXBsaWFuY2VMZXZlbCA8IENsYXNzRmlsZUNvbnN0YW50
+cy5KREsxXzcpIHJldHVybjsgLy8gdC13LXIgdXNlZAorCU1hcCBvcHRpb25zID0gZ2V0Q29tcGls
+ZXJPcHRpb25zKCk7CisJb3B0aW9ucy5wdXQoQ29tcGlsZXJPcHRpb25zLk9QVElPTl9SZXBvcnRQ
+b3RlbnRpYWxseVVuY2xvc2VkQ2xvc2VhYmxlLCBDb21waWxlck9wdGlvbnMuRVJST1IpOworCW9w
+dGlvbnMucHV0KENvbXBpbGVyT3B0aW9ucy5PUFRJT05fUmVwb3J0VW5jbG9zZWRDbG9zZWFibGUs
+IENvbXBpbGVyT3B0aW9ucy5FUlJPUik7CisJcnVuTmVnYXRpdmVUZXN0KAorCQluZXcgU3RyaW5n
+W10geworCQkJIkEuamF2YSIsCisJCQkiaW1wb3J0IGphdmEuaW8uKjtcbiIgKyAKKwkJCSJjbGFz
+cyBBIHtcbiIgKyAKKwkJCSIJdm9pZCBtKCkgdGhyb3dzIElPRXhjZXB0aW9uIHtcbiIgKyAKKwkJ
+CSIJCXRyeSAoRmlsZUlucHV0U3RyZWFtIGEgPSBuZXcgRmlsZUlucHV0U3RyZWFtKFwiQVwiKSB7
+e1xuIiArIAorCQkJIgkJCQlGaWxlSW5wdXRTdHJlYW0gYiA9IG5ldyBGaWxlSW5wdXRTdHJlYW0o
+XCJCXCIpO1xuIiArIAorCQkJIgkJCQliLmhhc2hDb2RlKCk7XG4iICsgCisJCQkiCQkJfX0pe1xu
+IiArIAorCQkJIgkJfVxuIiArIAorCQkJIgl9XG4iICsgCisJCQkifSIKKwkJfSwKKwkJIi0tLS0t
+LS0tLS1cbiIgKyAKKwkJIjEuIEVSUk9SIGluIEEuamF2YSAoYXQgbGluZSA1KVxuIiArIAorCQki
+CUZpbGVJbnB1dFN0cmVhbSBiID0gbmV3IEZpbGVJbnB1dFN0cmVhbShcIkJcIik7XG4iICsgCisJ
+CSIJICAgICAgICAgICAgICAgIF5cbiIgKyAKKwkJIlJlc291cmNlIGxlYWs6ICdiJyBpcyBuZXZl
+ciBjbG9zZWRcbiIgKyAKKwkJIi0tLS0tLS0tLS1cbiIsCisJCW51bGwsCisJCXRydWUsCisJCW9w
+dGlvbnMKKwkJKTsKK30KK3B1YmxpYyB2b2lkIHRlc3RCdWc0MTEwOThfdGVzdDQoKSB7CisJaWYg
+KHRoaXMuY29tcGxpYW5jZUxldmVsIDwgQ2xhc3NGaWxlQ29uc3RhbnRzLkpESzFfNykgcmV0dXJu
+OyAvLyB0LXctciB1c2VkCisJTWFwIG9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsKKwlv
+cHRpb25zLnB1dChDb21waWxlck9wdGlvbnMuT1BUSU9OX1JlcG9ydFBvdGVudGlhbGx5VW5jbG9z
+ZWRDbG9zZWFibGUsIENvbXBpbGVyT3B0aW9ucy5FUlJPUik7CisJb3B0aW9ucy5wdXQoQ29tcGls
+ZXJPcHRpb25zLk9QVElPTl9SZXBvcnRVbmNsb3NlZENsb3NlYWJsZSwgQ29tcGlsZXJPcHRpb25z
+LkVSUk9SKTsKKwlydW5Db25mb3JtVGVzdCgKKwkJbmV3IFN0cmluZ1tdIHsKKwkJCSJBLmphdmEi
+LAorCQkJImltcG9ydCBqYXZhLmlvLkZpbGVJbnB1dFN0cmVhbTtcbiIgKyAKKwkJCSJjbGFzcyBB
+IHtcbiIgKyAKKwkJCSIJdm9pZCB0ZXN0Qihib29sZWFuIGIpIHRocm93cyBFeGNlcHRpb24ge1xu
+IiArIAorCQkJIgkJRmlsZUlucHV0U3RyZWFtIGluID0gbnVsbDtcbiIgKyAKKwkJCSIJCXRyeSB7
+XG4iICsgCisJCQkiCQkJaW4gPSBiID8gbmV3IEZpbGVJbnB1dFN0cmVhbShcImFcIikgOiBudWxs
+O1xuIiArIAorCQkJIgkJfSBmaW5hbGx5IHtcbiIgKyAKKwkJCSIJCWluLmNsb3NlKCk7XG4iICsg
+CisJCQkiCQl9XG4iICsgCisJCQkiCX1cbiIgKyAKKwkJCSJ9IgorCQl9LAorCQlvcHRpb25zCisJ
+CSk7Cit9CisKK3B1YmxpYyB2b2lkIHRlc3RCdWc0MTEwOThfdGVzdDUoKSB7CisJaWYgKHRoaXMu
+Y29tcGxpYW5jZUxldmVsIDwgQ2xhc3NGaWxlQ29uc3RhbnRzLkpESzFfNykgcmV0dXJuOyAvLyB0
+LXctciB1c2VkCisJTWFwIG9wdGlvbnMgPSBnZXRDb21waWxlck9wdGlvbnMoKTsKKwlvcHRpb25z
+LnB1dChDb21waWxlck9wdGlvbnMuT1BUSU9OX1JlcG9ydFBvdGVudGlhbGx5VW5jbG9zZWRDbG9z
+ZWFibGUsIENvbXBpbGVyT3B0aW9ucy5FUlJPUik7CisJb3B0aW9ucy5wdXQoQ29tcGlsZXJPcHRp
+b25zLk9QVElPTl9SZXBvcnRVbmNsb3NlZENsb3NlYWJsZSwgQ29tcGlsZXJPcHRpb25zLkVSUk9S
+KTsKKwlydW5Db25mb3JtVGVzdCgKKwkJbmV3IFN0cmluZ1tdIHsKKwkJCSJBLmphdmEiLAorCQkJ
+ImltcG9ydCBqYXZhLmlvLkZpbGVJbnB1dFN0cmVhbTtcbiIgKyAKKwkJCSJjbGFzcyBBIHtcbiIg
+KyAKKwkJCSIgIHZvaWQgdGVzdEEoYm9vbGVhbiBiKSB0aHJvd3MgRXhjZXB0aW9uIHtcbiIgKyAK
+KwkJCSIgICAgRmlsZUlucHV0U3RyZWFtIGluID0gYiA/IG5ldyBGaWxlSW5wdXRTdHJlYW0oXCJh
+XCIpIDogbnVsbDtcbiIgKyAKKwkJCSIgICAgaW4uY2xvc2UoKTtcbiIgKyAKKwkJCSIgIH1cbiIg
+KyAKKwkJCSJ9IgorCQl9LAorCQlvcHRpb25zCisJCSk7Cit9CisKK3B1YmxpYyB2b2lkIHRlc3RC
+dWc0MTEwOThfdGVzdDYoKSB7CisJaWYgKHRoaXMuY29tcGxpYW5jZUxldmVsIDwgQ2xhc3NGaWxl
+Q29uc3RhbnRzLkpESzFfNykgcmV0dXJuOyAvLyB0LXctciB1c2VkCisJTWFwIG9wdGlvbnMgPSBn
+ZXRDb21waWxlck9wdGlvbnMoKTsKKwlvcHRpb25zLnB1dChDb21waWxlck9wdGlvbnMuT1BUSU9O
+X1JlcG9ydFBvdGVudGlhbGx5VW5jbG9zZWRDbG9zZWFibGUsIENvbXBpbGVyT3B0aW9ucy5FUlJP
+Uik7CisJb3B0aW9ucy5wdXQoQ29tcGlsZXJPcHRpb25zLk9QVElPTl9SZXBvcnRVbmNsb3NlZENs
+b3NlYWJsZSwgQ29tcGlsZXJPcHRpb25zLkVSUk9SKTsKKwlydW5Db25mb3JtVGVzdCgKKwkJbmV3
+IFN0cmluZ1tdIHsKKwkJCSJBLmphdmEiLAorCQkJImltcG9ydCBqYXZhLmlvLkZpbGVJbnB1dFN0
+cmVhbTtcbiIgKyAKKwkJCSJjbGFzcyBBIHtcbiIgKyAKKwkJCSIgIHZvaWQgdGVzdEEoYm9vbGVh
+biBiKSB0aHJvd3MgRXhjZXB0aW9uIHtcbiIgKyAKKwkJCSIgICAgRmlsZUlucHV0U3RyZWFtIGlu
+ID0gYiA/IG5ldyBGaWxlSW5wdXRTdHJlYW0oXCJhXCIpIDogbmV3IEZpbGVJbnB1dFN0cmVhbShc
+ImJcIik7XG4iICsgCisJCQkiICAgIGluLmNsb3NlKCk7XG4iICsgCisJCQkiICB9XG4iICsgCisJ
+CQkifSIKKwkJfSwKKwkJb3B0aW9ucworCQkpOworfQogfQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Fz
+dC9GYWtlZFRyYWNraW5nVmFyaWFibGUuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBp
+bGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvRmFrZWRUcmFja2luZ1Zh
+cmlhYmxlLmphdmEKaW5kZXggNjU1Mzc1Yi4uMDI5NjRhMiAxMDA2NDQKLS0tIGEvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Fz
+dC9GYWtlZFRyYWNraW5nVmFyaWFibGUuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9j
+b21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0Zha2VkVHJhY2tp
+bmdWYXJpYWJsZS5qYXZhCkBAIC01LDEwICs1LDEyIEBACiAgKiB3aGljaCBhY2NvbXBhbmllcyB0
+aGlzIGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2YWlsYWJsZSBhdAogICogaHR0cDovL3d3dy5lY2xp
+cHNlLm9yZy9sZWdhbC9lcGwtdjEwLmh0bWwKICAqCiAgKiBDb250cmlidXRvcnM6CiAgKiAgICAg
+U3RlcGhhbiBIZXJybWFubiAtIGluaXRpYWwgQVBJIGFuZCBpbXBsZW1lbnRhdGlvbgorICogICAg
+IE5pa29sYXkgTWV0Y2hldiAobmlrb2xheW1ldGNoZXZAZ21haWwuY29tKSAtIENvbnRyaWJ1dGlv
+bnMgZm9yCisgKgkJCQkJCQkJYnVnIDQxMTA5OCAtIFtjb21waWxlcl1bcmVzb3VyY2VdIEludmFs
+aWQgUmVzb3VyY2UgTGVhayBXYXJuaW5nIHVzaW5nIHRlcm5hcnkgb3BlcmF0b3IgaW5zaWRlIHRy
+eS13aXRoLXJlc291cmNlCiAgKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKi8KIHBhY2thZ2Ugb3JnLmVj
+bGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmFzdDsKIAogaW1wb3J0IGphdmEudXRpbC5IYXNo
+TWFwOwogaW1wb3J0IGphdmEudXRpbC5JdGVyYXRvcjsKQEAgLTE1OCwxMCArMTYwLDE3IEBACiAJ
+CXdoaWxlICh0cnVlKSB7CiAJCQlpZiAoZXhwcmVzc2lvbiBpbnN0YW5jZW9mIENhc3RFeHByZXNz
+aW9uKQogCQkJCWV4cHJlc3Npb24gPSAoKENhc3RFeHByZXNzaW9uKSBleHByZXNzaW9uKS5leHBy
+ZXNzaW9uOwogCQkJZWxzZSBpZiAoZXhwcmVzc2lvbiBpbnN0YW5jZW9mIEFzc2lnbm1lbnQpCiAJ
+CQkJZXhwcmVzc2lvbiA9ICgoQXNzaWdubWVudCkgZXhwcmVzc2lvbikuZXhwcmVzc2lvbjsKKwkJ
+CWVsc2UgaWYgKGV4cHJlc3Npb24gaW5zdGFuY2VvZiBDb25kaXRpb25hbEV4cHJlc3Npb24pIHsK
+KwkJCQlGYWtlZFRyYWNraW5nVmFyaWFibGUgZmFsc2VUcmFja2luZ1ZhcmlhYmxlID0gZ2V0Q2xv
+c2VUcmFja2luZ1ZhcmlhYmxlKCgoQ29uZGl0aW9uYWxFeHByZXNzaW9uKWV4cHJlc3Npb24pLnZh
+bHVlSWZGYWxzZSwgZmxvd0luZm8sIGZsb3dDb250ZXh0KTsKKwkJCQlpZiAoZmFsc2VUcmFja2lu
+Z1ZhcmlhYmxlICE9IG51bGwpIHsKKwkJCQkJcmV0dXJuIGZhbHNlVHJhY2tpbmdWYXJpYWJsZTsK
+KwkJCQl9CisJCQkJcmV0dXJuIGdldENsb3NlVHJhY2tpbmdWYXJpYWJsZSgoKENvbmRpdGlvbmFs
+RXhwcmVzc2lvbilleHByZXNzaW9uKS52YWx1ZUlmVHJ1ZSwgZmxvd0luZm8sIGZsb3dDb250ZXh0
+KTsKKwkJCX0KIAkJCWVsc2UKIAkJCQlicmVhazsKIAkJfQogCQlpZiAoZXhwcmVzc2lvbiBpbnN0
+YW5jZW9mIFNpbmdsZU5hbWVSZWZlcmVuY2UpIHsKIAkJCVNpbmdsZU5hbWVSZWZlcmVuY2UgbmFt
+ZSA9IChTaW5nbGVOYW1lUmVmZXJlbmNlKSBleHByZXNzaW9uOwpAQCAtMjAwLDExICsyMDksMTEg
+QEAKIAkgKiBAcGFyYW0gcmhzIHRoZSByaHMgb2YgdGhlIGFzc2lnbm1lbnQgcmVzcC4gdGhlIGlu
+aXRpYWxpemF0aW9uIG9mIHRoZSBsb2NhbCB2YXJpYWJsZSBkZWNsYXJhdGlvbi4KIAkgKiAJCTxz
+dHJvbmc+UHJlY29uZGl0aW9uOjwvc3Ryb25nPiBjbGllbnQgaGFzIGFscmVhZHkgY2hlY2tlZCB0
+aGF0IHRoZSByZXNvbHZlZCB0eXBlIG9mIHRoaXMgZXhwcmVzc2lvbiBpcyBlaXRoZXIgYSBjbG9z
+ZWFibGUgdHlwZSBvciBOVUxMLgogCSAqLwogCXB1YmxpYyBzdGF0aWMgdm9pZCBwcmVDb25uZWN0
+VHJhY2tlckFjcm9zc0Fzc2lnbm1lbnQoQVNUTm9kZSBsb2NhdGlvbiwgTG9jYWxWYXJpYWJsZUJp
+bmRpbmcgbG9jYWwsIEV4cHJlc3Npb24gcmhzLCBGbG93SW5mbyBmbG93SW5mbykgewogCQlGYWtl
+ZFRyYWNraW5nVmFyaWFibGUgY2xvc2VUcmFja2VyID0gbnVsbDsKLQkJaWYgKHJocyBpbnN0YW5j
+ZW9mIEFsbG9jYXRpb25FeHByZXNzaW9uKSB7CisJCWlmIChyaHMgaW5zdGFuY2VvZiBBbGxvY2F0
+aW9uRXhwcmVzc2lvbiB8fCByaHMgaW5zdGFuY2VvZiBDb25kaXRpb25hbEV4cHJlc3Npb24pIHsK
+IAkJCWNsb3NlVHJhY2tlciA9IGxvY2FsLmNsb3NlVHJhY2tlcjsKIAkJCWlmIChjbG9zZVRyYWNr
+ZXIgPT0gbnVsbCkgewogCQkJCWlmIChyaHMucmVzb2x2ZWRUeXBlICE9IFR5cGVCaW5kaW5nLk5V
+TEwpIHsgLy8gbm90IE5VTEwgbWVhbnMgdmFsaWQgY2xvc2VhYmxlIGFzIHBlciBtZXRob2QgcHJl
+Y29uZGl0aW9uCiAJCQkJCWNsb3NlVHJhY2tlciA9IG5ldyBGYWtlZFRyYWNraW5nVmFyaWFibGUo
+bG9jYWwsIGxvY2F0aW9uLCBmbG93SW5mbywgbnVsbCwgRmxvd0luZm8uVU5LTk9XTik7CiAJCQkJ
+CWlmIChsb2NhbC5pc1BhcmFtZXRlcigpKSB7CkBAIC0yMTIsMTcgKzIyMSw0MiBAQAogCQkJCQl9
+CiAJCQkJfQkJCQkJCiAJCQl9CiAJCQlpZiAoY2xvc2VUcmFja2VyICE9IG51bGwpIHsKIAkJCQlj
+bG9zZVRyYWNrZXIuY3VycmVudEFzc2lnbm1lbnQgPSBsb2NhdGlvbjsKLQkJCQlBbGxvY2F0aW9u
+RXhwcmVzc2lvbiBhbGxvY2F0aW9uID0gKEFsbG9jYXRpb25FeHByZXNzaW9uKXJoczsKLQkJCQlh
+bGxvY2F0aW9uLmNsb3NlVHJhY2tlciA9IGNsb3NlVHJhY2tlcjsKLQkJCQlpZiAoYWxsb2NhdGlv
+bi5hcmd1bWVudHMgIT0gbnVsbCAmJiBhbGxvY2F0aW9uLmFyZ3VtZW50cy5sZW5ndGggPiAwKSB7
+Ci0JCQkJCS8vIGFsc28gcHVzaCBpbnRvIG5lc3RlZCBhbGxvY2F0aW9ucywgc2VlIGh0dHBzOi8v
+YnVncy5lY2xpcHNlLm9yZy8zNjg3MDkKLQkJCQkJcHJlQ29ubmVjdFRyYWNrZXJBY3Jvc3NBc3Np
+Z25tZW50KGxvY2F0aW9uLCBsb2NhbCwgYWxsb2NhdGlvbi5hcmd1bWVudHNbMF0sIGZsb3dJbmZv
+KTsKKwkJCQlpZiAocmhzIGluc3RhbmNlb2YgQ29uZGl0aW9uYWxFeHByZXNzaW9uKSB7CisJCQkJ
+CUNvbmRpdGlvbmFsRXhwcmVzc2lvbiBjb25kaXRpb25hbCA9IChDb25kaXRpb25hbEV4cHJlc3Np
+b24pcmhzOworCQkJCQlwcmVDb25uZWN0VHJhY2tlckFjcm9zc0Fzc2lnbm1lbnQobG9jYXRpb24s
+IGxvY2FsLCBmbG93SW5mbywgY29uZGl0aW9uYWwsIGNsb3NlVHJhY2tlcik7CisJCQkJfQorCQkJ
+CWVsc2UgaWYgKHJocyBpbnN0YW5jZW9mIEFsbG9jYXRpb25FeHByZXNzaW9uKSB7CisJCQkJCUFs
+bG9jYXRpb25FeHByZXNzaW9uIGFsbG9jYXRpb24gPSAoQWxsb2NhdGlvbkV4cHJlc3Npb24pcmhz
+OworCQkJCQlwcmVDb25uZWN0VHJhY2tlckFjcm9zc0Fzc2lnbm1lbnQobG9jYXRpb24sIGxvY2Fs
+LCBmbG93SW5mbywgYWxsb2NhdGlvbiwgY2xvc2VUcmFja2VyKTsKIAkJCQl9CiAJCQl9CisJCX0K
+Kwl9CisKKwlwcml2YXRlIHN0YXRpYyB2b2lkIHByZUNvbm5lY3RUcmFja2VyQWNyb3NzQXNzaWdu
+bWVudChBU1ROb2RlIGxvY2F0aW9uLCBMb2NhbFZhcmlhYmxlQmluZGluZyBsb2NhbCwgRmxvd0lu
+Zm8gZmxvd0luZm8sIENvbmRpdGlvbmFsRXhwcmVzc2lvbiBjb25kaXRpb25hbCwKKwkJCUZha2Vk
+VHJhY2tpbmdWYXJpYWJsZSBjbG9zZVRyYWNrZXIpIHsKKwkJcHJlQ29ubmVjdFRyYWNrZXJBY3Jv
+c3NBc3NpZ25tZW50KGxvY2F0aW9uLCBsb2NhbCwgZmxvd0luZm8sIGNsb3NlVHJhY2tlciwgY29u
+ZGl0aW9uYWwudmFsdWVJZkZhbHNlKTsKKwkJcHJlQ29ubmVjdFRyYWNrZXJBY3Jvc3NBc3NpZ25t
+ZW50KGxvY2F0aW9uLCBsb2NhbCwgZmxvd0luZm8sIGNsb3NlVHJhY2tlciwgY29uZGl0aW9uYWwu
+dmFsdWVJZlRydWUpOworCX0KKworCXByaXZhdGUgc3RhdGljIHZvaWQgcHJlQ29ubmVjdFRyYWNr
+ZXJBY3Jvc3NBc3NpZ25tZW50KEFTVE5vZGUgbG9jYXRpb24sIExvY2FsVmFyaWFibGVCaW5kaW5n
+IGxvY2FsLCBGbG93SW5mbyBmbG93SW5mbywgRmFrZWRUcmFja2luZ1ZhcmlhYmxlIGNsb3NlVHJh
+Y2tlciwgRXhwcmVzc2lvbiBleHByZXNzaW9uKSB7CisJCWlmIChleHByZXNzaW9uIGluc3RhbmNl
+b2YgQWxsb2NhdGlvbkV4cHJlc3Npb24pIHsKKwkJCXByZUNvbm5lY3RUcmFja2VyQWNyb3NzQXNz
+aWdubWVudChsb2NhdGlvbiwgbG9jYWwsIGZsb3dJbmZvLCAoQWxsb2NhdGlvbkV4cHJlc3Npb24p
+IGV4cHJlc3Npb24sIGNsb3NlVHJhY2tlcik7CisJCX0gZWxzZSBpZiAoZXhwcmVzc2lvbiBpbnN0
+YW5jZW9mIENvbmRpdGlvbmFsRXhwcmVzc2lvbikgeworCQkJcHJlQ29ubmVjdFRyYWNrZXJBY3Jv
+c3NBc3NpZ25tZW50KGxvY2F0aW9uLCBsb2NhbCwgZmxvd0luZm8sIChDb25kaXRpb25hbEV4cHJl
+c3Npb24pIGV4cHJlc3Npb24sIGNsb3NlVHJhY2tlcik7CisJCX0KKwl9CisKKwlwcml2YXRlIHN0
+YXRpYyB2b2lkIHByZUNvbm5lY3RUcmFja2VyQWNyb3NzQXNzaWdubWVudChBU1ROb2RlIGxvY2F0
+aW9uLCBMb2NhbFZhcmlhYmxlQmluZGluZyBsb2NhbCwKKwkJCUZsb3dJbmZvIGZsb3dJbmZvLCBB
+bGxvY2F0aW9uRXhwcmVzc2lvbiBhbGxvY2F0aW9uRXhwcmVzc2lvbiwgRmFrZWRUcmFja2luZ1Zh
+cmlhYmxlIGNsb3NlVHJhY2tlcikgeworCQlhbGxvY2F0aW9uRXhwcmVzc2lvbi5jbG9zZVRyYWNr
+ZXIgPSBjbG9zZVRyYWNrZXI7CisJCWlmIChhbGxvY2F0aW9uRXhwcmVzc2lvbi5hcmd1bWVudHMg
+IT0gbnVsbCAmJiBhbGxvY2F0aW9uRXhwcmVzc2lvbi5hcmd1bWVudHMubGVuZ3RoID4gMCkgewor
+CQkJLy8gYWxzbyBwdXNoIGludG8gbmVzdGVkIGFsbG9jYXRpb25zLCBzZWUgaHR0cHM6Ly9idWdz
+LmVjbGlwc2Uub3JnLzM2ODcwOQorCQkJcHJlQ29ubmVjdFRyYWNrZXJBY3Jvc3NBc3NpZ25tZW50
+KGxvY2F0aW9uLCBsb2NhbCwgYWxsb2NhdGlvbkV4cHJlc3Npb24uYXJndW1lbnRzWzBdLCBmbG93
+SW5mbyk7CiAJCX0KIAl9CiAKIAkvKiogCiAJICogQ29tcHV0ZS9hc3NpZ24gYSB0cmFja2luZyB2
+YXJpYWJsZSBmb3IgYSBmcmVzaGx5IGFsbG9jYXRlZCBjbG9zZWFibGUgdmFsdWUsIHVzaW5nIGlu
+Zm9ybWF0aW9uIGZyb20gb3VyIHdoaXRlIGxpc3RzLgpAQCAtMzc4LDExICs0MTIsMTEgQEAKIAkJ
+CQkJCS8vIHByZS1zZXQgdHJhY2tlciBmcm9tIGxocyAtIHBhc3NlZCBmcm9tIG91dHNpZGU/CiAJ
+CQkJCQkvLyBub3cgaXQncyBhIGZyZXNoIHJlc291cmNlCiAJCQkJCQlyaHNUcmFja1Zhci5nbG9i
+YWxDbG9zaW5nU3RhdGUgJj0gfihTSEFSRURfV0lUSF9PVVRTSURFfE9XTkVEX0JZX09VVFNJREUp
+OwogCQkJCQl9CiAJCQkJfSBlbHNlIHsKLQkJCQkJaWYgKHJocyBpbnN0YW5jZW9mIEFsbG9jYXRp
+b25FeHByZXNzaW9uKSB7CisJCQkJCWlmIChyaHMgaW5zdGFuY2VvZiBBbGxvY2F0aW9uRXhwcmVz
+c2lvbiB8fCByaHMgaW5zdGFuY2VvZiBDb25kaXRpb25hbEV4cHJlc3Npb24pIHsKIAkJCQkJCWlm
+IChyaHNUcmFja1ZhciA9PSBkaXNjb25uZWN0ZWRUcmFja2VyKQogCQkJCQkJCXJldHVybjsJCQkJ
+CQkJCQkvLyAJCWIuOiBzZWxmIHdyYXBwZXI6IHJlcyA9IG5ldyBXcmFwKHJlcyk7IC0+IGRvbmUh
+CiAJCQkJCQlpZiAobG9jYWwuY2xvc2VUcmFja2VyID09IHJoc1RyYWNrVmFyIAogCQkJCQkJCQkm
+JiAoKHJoc1RyYWNrVmFyLmdsb2JhbENsb3NpbmdTdGF0ZSAmIE9XTkVEX0JZX09VVFNJREUpICE9
+IDApKSB7CiAJCQkJCQkJCQkJCQkJCQkJCS8vIAkJYy46IGFzc2lnbmluZyBhIGZyZXNoIHJlc291
+cmNlIChwcmUtY29ubmVjdGVkIGFsbG9jKSAKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5j
+b3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvVHJ5U3Rh
+dGVtZW50LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L1RyeVN0YXRlbWVudC5qYXZhCmluZGV4IDhiZmRkNjcu
+LmRjODJjZDEgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvVHJ5U3RhdGVtZW50LmphdmEKKysrIGIv
+b3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2Nv
+bXBpbGVyL2FzdC9UcnlTdGF0ZW1lbnQuamF2YQpAQCAtMTksMTAgKzE5LDEyIEBACiAgKgkJCQkJ
+CQkJYnVnIDQwMTA5MiAtIFtjb21waWxlcl1bbnVsbF0gV3Jvbmcgd2FybmluZyAiUmVkdW5kYW50
+IG51bGwgY2hlY2siIGluIG91dGVyIGNhdGNoIG9mIG5lc3RlZCB0cnkKICAqCQkJCQkJCQlidWcg
+NDAyOTkzIC0gW251bGxdIEZvbGxvdyB1cCBvZiBidWcgNDAxMDg4OiBNaXNzaW5nIHdhcm5pbmcg
+YWJvdXQgcmVkdW5kYW50IG51bGwgY2hlY2sKICAqCQkJCQkJCQlidWcgMzg0MzgwIC0gRmFsc2Ug
+cG9zaXRpdmUgb24gYSA/PyBQb3RlbnRpYWwgbnVsbCBwb2ludGVyIGFjY2VzcyA/PyBhZnRlciBh
+IGNvbnRpbnVlCiAgKiAgICAgSmVzcGVyIFN0ZWVuIE1vbGxlciAtIENvbnRyaWJ1dGlvbnMgZm9y
+CiAgKgkJCQkJCQkJYnVnIDQwNDE0NiAtIFsxLjddW2NvbXBpbGVyXSBuZXN0ZWQgdHJ5LWNhdGNo
+LWZpbmFsbHktYmxvY2tzIGxlYWRzIHRvIHVucnVubmFibGUgSmF2YSBieXRlIGNvZGUKKyAqICAg
+ICBOaWtvbGF5IE1ldGNoZXYgKG5pa29sYXltZXRjaGV2QGdtYWlsLmNvbSkgLSBDb250cmlidXRp
+b25zIGZvcgorICoJCQkJCQkJCWJ1ZyA0MTEwOTggLSBbY29tcGlsZXJdW3Jlc291cmNlXSBJbnZh
+bGlkIFJlc291cmNlIExlYWsgV2FybmluZyB1c2luZyB0ZXJuYXJ5IG9wZXJhdG9yIGluc2lkZSB0
+cnktd2l0aC1yZXNvdXJjZQogICoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKiovCiBwYWNrYWdlIG9yZy5l
+Y2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5hc3Q7CiAKIGltcG9ydCBvcmcuZWNsaXBzZS5q
+ZHQuY29yZS5jb21waWxlci5DaGFyT3BlcmF0aW9uOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5p
+bnRlcm5hbC5jb21waWxlci5BU1RWaXNpdG9yOwpAQCAtMTQwLDEwICsxNDIsMTEgQEAKIAogCQlG
+bG93SW5mbyB0cnlJbmZvID0gZmxvd0luZm8uY29weSgpOwogCQlmb3IgKGludCBpID0gMDsgaSA8
+IHJlc291cmNlc0xlbmd0aDsgaSsrKSB7CiAJCQlmaW5hbCBMb2NhbERlY2xhcmF0aW9uIHJlc291
+cmNlID0gdGhpcy5yZXNvdXJjZXNbaV07CiAJCQl0cnlJbmZvID0gcmVzb3VyY2UuYW5hbHlzZUNv
+ZGUoY3VycmVudFNjb3BlLCBoYW5kbGluZ0NvbnRleHQsIHRyeUluZm8pOworCQkJcmVtb3ZlVHJh
+Y2tpbmdWYXJpYWJsZXMocmVzb3VyY2UuaW5pdGlhbGl6YXRpb24pOyAvLyByZXNvdXJjZXMgY2Fu
+bm90IGxlYWsKIAkJCXRoaXMucG9zdFJlc291cmNlc0luaXRTdGF0ZUluZGV4ZXNbaV0gPSBjdXJy
+ZW50U2NvcGUubWV0aG9kU2NvcGUoKS5yZWNvcmRJbml0aWFsaXphdGlvblN0YXRlcyh0cnlJbmZv
+KTsKIAkJCUxvY2FsVmFyaWFibGVCaW5kaW5nIHJlc291cmNlQmluZGluZyA9IHJlc291cmNlLmJp
+bmRpbmc7CiAJCQlyZXNvdXJjZUJpbmRpbmcudXNlRmxhZyA9IExvY2FsVmFyaWFibGVCaW5kaW5n
+LlVTRUQ7IC8vIElzIGltcGxpY2l0bHkgdXNlZCBhbnl3YXlzLgogCQkJaWYgKHJlc291cmNlQmlu
+ZGluZy5jbG9zZVRyYWNrZXIgIT0gbnVsbCkgewogCQkJCS8vIHRoaXMgd2FzIGZhbHNlIGFsYXJt
+LCB3ZSBkb24ndCBuZWVkIHRvIHRyYWNrIHRoZSByZXNvdXJjZQpAQCAtMzM4LDEwICszNDEsMjQg
+QEAKIAkJCQljdXJyZW50U2NvcGUubWV0aG9kU2NvcGUoKS5yZWNvcmRJbml0aWFsaXphdGlvblN0
+YXRlcyhtZXJnZWRJbmZvKTsKIAkJCXJldHVybiBtZXJnZWRJbmZvOwogCQl9CiAJfQogfQorCitw
+cml2YXRlIHZvaWQgcmVtb3ZlVHJhY2tpbmdWYXJpYWJsZXMoQVNUTm9kZSBleHByZXNzaW9uKSB7
+CisJZXhwcmVzc2lvbi50cmF2ZXJzZShuZXcgQVNUVmlzaXRvcigpIHsKKwkJcHVibGljIGJvb2xl
+YW4gdmlzaXQoQWxsb2NhdGlvbkV4cHJlc3Npb24gYWxsb2NhdGlvbkV4cHJlc3Npb24sIEJsb2Nr
+U2NvcGUgYmxvY2tTY29wZSkgeworCQkJaWYgKGFsbG9jYXRpb25FeHByZXNzaW9uLmNsb3NlVHJh
+Y2tlciAhPSBudWxsKSB7CisJCQkJYmxvY2tTY29wZS5tZXRob2RTY29wZSgpLnJlbW92ZVRyYWNr
+aW5nVmFyKGFsbG9jYXRpb25FeHByZXNzaW9uLmNsb3NlVHJhY2tlcik7CisJCQl9CisJCQlyZXR1
+cm4gdHJ1ZTsKKwkJfQorCQkKKwkJcHVibGljIGJvb2xlYW4gdmlzaXQoTWVzc2FnZVNlbmQgbWVz
+c2FnZVNlbmQsIEJsb2NrU2NvcGUgYmxvY2tTY29wZSkgICAgICAgICAgICAgIHsgcmV0dXJuIGZh
+bHNlOyB9CisJfSwgdGhpcy5zY29wZSk7Cit9CisKIHByaXZhdGUgTWV0aG9kQmluZGluZyBmaW5k
+Q2xvc2VNZXRob2QoZmluYWwgTG9jYWxEZWNsYXJhdGlvbiByZXNvdXJjZSwgTG9jYWxWYXJpYWJs
+ZUJpbmRpbmcgcmVzb3VyY2VCaW5kaW5nKSB7CiAJTWV0aG9kQmluZGluZyBjbG9zZU1ldGhvZCA9
+IG51bGw7CiAJVHlwZUJpbmRpbmcgdHlwZSA9IHJlc291cmNlQmluZGluZy50eXBlOwogCWlmICh0
+eXBlICE9IG51bGwgJiYgdHlwZS5pc1ZhbGlkQmluZGluZygpKSB7CiAJCVJlZmVyZW5jZUJpbmRp
+bmcgYmluZGluZyA9IChSZWZlcmVuY2VCaW5kaW5nKSB0eXBlOw==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,700 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>413460</bug_id>
+          
+          <creation_ts>2013-07-22 11:03:00 -0400</creation_ts>
+          <short_desc>NonNullByDefault is not inherited to Constructors when accessed via Class File</short_desc>
+          <delta_ts>2013-08-29 06:29:05 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard>To be verified for 4.4 M2</status_whiteboard>
+          <keywords>greatbug</keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>4.3.1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Till Brychcy">register.eclipse</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2286900</commentid>
+    <comment_count>0</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-07-22 11:03:20 -0400</bug_when>
+    <thetext>REPRODUCING THE PROBLEM:
+Create a workspace with two java projects. In the Java-Compiler &quot;Errors/Warning&quot; -settings turn on &quot;enabled annotation-based null-analysis&quot;.
+
+Put the following Class into the first project:
+
+import org.eclipse.jdt.annotation.NonNullByDefault;
+
+@NonNullByDefault
+public class Class2 {
+	public Class2(String nonNullArg) {
+		assert nonNullArg != null;
+	}
+
+	public static Class2 create(String nonNullArg) {
+		return new Class2(nonNullArg);
+	}
+}
+
+Now create this class in the other project, configure the build path settings.
+
+public class Class1 {
+	public static Class2 works() {
+		return Class2.create(null);
+	}
+
+	public static Class2 bug() {
+		return new Class2(null);
+	}
+}
+
+Do a clean build.
+
+PROBLEM:
+If you open Class1 in the editors, you will see two warnings, but in the problems view, there will be only one warning for &quot;works&quot;, but no warning in &quot;bug&quot;.
+
+ANALYSIS:
+When compiling for the editor, Class2 is accessed via a SourceTypeBinding, and org.eclipse.jdt.internal.compiler.lookup.MethodBinding.parameterNonNullness is initialized in both cases. The compilation for the &quot;problems view&quot; accesses Class2 as BinaryTypeBinding.
+
+In BinaryTypeBinding, there is code to inherit the nullness-settings in  org.eclipse.jdt.internal.compiler.lookup.BinaryTypeBinding.scanFieldForNullAnnotation(IBinaryField, FieldBinding) and org.eclipse.jdt.internal.compiler.lookup.BinaryTypeBinding.scanTypeForNullDefaultAnnotation(IBinaryType, PackageBinding, BinaryTypeBinding), but not for methods in org.eclipse.jdt.internal.compiler.lookup.BinaryTypeBinding.scanMethodForNullAnnotation(IBinaryMethod, MethodBinding).
+
+It still works for the &quot;Class2#create&quot; invocation from &quot;Class1#works&quot;, because org.eclipse.jdt.internal.compiler.lookup.MethodBinding.parameterNonNullness is initialized in org.eclipse.jdt.internal.compiler.ast.MessageSend.resolveType(BlockScope) with ImplicitNullAnnotationVerifier. The corresponding code in org.eclipse.jdt.internal.compiler.ast.AllocationExpression.resolveType(BlockScope) seems to be missing. Adding it like in the following patch makes the warnings appear in the problems view.
+
+
+diff --git a/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/ast/AllocationExpression.java b/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/ast/AllocationExpression.java
+index 2f4b127..5319d9e 100644
+--- a/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/ast/AllocationExpression.java
++++ b/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/ast/AllocationExpression.java
+@@ -28,6 +28,7 @@
+ import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
+ import org.eclipse.jdt.internal.compiler.codegen.*;
+ import org.eclipse.jdt.internal.compiler.flow.*;
++import org.eclipse.jdt.internal.compiler.impl.CompilerOptions;
+ import org.eclipse.jdt.internal.compiler.impl.Constant;
+ import org.eclipse.jdt.internal.compiler.lookup.*;
+ import org.eclipse.jdt.internal.compiler.problem.ProblemReporter;
+@@ -435,6 +436,11 @@
+ 	if (!isDiamond &amp;&amp; this.resolvedType.isParameterizedTypeWithActualArguments()) {
+  		checkTypeArgumentRedundancy((ParameterizedTypeBinding) this.resolvedType, null, argumentTypes, scope);
+  	}
++	final CompilerOptions compilerOptions = scope.compilerOptions();
++	if (compilerOptions.isAnnotationBasedNullAnalysisEnabled &amp;&amp; (this.binding.tagBits &amp; TagBits.IsNullnessKnown) == 0) {
++		new ImplicitNullAnnotationVerifier(compilerOptions.inheritNullAnnotations)
++				.checkImplicitNullAnnotations(this.binding, null/*srcMethod*/, false, scope);
++	}
+ 	return allocationType;
+ }</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2286915</commentid>
+    <comment_count>1</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-07-22 11:36:19 -0400</bug_when>
+    <thetext>Here is the commit that removed the inheritance code from BinaryTypeBinding:
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=4ac6f89083748b9c4fc37b738ed82ea1a7c9c63b</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2287041</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-07-22 15:46:46 -0400</bug_when>
+    <thetext>Thanks for the report, I can reproduce in HEAD of master.
+
+Thanks also for digging into the implementation. From a quick glance your
+analysis hits the nail on the head! Yep, while moving some logic from
+BinaryTypeBinding.createMethod() to MessageSend.resolveType() I indeed forgot
+about constructors.
+
+This is exactly the kind of bug report we like: small example for reproducing,
+clear description and even a proposed patch that fixes the issue.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2292783</commentid>
+    <comment_count>3</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-08-08 10:44:03 -0400</bug_when>
+    <thetext>This is a regression which we should also backport to 4.3.1.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2294244</commentid>
+    <comment_count>4</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-08-13 09:59:46 -0400</bug_when>
+    <thetext>Stephan, are we still looking at getting this into SR1? Thanks for looking into this.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2294877</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-14 13:30:38 -0400</bug_when>
+    <thetext>Sorry, I was distracted by other business.
+
+Till, I&apos;d like to mark you as the author of the commit-to-be, so that your
+contribution will be given due credit.
+
+To prepare the actual commit I have to ask you a few things, noted below.
+Please let me know to which degree you are willing to meet these requests.
+
+For process sake please:
+
+- complete and submit the Contributor License Agreement, see
+  http://www.eclipse.org/legal/CLA.php
+
+- submit the next version of your patch as an attachment to this bug
+  - before creating the patch, add your name and a reference to this bug to
+    the header comment of each source file touched by you.
+    Please see the existing headers.
+
+- after that, please &quot;sign-off&quot; your patch by a comment in this bug like
+  &quot;This contribution complies with http://www.eclipse.org/legal/CoO.php&quot;
+
+
+Technically I&apos;d like to ask you to
+
+- check whether class QualifiedAllocationExpression needs the same fix.
+
+
+Ideally, the patch should also contain corresponding unit tests. These would
+be added to org.eclipse.jdt.core.tests.compiler.regression.NullAnnotationTest
+from where you may take inspiration how to write such a test.
+Feel free to either ask for some hints on writing the tests or pass this
+part on to me.
+
+
+To get this into Kepler SR1 as requested, we should try to get this ready
+within approx. 10 days.
+
+
+So, Till, do you want to give it a try as outlined above?
+Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295330</commentid>
+    <comment_count>6</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-15 13:45:00 -0400</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; Sorry, I was distracted by other business.
+&gt; 
+&gt; Till, I&apos;d like to mark you as the author of the commit-to-be, so that your
+&gt; contribution will be given due credit.
+&gt; 
+&gt; To prepare the actual commit I have to ask you a few things, noted below.
+&gt; Please let me know to which degree you are willing to meet these requests.
+&gt; 
+&gt; For process sake please:
+&gt; 
+&gt; - complete and submit the Contributor License Agreement, see
+&gt;   http://www.eclipse.org/legal/CLA.php
+&gt; 
+&gt; - submit the next version of your patch as an attachment to this bug
+&gt;   - before creating the patch, add your name and a reference to this bug to
+&gt;     the header comment of each source file touched by you.
+&gt;     Please see the existing headers.
+&gt; 
+&gt; - after that, please &quot;sign-off&quot; your patch by a comment in this bug like
+&gt;   &quot;This contribution complies with http://www.eclipse.org/legal/CoO.php&quot;
+&gt; 
+&gt; 
+&gt; Technically I&apos;d like to ask you to
+&gt; 
+&gt; - check whether class QualifiedAllocationExpression needs the same fix.
+
+I think I can do all of this.
+
+&gt; 
+&gt; 
+&gt; Ideally, the patch should also contain corresponding unit tests. These would
+&gt; be added to org.eclipse.jdt.core.tests.compiler.regression.NullAnnotationTest
+&gt; from where you may take inspiration how to write such a test.
+&gt; Feel free to either ask for some hints on writing the tests or pass this
+&gt; part on to me.
+
+I would be great if you would do that because I couldn&apos;t find an existing multi-project test scenario in there that can be easily adapted.
+
+&gt; 
+&gt; 
+&gt; To get this into Kepler SR1 as requested, we should try to get this ready
+&gt; within approx. 10 days.
+
+Sounds possible
+
+&gt; 
+&gt; 
+&gt; So, Till, do you want to give it a try as outlined above?
+&gt; Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295388</commentid>
+    <comment_count>7</comment_count>
+      <attachid>234469</attachid>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-15 16:16:42 -0400</bug_when>
+    <thetext>Created attachment 234469
+proposed bugfix</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295389</commentid>
+    <comment_count>8</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-15 16:17:55 -0400</bug_when>
+    <thetext>This contribution complies with http://www.eclipse.org/legal/CoO.php</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295392</commentid>
+    <comment_count>9</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-15 16:29:43 -0400</bug_when>
+    <thetext>&gt; - complete and submit the Contributor License Agreement, see
+&gt;   http://www.eclipse.org/legal/CLA.php
+DONE
+
+&gt; 
+&gt; - submit the next version of your patch as an attachment to this bug
+&gt;   - before creating the patch, add your name and a reference to this bug to
+&gt;     the header comment of each source file touched by you.
+&gt;     Please see the existing headers.
+DONE
+
+&gt; 
+&gt; - after that, please &quot;sign-off&quot; your patch by a comment in this bug like
+&gt;   &quot;This contribution complies with http://www.eclipse.org/legal/CoO.php&quot;
+DONE
+
+&gt; 
+&gt; 
+&gt; Technically I&apos;d like to ask you to
+&gt; 
+&gt; - check whether class QualifiedAllocationExpression needs the same fix.
+You were right, it needed the same fix.
+
+&gt; 
+&gt; 
+&gt; Ideally, the patch should also contain corresponding unit tests. These would
+&gt; be added to org.eclipse.jdt.core.tests.compiler.regression.NullAnnotationTest
+&gt; from where you may take inspiration how to write such a test.
+&gt; Feel free to either ask for some hints on writing the tests or pass this
+&gt; part on to me.
+As i wrote in my previous response, I would appreciate if you could do that,
+because i couldn&apos;t find an existing multi-project test example in a reasonable amount of time).
+maybe you can base it on my extended test example:
+import org.eclipse.jdt.annotation.NonNullByDefault;
+
+@NonNullByDefault
+public class Class2 {
+	public class Class3 {
+		public Class3(String nonNullArg) {
+			assert nonNullArg != null;
+		}
+	}
+
+	public Class2(String nonNullArg) {
+		assert nonNullArg != null;
+	}
+
+	public static Class2 create(String nonNullArg) {
+		return new Class2(nonNullArg);
+	}
+}
+
+public class Class1 {
+	public static Class2 works() {
+		return Class2.create(null);
+	}
+
+	public static Class2 bug() {
+		return new Class2(null);
+	}
+
+	public static Class2.Class3 qualifiedbug() {
+		return new Class2(&quot;&quot;).new Class3(null);
+	}
+}
+
+&gt; 
+&gt; 
+&gt; To get this into Kepler SR1 as requested, we should try to get this ready
+&gt; within approx. 10 days.
+DONE except for new unit tests (but i successfully ran the existing tests with RunJDTCoreTests)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295401</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-15 16:50:16 -0400</bug_when>
+    <thetext>Thanks, Till!
+
+I will take this forward from here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295874</commentid>
+    <comment_count>11</comment_count>
+    <who name="Till Brychcy">register.eclipse</who>
+    <bug_when>2013-08-16 19:25:25 -0400</bug_when>
+    <thetext>Stephan, 
+
+I have found another problem related to the inheritance of NonNullByDefault and have prepared a proposed fix in bug 415269. Maybe you want to consider that for the Kepler SR1, too.
+
+Anyway, thank you for your great work.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295908</commentid>
+    <comment_count>12</comment_count>
+      <attachid>234507</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-17 04:53:38 -0400</bug_when>
+    <thetext>Created attachment 234507
+regression test
+
+Here&apos;s a test that fails without the fix from this bug and passes after
+applying attachment 234469</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2295910</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-17 05:15:12 -0400</bug_when>
+    <thetext>I noticed a slight difference between how the fix is applied to both classes.
+The difference does no harm for now, it is obviously motivated by existing
+differences between both classes. 
+I raised bug 415275 for cleanup to improve maintainability for the future.
+Till, maybe you want to comment in that bug about the difference how you
+integrated the fix into both classes?
+
+The patch looks good to me. 
+Dani, Jay, may I count your previous comments as the required +1 for release 
+to R4_3_mainteance?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2296038</commentid>
+    <comment_count>14</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-08-19 00:15:36 -0400</bug_when>
+    <thetext>(In reply to comment #13)
+&gt; The patch looks good to me. 
+&gt; Dani, Jay, may I count your previous comments as the required +1 for release 
+&gt; to R4_3_mainteance?
+
+Sure.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2296096</commentid>
+    <comment_count>15</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-08-19 04:35:01 -0400</bug_when>
+    <thetext>(In reply to comment #13)
+&gt; I noticed a slight difference between how the fix is applied to both classes.
+&gt; The difference does no harm for now, it is obviously motivated by existing
+&gt; differences between both classes. 
+&gt; I raised bug 415275 for cleanup to improve maintainability for the future.
+&gt; Till, maybe you want to comment in that bug about the difference how you
+&gt; integrated the fix into both classes?
+&gt; 
+&gt; The patch looks good to me. 
+
+In that case, please set the review+ flag.
+
+&gt; Dani, Jay, may I count your previous comments as the required +1 for release 
+&gt; to R4_3_mainteance?
+
+Yes.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2296214</commentid>
+    <comment_count>16</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-19 09:06:33 -0400</bug_when>
+    <thetext>Released for 4.3.1 via 
+  commit 71fa684d4e8a76828182f4efcbe41eab655d0299 (test)
+  commit c005efbda8be0db83712eb14294777155c3ab919 (fix)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297130</commentid>
+    <comment_count>17</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-08-21 01:48:30 -0400</bug_when>
+    <thetext>Stephan, this needs to be released for Luna as well, right? I am removing the whiteboard content as the target already points to 4.3.1. But when we decide to release it in master, we need to set the whiteboard content appropriately.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297143</commentid>
+    <comment_count>18</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-08-21 03:31:46 -0400</bug_when>
+    <thetext>(In reply to comment #17)
+&gt; But when we
+&gt; decide to release it in master, we need to set the whiteboard content
+&gt; appropriately.
+
+NOTE: The normal process is
+1. commit to &apos;master&apos;
+2. wait that it works (at least one good build without test failures)
+3. backport</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297207</commentid>
+    <comment_count>19</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-21 07:08:37 -0400</bug_when>
+    <thetext>I&apos;m aware I didn&apos;t follow the normal process, but considering the tight schedule for
+the next SR1 candidate and given release for 4.3.1 has been approved I did this first.
+
+As I didn&apos;t have the time to run all tests against Luna immediately after, I
+- changed the target to 4.4 M2
+- added the whiteboard note &quot;to be verified for 4.3.1&quot;
+
+Next I was going to ask Dani why he reverted these two changes :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297210</commentid>
+    <comment_count>20</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-08-21 07:12:50 -0400</bug_when>
+    <thetext>(In reply to comment #19)
+&gt; I&apos;m aware I didn&apos;t follow the normal process, but considering the tight
+&gt; schedule for
+&gt; the next SR1 candidate and given release for 4.3.1 has been approved I did
+&gt; this first.
+&gt; 
+&gt; As I didn&apos;t have the time to run all tests against Luna immediately after, I
+&gt; - changed the target to 4.4 M2
+&gt; - added the whiteboard note &quot;to be verified for 4.3.1&quot;
+&gt; 
+&gt; Next I was going to ask Dani why he reverted these two changes :)
+
+The target milestone reflects the oldest build where the fix is present - unless you want to have a bug report for each release where you backport.
+
+I see the time pressure in this case and assume you did run the tests against 4.3.1 before committing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297226</commentid>
+    <comment_count>21</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-21 07:55:01 -0400</bug_when>
+    <thetext>(In reply to comment #20)
+&gt; The target milestone reflects the oldest build where the fix is present -
+&gt; unless you want to have a bug report for each release where you backport.
+
+Thanks. So, when I release to Luna I will set resolved and set the whiteboard flag
+&quot;to be verified for 4.4 M2&quot;?
+ 
+&gt; I see the time pressure in this case and assume you did run the tests
+&gt; against 4.3.1 before committing.
+
+Yes, I did.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297239</commentid>
+    <comment_count>22</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-08-21 08:11:30 -0400</bug_when>
+    <thetext>(In reply to comment #21)
+&gt; Thanks. So, when I release to Luna I will set resolved and set the
+&gt; whiteboard flag
+&gt; &quot;to be verified for 4.4 M2&quot;?
+
+Yes.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297570</commentid>
+    <comment_count>23</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-21 15:42:06 -0400</bug_when>
+    <thetext>Released for 4.4 M2
+  commit f5be514287a14c34eaf46764a8f15d56d8087272 (test)
+  commit e2e97eb1ed318448b72d60aca6f0daa8c5b48408 (fix)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2300447</commentid>
+    <comment_count>24</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-08-29 05:35:34 -0400</bug_when>
+    <thetext>Verified for 4.3.1 with build M20130828-0800</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>234469</attachid>
+            <date>2013-08-15 16:16:00 -0400</date>
+            <delta_ts>2013-08-19 05:57:58 -0400</delta_ts>
+            <desc>proposed bugfix</desc>
+            <filename>413460.patch</filename>
+            <type>text/plain</type>
+            <size>4873</size>
+            <attacher name="Till Brychcy">register.eclipse</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9hc3QvQWxsb2NhdGlvbkV4cHJlc3Npb24uamF2YSBiL29yZy5l
+Y2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxl
+ci9hc3QvQWxsb2NhdGlvbkV4cHJlc3Npb24uamF2YQppbmRleCAyZjRiMTI3Li45NmRiMDdlIDEw
+MDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQv
+aW50ZXJuYWwvY29tcGlsZXIvYXN0L0FsbG9jYXRpb25FeHByZXNzaW9uLmphdmEKKysrIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2FzdC9BbGxvY2F0aW9uRXhwcmVzc2lvbi5qYXZhCkBAIC0yMCw2ICsyMCw4IEBACiAgKgkJ
+CQkJCQlidWcgNDAzMTQ3IC0gW2NvbXBpbGVyXVtudWxsXSBGVVAgb2YgYnVnIDQwMDc2MTogY29u
+c29saWRhdGUgaW50ZXJhY3Rpb24gYmV0d2VlbiB1bmJveGluZywgTlBFLCBhbmQgZGVmZXJyZWQg
+Y2hlY2tpbmcKICAqICAgICBKZXNwZXIgUyBNb2xsZXIgPGplc3BlckBzZWxza2FiZXQub3JnPiAt
+IENvbnRyaWJ1dGlvbnMgZm9yCiAgKgkJCQkJCQlidWcgMzc4Njc0IC0gIlRoZSBtZXRob2QgY2Fu
+IGJlIGRlY2xhcmVkIGFzIHN0YXRpYyIgaXMgd3JvbmcKKyAqICAgICBUaWxsIEJyeWNoY3kgLSBD
+b250cmlidXRpb25zIGZvcgorICogICAgIAkJCQkJCWJ1ZyA0MTM0NjAgLSBOb25OdWxsQnlEZWZh
+dWx0IGlzIG5vdCBpbmhlcml0ZWQgdG8gQ29uc3RydWN0b3JzIHdoZW4gYWNjZXNzZWQgdmlhIENs
+YXNzIEZpbGUKICAqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqLwogcGFja2FnZSBvcmcuZWNsaXBzZS5q
+ZHQuaW50ZXJuYWwuY29tcGlsZXIuYXN0OwogCkBAIC0yOCw2ICszMCw3IEBACiBpbXBvcnQgb3Jn
+LmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmNsYXNzZm10LkNsYXNzRmlsZUNvbnN0YW50
+czsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuY29kZWdlbi4qOwog
+aW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5mbG93Lio7CitpbXBvcnQg
+b3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmltcGwuQ29tcGlsZXJPcHRpb25zOwog
+aW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5pbXBsLkNvbnN0YW50Owog
+aW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuKjsKIGltcG9y
+dCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIucHJvYmxlbS5Qcm9ibGVtUmVwb3J0
+ZXI7CkBAIC00MzUsNiArNDM4LDExIEBACiAJaWYgKCFpc0RpYW1vbmQgJiYgdGhpcy5yZXNvbHZl
+ZFR5cGUuaXNQYXJhbWV0ZXJpemVkVHlwZVdpdGhBY3R1YWxBcmd1bWVudHMoKSkgewogIAkJY2hl
+Y2tUeXBlQXJndW1lbnRSZWR1bmRhbmN5KChQYXJhbWV0ZXJpemVkVHlwZUJpbmRpbmcpIHRoaXMu
+cmVzb2x2ZWRUeXBlLCBudWxsLCBhcmd1bWVudFR5cGVzLCBzY29wZSk7CiAgCX0KKwlmaW5hbCBD
+b21waWxlck9wdGlvbnMgY29tcGlsZXJPcHRpb25zID0gc2NvcGUuY29tcGlsZXJPcHRpb25zKCk7
+CisJaWYgKGNvbXBpbGVyT3B0aW9ucy5pc0Fubm90YXRpb25CYXNlZE51bGxBbmFseXNpc0VuYWJs
+ZWQgJiYgKHRoaXMuYmluZGluZy50YWdCaXRzICYgVGFnQml0cy5Jc051bGxuZXNzS25vd24pID09
+IDApIHsKKwkJbmV3IEltcGxpY2l0TnVsbEFubm90YXRpb25WZXJpZmllcihjb21waWxlck9wdGlv
+bnMuaW5oZXJpdE51bGxBbm5vdGF0aW9ucykKKwkJCQkuY2hlY2tJbXBsaWNpdE51bGxBbm5vdGF0
+aW9ucyh0aGlzLmJpbmRpbmcsIG51bGwvKnNyY01ldGhvZCovLCBmYWxzZSwgc2NvcGUpOworCX0K
+IAlyZXR1cm4gYWxsb2NhdGlvblR5cGU7CiB9CiAKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvUXVh
+bGlmaWVkQWxsb2NhdGlvbkV4cHJlc3Npb24uamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2Nv
+bXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvUXVhbGlmaWVkQWxs
+b2NhdGlvbkV4cHJlc3Npb24uamF2YQppbmRleCAwZjExN2JmLi5lMzUxYjdkIDEwMDY0NAotLS0g
+YS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwv
+Y29tcGlsZXIvYXN0L1F1YWxpZmllZEFsbG9jYXRpb25FeHByZXNzaW9uLmphdmEKKysrIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2FzdC9RdWFsaWZpZWRBbGxvY2F0aW9uRXhwcmVzc2lvbi5qYXZhCkBAIC0xOSw2ICsxOSw4
+IEBACiAgKgkJCQkJCQkJYnVnIDQwMzE0NyAtIFtjb21waWxlcl1bbnVsbF0gRlVQIG9mIGJ1ZyA0
+MDA3NjE6IGNvbnNvbGlkYXRlIGludGVyYWN0aW9uIGJldHdlZW4gdW5ib3hpbmcsIE5QRSwgYW5k
+IGRlZmVycmVkIGNoZWNraW5nCiAgKiAgICAgSmVzcGVyIFMgTW9sbGVyIDxqZXNwZXJAc2Vsc2th
+YmV0Lm9yZz4gLSBDb250cmlidXRpb25zIGZvcgogICoJCQkJCQkJCWJ1ZyAzNzg2NzQgLSAiVGhl
+IG1ldGhvZCBjYW4gYmUgZGVjbGFyZWQgYXMgc3RhdGljIiBpcyB3cm9uZworICogICAgIFRpbGwg
+QnJ5Y2hjeSAtIENvbnRyaWJ1dGlvbnMgZm9yCisgKiAgICAgCQkJCQkJCWJ1ZyA0MTM0NjAgLSBO
+b25OdWxsQnlEZWZhdWx0IGlzIG5vdCBpbmhlcml0ZWQgdG8gQ29uc3RydWN0b3JzIHdoZW4gYWNj
+ZXNzZWQgdmlhIENsYXNzIEZpbGUKICAqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKiovCiBwYWNrYWdlIG9y
+Zy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5hc3Q7CiAKQEAgLTI4LDEwICszMCwxMiBA
+QAogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5jb2RlZ2VuLk9wY29k
+ZXM7CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmZsb3cuRmxvd0Nv
+bnRleHQ7CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmZsb3cuRmxv
+d0luZm87CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmltcGwuQ29t
+cGlsZXJPcHRpb25zOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5p
+bXBsLkNvbnN0YW50OwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5s
+b29rdXAuQmluZGluZzsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIu
+bG9va3VwLkJsb2NrU2NvcGU7CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBp
+bGVyLmxvb2t1cC5FeHRyYUNvbXBpbGVyTW9kaWZpZXJzOworaW1wb3J0IG9yZy5lY2xpcHNlLmpk
+dC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuSW1wbGljaXROdWxsQW5ub3RhdGlvblZlcmlmaWVy
+OwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuTG9jYWxU
+eXBlQmluZGluZzsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9v
+a3VwLk1ldGhvZEJpbmRpbmc7CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBp
+bGVyLmxvb2t1cC5QYXJhbWV0ZXJpemVkVHlwZUJpbmRpbmc7CkBAIC0yNjQsNyArMjY4LDE4IEBA
+CiAJCWlmICh0aGlzLmFub255bW91c1R5cGUgPT0gbnVsbCAmJiB0aGlzLmVuY2xvc2luZ0luc3Rh
+bmNlID09IG51bGwpIHsKIAkJCXJldHVybiBzdXBlci5yZXNvbHZlVHlwZShzY29wZSk7CiAJCX0K
+LQorCQlUeXBlQmluZGluZyByZXN1bHQ9cmVzb2x2ZVR5cGVGb3JRdWFsaWZpZWRBbGxvY2F0aW9u
+RXhwcmVzc2lvbihzY29wZSk7CisJCWlmKHJlc3VsdCAhPSBudWxsKSB7CisJCQlmaW5hbCBDb21w
+aWxlck9wdGlvbnMgY29tcGlsZXJPcHRpb25zID0gc2NvcGUuY29tcGlsZXJPcHRpb25zKCk7CisJ
+CQlpZiAoY29tcGlsZXJPcHRpb25zLmlzQW5ub3RhdGlvbkJhc2VkTnVsbEFuYWx5c2lzRW5hYmxl
+ZCAmJiAodGhpcy5iaW5kaW5nLnRhZ0JpdHMgJiBUYWdCaXRzLklzTnVsbG5lc3NLbm93bikgPT0g
+MCkgeworCQkJCW5ldyBJbXBsaWNpdE51bGxBbm5vdGF0aW9uVmVyaWZpZXIoY29tcGlsZXJPcHRp
+b25zLmluaGVyaXROdWxsQW5ub3RhdGlvbnMpCisJCQkJCQkuY2hlY2tJbXBsaWNpdE51bGxBbm5v
+dGF0aW9ucyh0aGlzLmJpbmRpbmcsIG51bGwvKnNyY01ldGhvZCovLCBmYWxzZSwgc2NvcGUpOwor
+CQkJfQorCQl9CisJCXJldHVybiByZXN1bHQ7CisJfQorCQorCXByaXZhdGUgVHlwZUJpbmRpbmcg
+cmVzb2x2ZVR5cGVGb3JRdWFsaWZpZWRBbGxvY2F0aW9uRXhwcmVzc2lvbihCbG9ja1Njb3BlIHNj
+b3BlKSB7CiAJCS8vIFByb3BhZ2F0ZSB0aGUgdHlwZSBjaGVja2luZyB0byB0aGUgYXJndW1lbnRz
+LCBhbmQgY2hlY2tzIGlmIHRoZSBjb25zdHJ1Y3RvciBpcyBkZWZpbmVkLgogCQkvLyBDbGFzc0lu
+c3RhbmNlQ3JlYXRpb25FeHByZXNzaW9uIDo6PSBQcmltYXJ5ICcuJyAnbmV3JyBTaW1wbGVOYW1l
+ICcoJyBBcmd1bWVudExpc3RvcHQgJyknIENsYXNzQm9keW9wdAogCQkvLyBDbGFzc0luc3RhbmNl
+Q3JlYXRpb25FeHByZXNzaW9uIDo6PSBOYW1lICcuJyAnbmV3JyBTaW1wbGVOYW1lICcoJyBBcmd1
+bWVudExpc3RvcHQgJyknIENsYXNzQm9keW9wdA==
+</data>
+<flag name="review"
+          id="59075"
+          type_id="6"
+          status="+"
+          setter="stephan.herrmann"
+    />
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>234507</attachid>
+            <date>2013-08-17 04:53:00 -0400</date>
+            <delta_ts>2013-08-17 04:53:38 -0400</delta_ts>
+            <desc>regression test</desc>
+            <filename>Bug-413460--test.patch</filename>
+            <type>text/plain</type>
+            <size>2338</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZS50
+ZXN0cy5jb21waWxlcgpkaWZmIC0tZ2l0IHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9j
+b21waWxlci9yZWdyZXNzaW9uL051bGxBbm5vdGF0aW9uVGVzdC5qYXZhIHNyYy9vcmcvZWNsaXBz
+ZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxBbm5vdGF0aW9uVGVzdC5q
+YXZhCmluZGV4IGQwZjAyMGMuLjg5MDcxMWYgMTAwNjQ0Ci0tLSBzcmMvb3JnL2VjbGlwc2UvamR0
+L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsQW5ub3RhdGlvblRlc3QuamF2YQor
+Kysgc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVs
+bEFubm90YXRpb25UZXN0LmphdmEKQEAgLTYyMjksNCArNjIyOSw2NCBAQAogCQlvcHRpb25zLAog
+CQkiIik7CQogfQorCitwdWJsaWMgdm9pZCB0ZXN0QnVnNDEzNDYwKCkgeworCXJ1bkNvbmZvcm1U
+ZXN0V2l0aExpYnMoCisJCW5ldyBTdHJpbmdbXSB7CisJCQkiQ2xhc3MyLmphdmEiLAorCQkJIlxu
+IiArIAorCQkJIkBvcmcuZWNsaXBzZS5qZHQuYW5ub3RhdGlvbi5Ob25OdWxsQnlEZWZhdWx0XG4i
+ICsgCisJCQkicHVibGljIGNsYXNzIENsYXNzMiB7XG4iICsgCisJCQkiCXB1YmxpYyBjbGFzcyBD
+bGFzczMge1xuIiArIAorCQkJIgkJcHVibGljIENsYXNzMyhTdHJpbmcgbm9uTnVsbEFyZykge1xu
+IiArIAorCQkJIgkJCWFzc2VydCBub25OdWxsQXJnICE9IG51bGw7XG4iICsgCisJCQkiCQl9XG4i
+ICsgCisJCQkiCX1cbiIgKyAKKwkJCSJcbiIgKyAKKwkJCSIJcHVibGljIENsYXNzMihTdHJpbmcg
+bm9uTnVsbEFyZykge1xuIiArIAorCQkJIgkJYXNzZXJ0IG5vbk51bGxBcmcgIT0gbnVsbDtcbiIg
+KyAKKwkJCSIJfVxuIiArIAorCQkJIlxuIiArIAorCQkJIglwdWJsaWMgc3RhdGljIENsYXNzMiBj
+cmVhdGUoU3RyaW5nIG5vbk51bGxBcmcpIHtcbiIgKyAKKwkJCSIJCXJldHVybiBuZXcgQ2xhc3My
+KG5vbk51bGxBcmcpO1xuIiArIAorCQkJIgl9XG4iICsgCisJCQkifVxuIgorCQl9LCAKKwkJZ2V0
+Q29tcGlsZXJPcHRpb25zKCksIAorCQkiIik7CisJcnVuTmVnYXRpdmVUZXN0V2l0aExpYnMoZmFs
+c2UsCisJCW5ldyBTdHJpbmdbXSB7CisJCQkiQ2xhc3MxLmphdmEiLAorCQkJInB1YmxpYyBjbGFz
+cyBDbGFzczEge1xuIiArIAorCQkJIglwdWJsaWMgc3RhdGljIENsYXNzMiB3b3JrcygpIHtcbiIg
+KyAKKwkJCSIJCXJldHVybiBDbGFzczIuY3JlYXRlKG51bGwpO1xuIiArIAorCQkJIgl9XG4iICsg
+CisJCQkiXG4iICsgCisJCQkiCXB1YmxpYyBzdGF0aWMgQ2xhc3MyIGJ1ZygpIHtcbiIgKyAKKwkJ
+CSIJCXJldHVybiBuZXcgQ2xhc3MyKG51bGwpO1xuIiArIAorCQkJIgl9XG4iICsgCisJCQkiXG4i
+ICsgCisJCQkiCXB1YmxpYyBzdGF0aWMgQ2xhc3MyLkNsYXNzMyBxdWFsaWZpZWRidWcoKSB7XG4i
+ICsgCisJCQkiCQlyZXR1cm4gbmV3IENsYXNzMihcIlwiKS5uZXcgQ2xhc3MzKG51bGwpO1xuIiAr
+IAorCQkJIgl9XG4iICsgCisJCQkifVxuIgorCQl9LAorCQlnZXRDb21waWxlck9wdGlvbnMoKSwK
+KwkJIi0tLS0tLS0tLS1cbiIgKworCQkiMS4gRVJST1IgaW4gQ2xhc3MxLmphdmEgKGF0IGxpbmUg
+MylcbiIgKyAKKwkJIglyZXR1cm4gQ2xhc3MyLmNyZWF0ZShudWxsKTtcbiIgKyAKKwkJIgkgICAg
+ICAgICAgICAgICAgICAgICBeXl5eXG4iICsgCisJCSJOdWxsIHR5cGUgbWlzbWF0Y2g6IHJlcXVp
+cmVkIFwnQE5vbk51bGwgU3RyaW5nXCcgYnV0IHRoZSBwcm92aWRlZCB2YWx1ZSBpcyBudWxsXG4i
+ICsgCisJCSItLS0tLS0tLS0tXG4iICsKKwkJIjIuIEVSUk9SIGluIENsYXNzMS5qYXZhIChhdCBs
+aW5lIDcpXG4iICsgCisJCSIJcmV0dXJuIG5ldyBDbGFzczIobnVsbCk7XG4iICsgCisJCSIJICAg
+ICAgICAgICAgICAgICAgXl5eXlxuIiArIAorCQkiTnVsbCB0eXBlIG1pc21hdGNoOiByZXF1aXJl
+ZCBcJ0BOb25OdWxsIFN0cmluZ1wnIGJ1dCB0aGUgcHJvdmlkZWQgdmFsdWUgaXMgbnVsbFxuIiAr
+IAorCQkiLS0tLS0tLS0tLVxuIiArCisJCSIzLiBFUlJPUiBpbiBDbGFzczEuamF2YSAoYXQgbGlu
+ZSAxMSlcbiIgKyAKKwkJIglyZXR1cm4gbmV3IENsYXNzMihcIlwiKS5uZXcgQ2xhc3MzKG51bGwp
+O1xuIiArIAorCQkiCSAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIF5eXl5cbiIgKyAK
+KwkJIk51bGwgdHlwZSBtaXNtYXRjaDogcmVxdWlyZWQgXCdATm9uTnVsbCBTdHJpbmdcJyBidXQg
+dGhlIHByb3ZpZGVkIHZhbHVlIGlzIG51bGxcbiIgKyAKKwkJIi0tLS0tLS0tLS1cbiIpOworfQog
+fQ==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>428857</bug_id>
+          
+          <creation_ts>2014-02-23 20:10:00 -0500</creation_ts>
+          <short_desc>[1.8] Method reference to instance method of generic class incorrectly gives raw type warning</short_desc>
+          <delta_ts>2014-03-07 05:52:08 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Kirk Loretz">kirk_loretz</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>manpalat</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2367351</commentid>
+    <comment_count>0</comment_count>
+    <who name="Kirk Loretz">kirk_loretz</who>
+    <bug_when>2014-02-23 20:10:35 -0500</bug_when>
+    <thetext>Eclipse Java Development Tools Patch for Java 8 Support (BETA) 1.0.0.v20140223-2022
+JDK 8 b129 64-bit
+
+----------
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.function.Function;
+
+public class Raw {
+    public static void main (String[] args) {
+        Function&lt;List&lt;String&gt;, String&gt; func = List::toString;
+        
+        System.out.println(func.apply(Arrays.asList(&quot;a&quot;, &quot;b&quot;)));
+    }
+}
+
+----------
+
+Eclipse warns about the raw type List in List::toString with the warning: &quot;List is a raw type. References to generic type List&lt;E&gt; should be parameterized.&quot; As far as I can tell -- compiling with -Xlint:rawtypes -- javac accepts this without a warning.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367354</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-23 20:30:59 -0500</bug_when>
+    <thetext>Thanks, Reproduced. Will take a look.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367356</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-23 20:38:33 -0500</bug_when>
+    <thetext>Taking a quick look at the implementation, I believe this is the correct behavior.
+Raw type warnings should not be emitted only for constructor references i.e
+they should be treated as though &lt;&gt; was specified.
+
+I&apos;ll confirm later in the day.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367357</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-23 20:43:07 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #2)
+&gt; Taking a quick look at the implementation, I believe this is the correct
+&gt; behavior.
+&gt; Raw type warnings should not be emitted only for constructor references i.e
+&gt; they should be treated as though &lt;&gt; was specified.
+&gt; 
+&gt; I&apos;ll confirm later in the day.
+
+Nope, though I am pretty sure, this was the state of affairs at some point
+in the spec&apos;s evolution.
+
+I see now:
+
+&quot;If a method or constructor is generic, the appropriate type arguments may 
+either be inferred or provided explicitly. Similarly, the type arguments of a 
+generic type mentioned by the method reference may be provided explicitly or inferred&quot;
+
+I&apos;ll work on a fix.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2367947</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-24 22:56:30 -0500</bug_when>
+    <thetext>While compiling the JRE in Nodes.java:
+
+@SuppressWarnings(&quot;serial&quot;)
+        private static final class OfRef&lt;P_IN, P_OUT&gt;
+                extends CollectorTask&lt;P_IN, P_OUT, Node&lt;P_OUT&gt;, Node.Builder&lt;P_OUT&gt;&gt; {
+            OfRef(PipelineHelper&lt;P_OUT&gt; helper,
+                  IntFunction&lt;P_OUT[]&gt; generator,
+                  Spliterator&lt;P_IN&gt; spliterator) {
+                super(helper, spliterator, s -&gt; builder(s, generator), ConcNode::new);
+            }
+        }
+
+
+I get a type safety warning:
+
+Type safety: The constructor Nodes.ConcNode(Node, Node) belongs to the raw type Nodes.ConcNode. References to generic type Nodes.ConcNode&lt;T&gt; should be parameterized
+
+This also looks suspicious.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2370195</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-03-02 06:04:29 -0500</bug_when>
+    <thetext>Fix and tests released here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=6f17c126ff89ea2e3c03f832be8ed25d26113551
+
+Thanks Kirk.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372926</commentid>
+    <comment_count>6</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-03-07 05:52:08 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC2 using Kepler SR2 + Eclipse Java Development Tools Patch for Java 8 Support (BETA)1.0.0.v20140306-1935</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

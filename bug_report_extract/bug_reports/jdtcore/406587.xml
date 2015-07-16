@@ -1,0 +1,533 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>406587</bug_id>
+          
+          <creation_ts>2013-04-25 12:46:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler] Missing expected error for incorrect placement of type annotation</short_desc>
+          <delta_ts>2013-07-01 06:43:42 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andrew Clement">aclement</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>markus_keller</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="58652"
+          type_id="1"
+          status="+"
+          setter="srikanth_sankaran"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2248578</commentid>
+    <comment_count>0</comment_count>
+    <who name="Andrew Clement">aclement</who>
+    <bug_when>2013-04-25 12:46:39 -0400</bug_when>
+    <thetext>Can&apos;t see an existing bug for this (apologies if there is one!). This came up whilst working on JSR308 code generation.
+
+For this code:
+====
+import java.lang.annotation.*;
+
+@Target(ElementType.TYPE_USE)
+@Retention(RetentionPolicy.CLASS)
+@interface B {
+    int value() default -1;
+}
+
+class X {
+  @B(1) java.lang.String field;
+}
+====
+
+javac flags that &apos;nested type cannot be annotated&apos;.  ECJ just lets it compile.  IIRC as of the current spec version it should be written &apos;java.lang.@B(1) String field&apos; for a type_use annotation that is intended to apply to the String reference.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2248586</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-04-25 13:06:04 -0400</bug_when>
+    <thetext>(In reply to comment #0)
+&gt; Can&apos;t see an existing bug for this (apologies if there is one!). This came
+&gt; up whilst working on JSR308 code generation.
+
+
+Thanks for the report. Jay, please take a look.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2248885</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-04-26 06:00:34 -0400</bug_when>
+    <thetext>This is something of a strange problem. It was at the suggestion from
+Eclipse JDT/UI team that the spec was adjusted to forbid annotations
+prefixed to package.
+
+But where a SE8 annotation occurs in a SE5 location, I am not sure
+such a transfer of annotations as can be inferred from this test case
+is warranted/required by the spec.
+
+It would seem even when transferred, the annotation should be transferred
+to the &quot;type&quot; of the field which is String.
+
+What about the case where we have
+
+@TypeAnnot OuterType.InnerType field ? 
+
+I am not sure I saw anything in the way of transfer behavior that would
+spell out whether @TypeAnnot annotates OuterType or InnerType. Intuitively
+I feel it should annotate InnerType.
+
+I do recall a passage of hybrid annotations and how they must show up
+twice in the AST at appropriate places.
+
+Jay, please read through the latest draft carefully and then we can discuss.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2248955</commentid>
+    <comment_count>3</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-04-26 08:45:33 -0400</bug_when>
+    <thetext>&gt;  @B(1) java.lang.String field;
+
+According to the latest spec, that&apos;s wrong and should instead be:
+
+   java.lang.@B(1) String field;
+
+2.1-&gt;1. says: &quot;A type annotation appears before the types simple name, as in @NonNull String or java.lang.@NonNull String&quot;.
+
+See also 2.2.2 &quot;Syntax of annotations on qualified types&quot;.
+
+
+The mails on [type-annos-observers] with subjects containing &quot;Constraining type annotations to occur just before type&quot; also deal with this issue. The @B(1) in front of the package reference would be legal if the @Target also contained FIELD. But in that case, the compiler would only consider it as an SE 7 annotation on the field, and it would *not* consider it as type-use annotation.
+
+OTOH,
+   java.lang.@B(1) String field;
+is only a type-use annotation, and not an SE 7 annotation (even if @Target includes FIELD).
+
+Only
+   @B(1) String field;
+with @Target({FIELD, TYPE_USE}) means we have to write SE 7 annotations as well as type-use annotations into the classfile.
+
+And
+   @B(1) String[] field;
+with @Target({FIELD, TYPE_USE}) is the absurd case where we have an SE 7 annotation on the field and a type-use annotation on String (not on String[]!).
+
+The type-use annotation on String[] would be:
+   String @B(1)[] field;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2250223</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-04-30 02:42:33 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; &gt;  @B(1) java.lang.String field;
+&gt; 
+&gt; According to the latest spec, that&apos;s wrong and should instead be:
+&gt; 
+&gt;    java.lang.@B(1) String field;
+&gt; 
+&gt; 2.1-&gt;1. says: &quot;A type annotation appears before the types simple name, as
+&gt; in @NonNull String or java.lang.@NonNull String&quot;.
+
+Yes, I need to read it closely. ECJ behavior could indeed be wrong.
+I have tended to view a type annotation as one that occurs in a SE8
+specific location as opposed to one with a SE8 specific target type.
+
+It is likely the latter is the right definition.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2274846</commentid>
+    <comment_count>5</comment_count>
+      <attachid>232586</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-06-20 06:14:45 -0400</bug_when>
+    <thetext>Created attachment 232586
+Patch under test
+
+Patch with test. One of the existing test had to be modified too. I will update once the tests complete.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2274903</commentid>
+    <comment_count>6</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-06-20 08:44:18 -0400</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; Created attachment 232586 [details]
+&gt; Patch under test
+&gt; 
+&gt; Patch with test. One of the existing test had to be modified too. I will
+&gt; update once the tests complete.
+
+All tests pass with b92.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2276652</commentid>
+    <comment_count>7</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-06-25 04:07:07 -0400</bug_when>
+    <thetext>The previous patch doesn&apos;t handle local variables. Thanks Srikanth for pointing out. Along same lines, should we fix the method parameters too, like the following code:
+
+	@B(1) java.lang.String foo(@B(1)  java.lang.String str1) { ...
+}
+
+@Target({ElementType.TYPE_USE})
+@interface B {
+	int value() default -1;
+}
+
+Should we report that @B is not allowed in both the places?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2276662</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-06-25 04:39:07 -0400</bug_when>
+    <thetext>(In reply to comment #7)
+
+&gt; Should we report that @B is not allowed in both the places?
+
+yes, please.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2277242</commentid>
+    <comment_count>9</comment_count>
+      <attachid>232774</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-06-26 04:32:11 -0400</bug_when>
+    <thetext>Created attachment 232774
+Updated patch
+
+New patch covering other places such as local variables and methods as well. A note about the patch: The new code seems to be doing a lot to find whether a type field/local declaration has package qualifier. I couldn&apos;t find more efficient way to do it inside Annotation#resolveType. Actually, we do something similar in QualifiedTypeReference#rejectAnnotationsOnPackageQualifiers(), but the problem is, the annotation is not fully resolved at this point - for e.g. Annotation#recipient is not yet assigned.
+
+Srikanth, what do you think?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2279270</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-07-01 04:45:46 -0400</bug_when>
+    <thetext>(In reply to comment #9)
+
+&gt; a type field/local declaration has package qualifier. I couldn&apos;t find more
+&gt; efficient way to do it inside Annotation#resolveType. Actually, we do
+
+(1) MethodBinding.returnType.getPackage.compoundName
+FieldBinding.type.getPackage.compoundName etc may be of help.
+
+
+(2) In Annotation#resolveType, case Binding.METHOD, there is a suspicious
+clearing of methodBinding.returnType = null;
+
+(3) I got a CCE while testing the following code: 
+
+// --
+import java.lang.annotation.*;
+import java.util.List;
+
+class X {
+	public static void main(String[] args) {
+		 List l = (@Marker java.util.@Marker List) null;
+	}
+	
+	@Marker java.util.String foo() {
+		return null;
+	}
+	
+	void goo() {
+		int x = foo();
+	}
+}
+
+@java.lang.annotation.Target(ElementType.TYPE_USE)
+@interface Marker {
+	
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2279306</commentid>
+    <comment_count>11</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-07-01 06:36:38 -0400</bug_when>
+    <thetext>(In reply to comment #10)
+
+&gt; (1) MethodBinding.returnType.getPackage.compoundName
+&gt; FieldBinding.type.getPackage.compoundName etc may be of help.
+
+ This didn&apos;t help because, either type binding is null at this point or it&apos;s resolved and always has the package regardless how the field etc. is declared.
+
+&gt; 
+&gt; (2) In Annotation#resolveType, case Binding.METHOD, there is a suspicious
+&gt; clearing of methodBinding.returnType = null;
+&gt; 
+&gt; (3) I got a CCE while testing the following code: 
+
+These two have been addressed the fix has been released via commit:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=bfe1e5f410410e285c8a77b5130cabdbc82cde90</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2279307</commentid>
+    <comment_count>12</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-07-01 06:43:42 -0400</bug_when>
+    <thetext>Review comments raised are already addressed. Thanks</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>232586</attachid>
+            <date>2013-06-20 06:14:00 -0400</date>
+            <delta_ts>2013-06-26 04:32:11 -0400</delta_ts>
+            <desc>Patch under test</desc>
+            <filename>Fix-for-Bug-406587.patch</filename>
+            <type>text/plain</type>
+            <size>3198</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZS50
+ZXN0cy5jb21waWxlcgpkaWZmIC0tZ2l0IHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9j
+b21waWxlci9yZWdyZXNzaW9uL05lZ2F0aXZlVHlwZUFubm90YXRpb25UZXN0LmphdmEgc3JjL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTmVnYXRpdmVUeXBl
+QW5ub3RhdGlvblRlc3QuamF2YQppbmRleCAwNjgxYjBkLi4wMTFkNDA5IDEwMDY0NAotLS0gc3Jj
+L29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTmVnYXRpdmVU
+eXBlQW5ub3RhdGlvblRlc3QuamF2YQorKysgc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L2NvbXBpbGVyL3JlZ3Jlc3Npb24vTmVnYXRpdmVUeXBlQW5ub3RhdGlvblRlc3QuamF2YQpAQCAt
+Mjg0MSw1ICsyODQxLDUgQEAKIAkJCQkiCQljbGFzcyBaIHt9XG4iICsNCiAJCQkJIgl9XG4iICsN
+Ci0JCQkJIglATSBYLkBNIFkuQFVucmVwb3J0ZWQgWiB6ID0gbnVsbDtcbiIgKw0KKwkJCQkiCVgu
+QE0gWS5AVW5yZXBvcnRlZCBaIHogPSBudWxsO1xuIiArDQogCQkJCSJ9XG4iICsNCiAJCQkJIkBq
+YXZhLmxhbmcuYW5ub3RhdGlvbi5UYXJnZXQgKGphdmEubGFuZy5hbm5vdGF0aW9uLkVsZW1lbnRU
+eXBlLlRZUEVfVVNFKVxuIiArDQpAQCAtMjg2NCw2ICsyODY0LDYgQEAKIAkJCQkiLS0tLS0tLS0t
+LVxuIiArIA0KIAkJCQkiMS4gRVJST1IgaW4gWC5qYXZhIChhdCBsaW5lIDUpXG4iICsgDQotCQkJ
+CSIJQE0gWC5ATSBZLkBVbnJlcG9ydGVkIFogeiA9IG51bGw7XG4iICsgDQotCQkJCSIJICAgICAg
+ICAgICBeXl5eXl5eXl5eXG4iICsgDQorCQkJCSIJWC5ATSBZLkBVbnJlcG9ydGVkIFogeiA9IG51
+bGw7XG4iICsNCisJCQkJIgkgICAgICAgIF5eXl5eXl5eXl5cbiIgKw0KIAkJCQkiVW5yZXBvcnRl
+ZCBjYW5ub3QgYmUgcmVzb2x2ZWQgdG8gYSB0eXBlXG4iICsgDQogCQkJCSItLS0tLS0tLS0tXG4i
+KTsNCkBAIC0zMzY0LDMgKzMzNjQsMzUgQEAKIAkJCQkiLS0tLS0tLS0tLVxuIik7DQogCX0NCisJ
+Ly8gWzEuOF1bY29tcGlsZXJdIE1pc3NpbmcgZXhwZWN0ZWQgZXJyb3IgZm9yIGluY29ycmVjdCBw
+bGFjZW1lbnQgb2YgdHlwZSBhbm5vdGF0aW9uIChodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVn
+cy9zaG93X2J1Zy5jZ2k/aWQ9NDA2NTg3KQ0KKwlwdWJsaWMgdm9pZCB0ZXN0NDA2NTg3KCkgew0K
+KwkJdGhpcy5ydW5OZWdhdGl2ZVRlc3QoDQorCQkJCW5ldyBTdHJpbmdbXSB7DQorCQkJCQkiWC5q
+YXZhIiwNCisJCQkJCSJwdWJsaWMgY2xhc3MgWCB7XG4iICsNCisJCQkJCSIJQEEgQEIgaW50IGk7
+XG4iICsNCisJCQkJCSIJQEIoMSkgQEEoMSkgU3RyaW5nIGZpZWxkO1xuIiArDQorCQkJCQkiCUBC
+KDEpIEBBKDEpIGphdmEubGFuZy5TdHJpbmcgZmllbGQxO1xuIiArDQorCQkJCQkiCWphdmEuIGxh
+bmcuQEEoMSkgQEIoMSkgU3RyaW5nIGZpZWxkMztcbiIgKw0KKwkJCQkJIn1cbiIgKw0KKwkJCQkJ
+IkBqYXZhLmxhbmcuYW5ub3RhdGlvbi5UYXJnZXQoamF2YS5sYW5nLmFubm90YXRpb24uRWxlbWVu
+dFR5cGUuRklFTEQpXG4iICsNCisJCQkJCSJAaW50ZXJmYWNlIEEge1xuIiArDQorCQkJCQkiCWlu
+dCB2YWx1ZSgpIGRlZmF1bHQgLTE7XG4iICsNCisJCQkJCSJ9XG4iICsNCisJCQkJCSJAamF2YS5s
+YW5nLmFubm90YXRpb24uVGFyZ2V0KGphdmEubGFuZy5hbm5vdGF0aW9uLkVsZW1lbnRUeXBlLlRZ
+UEVfVVNFKVxuIiArDQorCQkJCQkiQGludGVyZmFjZSBCIHtcbiIgKw0KKwkJCQkJIglpbnQgdmFs
+dWUoKSBkZWZhdWx0IC0xO1xuIiArDQorCQkJCQkifVxuIg0KKwkJCQl9LA0KKwkJCQkiLS0tLS0t
+LS0tLVxuIiArDQorCQkJCSIxLiBFUlJPUiBpbiBYLmphdmEgKGF0IGxpbmUgNClcbiIgKw0KKwkJ
+CQkiCUBCKDEpIEBBKDEpIGphdmEubGFuZy5TdHJpbmcgZmllbGQxO1xuIiArDQorCQkJCSIJXl5c
+biIgKw0KKwkJCQkiVGhlIGFubm90YXRpb24gQEIgaXMgZGlzYWxsb3dlZCBmb3IgdGhpcyBsb2Nh
+dGlvblxuIiArDQorCQkJCSItLS0tLS0tLS0tXG4iICsNCisJCQkJIjIuIEVSUk9SIGluIFguamF2
+YSAoYXQgbGluZSA1KVxuIiArDQorCQkJCSIJamF2YS4gbGFuZy5AQSgxKSBAQigxKSBTdHJpbmcg
+ZmllbGQzO1xuIiArDQorCQkJCSIJICAgICAgICAgICBeXlxuIiArDQorCQkJCSJUaGUgYW5ub3Rh
+dGlvbiBAQSBpcyBkaXNhbGxvd2VkIGZvciB0aGlzIGxvY2F0aW9uXG4iICsNCisJCQkJIi0tLS0t
+LS0tLS1cbiIpOw0KKwl9DQogfQ0KI1Agb3JnLmVjbGlwc2UuamR0LmNvcmUKZGlmZiAtLWdpdCBj
+b21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0Fubm90YXRpb24u
+amF2YSBjb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0Fubm90
+YXRpb24uamF2YQppbmRleCBjZDdiOGY5Li4zYzg3MjJkIDEwMDY0NAotLS0gY29tcGlsZXIvb3Jn
+L2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9Bbm5vdGF0aW9uLmphdmEKKysrIGNv
+bXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvQW5ub3RhdGlvbi5q
+YXZhCkBAIC05OTYsNSArOTk2LDEwIEBACiAJCQkJCQkJYnJlYWsgY2hlY2tUYXJnZXRDb21wYXRp
+YmlsaXR5OwogCQkJCQkJfSBlbHNlIGlmICgobWV0YVRhZ0JpdHMgJiBUYWdCaXRzLkFubm90YXRp
+b25Gb3JUeXBlVXNlKSAhPSAwKSB7Ci0JCQkJCQkJYnJlYWsgY2hlY2tUYXJnZXRDb21wYXRpYmls
+aXR5OworCQkJCQkJCUZpZWxkQmluZGluZyBzb3VyY2VGaWVsZCA9IChGaWVsZEJpbmRpbmcpIHRo
+aXMucmVjaXBpZW50OworCQkJCQkJCVNvdXJjZVR5cGVCaW5kaW5nIHNvdXJjZVR5cGUgPSAoU291
+cmNlVHlwZUJpbmRpbmcpIHNvdXJjZUZpZWxkLmRlY2xhcmluZ0NsYXNzOworCQkJCQkJCUZpZWxk
+RGVjbGFyYXRpb24gZmllbGREZWNsYXJhdGlvbiA9IHNvdXJjZVR5cGUuc2NvcGUucmVmZXJlbmNl
+Q29udGV4dC5kZWNsYXJhdGlvbk9mKHNvdXJjZUZpZWxkKTsKKwkJCQkJCQlpZiAoZmllbGREZWNs
+YXJhdGlvbi50eXBlIGluc3RhbmNlb2YgU2luZ2xlVHlwZVJlZmVyZW5jZSkgeworCQkJCQkJCQli
+cmVhayBjaGVja1RhcmdldENvbXBhdGliaWxpdHk7CisJCQkJCQkJfQogCQkJCQkJfQogCQkJCQkJ
+YnJlYWs7
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>232774</attachid>
+            <date>2013-06-26 04:32:00 -0400</date>
+            <delta_ts>2013-06-26 04:32:11 -0400</delta_ts>
+            <desc>Updated patch</desc>
+            <filename>Fix-for-Bug-406587.patch</filename>
+            <type>text/plain</type>
+            <size>7683</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZS50
+ZXN0cy5jb21waWxlcgpkaWZmIC0tZ2l0IHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9j
+b21waWxlci9yZWdyZXNzaW9uL05lZ2F0aXZlVHlwZUFubm90YXRpb25UZXN0LmphdmEgc3JjL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTmVnYXRpdmVUeXBl
+QW5ub3RhdGlvblRlc3QuamF2YQppbmRleCAwNjgxYjBkLi41MzVhZjZjIDEwMDY0NAotLS0gc3Jj
+L29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTmVnYXRpdmVU
+eXBlQW5ub3RhdGlvblRlc3QuamF2YQorKysgc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L2NvbXBpbGVyL3JlZ3Jlc3Npb24vTmVnYXRpdmVUeXBlQW5ub3RhdGlvblRlc3QuamF2YQpAQCAt
+MjQwNCw0ICsyNDA0LDkgQEAKIAkJCQkiCSAgICAgICAgICAgICAgICAgICAgICBeXl5eXl5eXG4i
+ICsgDQogCQkJCSJTeW50YXggZXJyb3IsIHR5cGUgYW5ub3RhdGlvbnMgYXJlIGlsbGVnYWwgaGVy
+ZVxuIiArIA0KKwkJCQkiLS0tLS0tLS0tLVxuIiArIA0KKwkJCQkiNC4gRVJST1IgaW4gWC5qYXZh
+IChhdCBsaW5lIDkpXG4iICsgDQorCQkJCSIJcHVibGljIHZvaWQgZm9vYmFyKEBNYXJrZXIgamF2
+YS5sYW5nLkludGVnZXIgYXJnKSB7fVxuIiArIA0KKwkJCQkiCSAgICAgICAgICAgICAgICAgICBe
+Xl5eXl5eXG4iICsgDQorCQkJCSJUaGUgYW5ub3RhdGlvbiBATWFya2VyIGlzIGRpc2FsbG93ZWQg
+Zm9yIHRoaXMgbG9jYXRpb25cbiIgKyANCiAJCQkJIi0tLS0tLS0tLS1cbiIpOw0KIAl9DQpAQCAt
+MzM2NCwzICszMzY5LDg1IEBACiAJCQkJIi0tLS0tLS0tLS1cbiIpOw0KIAl9DQorCS8vIFsxLjhd
+W2NvbXBpbGVyXSBNaXNzaW5nIGV4cGVjdGVkIGVycm9yIGZvciBpbmNvcnJlY3QgcGxhY2VtZW50
+IG9mIHR5cGUgYW5ub3RhdGlvbiAoaHR0cHM6Ly9idWdzLmVjbGlwc2Uub3JnL2J1Z3Mvc2hvd19i
+dWcuY2dpP2lkPTQwNjU4NykNCisJcHVibGljIHZvaWQgdGVzdDQwNjU4NygpIHsNCisJCXRoaXMu
+cnVuTmVnYXRpdmVUZXN0KA0KKwkJCQluZXcgU3RyaW5nW10gew0KKwkJCQkJInAvWC5qYXZhIiwN
+CisJCQkJCSJwYWNrYWdlIHA7XG4iICsNCisJCQkJCSJpbXBvcnQgamF2YS5sYW5nLmFubm90YXRp
+b24uKjtcbiIgKw0KKwkJCQkJInB1YmxpYyBjbGFzcyBYIHtcbiIgKw0KKwkJCQkJIglAQigxKSBA
+QSgxKSBTdHJpbmcgZmllbGQxO1xuIiArDQorCQkJCQkiCUBCIEBBIFguWSBmaWVsZDM7XG4iICsN
+CisJCQkJCSIJQEEgQEIgcC5YLlkgZmllbGQ0O1xuIiArDQorCQkJCQkiCUBCKDEpIEBBKDEpIGph
+dmEubGFuZy5AQSgxKSBAQigxKSBTdHJpbmcgZmllbGQyO1xuIiArDQorCQkJCQkiCXB1YmxpYyBA
+QigxKSBAQSgxKSBqYXZhLmxhbmcuIEBBKDEpIEBCKDEpICBTdHJpbmcgZm9vKEBBKDEpIEBCKDEp
+IGphdmEubGFuZy4gQEEoMSkgQEIoMSkgU3RyaW5nIHN0cjEpIHtcbiIgKw0KKwkJCQkJIgkJQEEo
+MSkgQEIoMSkgIFN0cmluZyBsb2NhbDE7XG4iICsNCisJCQkJCSIJCUBBKDEpIEBCKDEpIGphdmEu
+bGFuZy4gIEBCKDEpIEBBKDEpIFN0cmluZyBsb2NhbDI7XG4iICsNCisJCQkJCSIJCUBCIEBBIFgu
+WSBsb2NhbDM7XG4iICsNCisJCQkJCSIJCUBCIEBBIHAuWC5ZIGxvY2FsNDtcbiIgKw0KKwkJCQkJ
+IgkJcmV0dXJuIG51bGw7XG4iICsNCisJCQkJCSIJfVxuIiArDQorCQkJCQkiCWNsYXNzIFkge30i
+ICsNCisJCQkJCSJ9XG4iICsNCisJCQkJCSJAVGFyZ2V0KHtFbGVtZW50VHlwZS5NRVRIT0QsIEVs
+ZW1lbnRUeXBlLkZJRUxELCBFbGVtZW50VHlwZS5QQVJBTUVURVIsIEVsZW1lbnRUeXBlLkxPQ0FM
+X1ZBUklBQkxFfSlcbiIgKw0KKwkJCQkJIkBpbnRlcmZhY2UgQSB7XG4iICsNCisJCQkJCSIJaW50
+IHZhbHVlKCkgZGVmYXVsdCAtMTtcbiIgKw0KKwkJCQkJIn1cbiIgKw0KKwkJCQkJIkBUYXJnZXQo
+RWxlbWVudFR5cGUuVFlQRV9VU0UpXG4iICsNCisJCQkJCSJAaW50ZXJmYWNlIEIge1xuIiArDQor
+CQkJCQkiCWludCB2YWx1ZSgpIGRlZmF1bHQgLTE7XG4iICsNCisJCQkJCSJ9XG4iDQorCQkJCX0s
+DQorCQkJCSItLS0tLS0tLS0tXG4iICsgDQorCQkJCSIxLiBFUlJPUiBpbiBwXFxYLmphdmEgKGF0
+IGxpbmUgNilcbiIgKyANCisJCQkJIglAQSBAQiBwLlguWSBmaWVsZDQ7XG4iICsgDQorCQkJCSIJ
+ICAgXl5cbiIgKyANCisJCQkJIlRoZSBhbm5vdGF0aW9uIEBCIGlzIGRpc2FsbG93ZWQgZm9yIHRo
+aXMgbG9jYXRpb25cbiIgKyANCisJCQkJIi0tLS0tLS0tLS1cbiIgKyANCisJCQkJIjIuIEVSUk9S
+IGluIHBcXFguamF2YSAoYXQgbGluZSA3KVxuIiArIA0KKwkJCQkiCUBCKDEpIEBBKDEpIGphdmEu
+bGFuZy5AQSgxKSBAQigxKSBTdHJpbmcgZmllbGQyO1xuIiArIA0KKwkJCQkiCV5eXG4iICsgDQor
+CQkJCSJUaGUgYW5ub3RhdGlvbiBAQiBpcyBkaXNhbGxvd2VkIGZvciB0aGlzIGxvY2F0aW9uXG4i
+ICsgDQorCQkJCSItLS0tLS0tLS0tXG4iICsgDQorCQkJCSIzLiBFUlJPUiBpbiBwXFxYLmphdmEg
+KGF0IGxpbmUgNylcbiIgKyANCisJCQkJIglAQigxKSBAQSgxKSBqYXZhLmxhbmcuQEEoMSkgQEIo
+MSkgU3RyaW5nIGZpZWxkMjtcbiIgKyANCisJCQkJIgkgICAgICAgICAgICAgICAgICAgICAgXl5c
+biIgKyANCisJCQkJIlRoZSBhbm5vdGF0aW9uIEBBIGlzIGRpc2FsbG93ZWQgZm9yIHRoaXMgbG9j
+YXRpb25cbiIgKyANCisJCQkJIi0tLS0tLS0tLS1cbiIgKyANCisJCQkJIjQuIEVSUk9SIGluIHBc
+XFguamF2YSAoYXQgbGluZSA4KVxuIiArIA0KKwkJCQkiCXB1YmxpYyBAQigxKSBAQSgxKSBqYXZh
+LmxhbmcuIEBBKDEpIEBCKDEpICBTdHJpbmcgZm9vKEBBKDEpIEBCKDEpIGphdmEubGFuZy4gQEEo
+MSkgQEIoMSkgU3RyaW5nIHN0cjEpIHtcbiIgKyANCisJCQkJIgkgICAgICAgXl5cbiIgKyANCisJ
+CQkJIlRoZSBhbm5vdGF0aW9uIEBCIGlzIGRpc2FsbG93ZWQgZm9yIHRoaXMgbG9jYXRpb25cbiIg
+KyANCisJCQkJIi0tLS0tLS0tLS1cbiIgKyANCisJCQkJIjUuIEVSUk9SIGluIHBcXFguamF2YSAo
+YXQgbGluZSA4KVxuIiArIA0KKwkJCQkiCXB1YmxpYyBAQigxKSBAQSgxKSBqYXZhLmxhbmcuIEBB
+KDEpIEBCKDEpICBTdHJpbmcgZm9vKEBBKDEpIEBCKDEpIGphdmEubGFuZy4gQEEoMSkgQEIoMSkg
+U3RyaW5nIHN0cjEpIHtcbiIgKyANCisJCQkJIgkgICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICBeXlxuIiArIA0KKwkJCQkiVGhlIGFubm90YXRpb24gQEEgaXMgZGlzYWxsb3dlZCBmb3IgdGhp
+cyBsb2NhdGlvblxuIiArIA0KKwkJCQkiLS0tLS0tLS0tLVxuIiArIA0KKwkJCQkiNi4gRVJST1Ig
+aW4gcFxcWC5qYXZhIChhdCBsaW5lIDgpXG4iICsgDQorCQkJCSIJcHVibGljIEBCKDEpIEBBKDEp
+IGphdmEubGFuZy4gQEEoMSkgQEIoMSkgIFN0cmluZyBmb28oQEEoMSkgQEIoMSkgamF2YS5sYW5n
+LiBAQSgxKSBAQigxKSBTdHJpbmcgc3RyMSkge1xuIiArIA0KKwkJCQkiCSAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIF5eXG4iICsgDQor
+CQkJCSJUaGUgYW5ub3RhdGlvbiBAQiBpcyBkaXNhbGxvd2VkIGZvciB0aGlzIGxvY2F0aW9uXG4i
+ICsgDQorCQkJCSItLS0tLS0tLS0tXG4iICsgDQorCQkJCSI3LiBFUlJPUiBpbiBwXFxYLmphdmEg
+KGF0IGxpbmUgOClcbiIgKyANCisJCQkJIglwdWJsaWMgQEIoMSkgQEEoMSkgamF2YS5sYW5nLiBA
+QSgxKSBAQigxKSAgU3RyaW5nIGZvbyhAQSgxKSBAQigxKSBqYXZhLmxhbmcuIEBBKDEpIEBCKDEp
+IFN0cmluZyBzdHIxKSB7XG4iICsgDQorCQkJCSIJICAgICAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBeXlxuIiAr
+IA0KKwkJCQkiVGhlIGFubm90YXRpb24gQEEgaXMgZGlzYWxsb3dlZCBmb3IgdGhpcyBsb2NhdGlv
+blxuIiArIA0KKwkJCQkiLS0tLS0tLS0tLVxuIiArIA0KKwkJCQkiOC4gRVJST1IgaW4gcFxcWC5q
+YXZhIChhdCBsaW5lIDEwKVxuIiArIA0KKwkJCQkiCUBBKDEpIEBCKDEpIGphdmEubGFuZy4gIEBC
+KDEpIEBBKDEpIFN0cmluZyBsb2NhbDI7XG4iICsgDQorCQkJCSIJICAgICAgXl5cbiIgKyANCisJ
+CQkJIlRoZSBhbm5vdGF0aW9uIEBCIGlzIGRpc2FsbG93ZWQgZm9yIHRoaXMgbG9jYXRpb25cbiIg
+KyANCisJCQkJIi0tLS0tLS0tLS1cbiIgKyANCisJCQkJIjkuIEVSUk9SIGluIHBcXFguamF2YSAo
+YXQgbGluZSAxMClcbiIgKyANCisJCQkJIglAQSgxKSBAQigxKSBqYXZhLmxhbmcuICBAQigxKSBA
+QSgxKSBTdHJpbmcgbG9jYWwyO1xuIiArIA0KKwkJCQkiCSAgICAgICAgICAgICAgICAgICAgICAg
+ICAgICAgIF5eXG4iICsgDQorCQkJCSJUaGUgYW5ub3RhdGlvbiBAQSBpcyBkaXNhbGxvd2VkIGZv
+ciB0aGlzIGxvY2F0aW9uXG4iICsgDQorCQkJCSItLS0tLS0tLS0tXG4iICsgDQorCQkJCSIxMC4g
+RVJST1IgaW4gcFxcWC5qYXZhIChhdCBsaW5lIDEyKVxuIiArIA0KKwkJCQkiCUBCIEBBIHAuWC5Z
+IGxvY2FsNDtcbiIgKyANCisJCQkJIgleXlxuIiArIA0KKwkJCQkiVGhlIGFubm90YXRpb24gQEIg
+aXMgZGlzYWxsb3dlZCBmb3IgdGhpcyBsb2NhdGlvblxuIiArIA0KKwkJCQkiLS0tLS0tLS0tLVxu
+Iik7DQorCX0NCiB9DQojUCBvcmcuZWNsaXBzZS5qZHQuY29yZQpkaWZmIC0tZ2l0IGNvbXBpbGVy
+L29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvQW5ub3RhdGlvbi5qYXZhIGNv
+bXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3QvQW5ub3RhdGlvbi5q
+YXZhCmluZGV4IGNkN2I4ZjkuLmRkZTFkMzggMTAwNjQ0Ci0tLSBjb21waWxlci9vcmcvZWNsaXBz
+ZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0Fubm90YXRpb24uamF2YQorKysgY29tcGlsZXIv
+b3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9Bbm5vdGF0aW9uLmphdmEKQEAg
+LTk4OSw1ICs5ODksMTAgQEAKIAkJCQkJCQlicmVhayBjaGVja1RhcmdldENvbXBhdGliaWxpdHk7
+CiAJCQkJCQl9IGVsc2UgaWYgKChtZXRhVGFnQml0cyAmIFRhZ0JpdHMuQW5ub3RhdGlvbkZvclR5
+cGVVc2UpICE9IDApIHsKLQkJCQkJCQlicmVhayBjaGVja1RhcmdldENvbXBhdGliaWxpdHk7CisJ
+CQkJCQkJU291cmNlVHlwZUJpbmRpbmcgc291cmNlVHlwZSA9IChTb3VyY2VUeXBlQmluZGluZykg
+bWV0aG9kQmluZGluZy5kZWNsYXJpbmdDbGFzczsKKwkJCQkJCQltZXRob2RCaW5kaW5nLnJldHVy
+blR5cGUgPSBudWxsOworCQkJCQkJCU1ldGhvZERlY2xhcmF0aW9uIG1ldGhvZERlY2wgPSAoTWV0
+aG9kRGVjbGFyYXRpb24pIHNvdXJjZVR5cGUuc2NvcGUucmVmZXJlbmNlQ29udGV4dC5kZWNsYXJh
+dGlvbk9mKG1ldGhvZEJpbmRpbmcpOworCQkJCQkJCWlmIChpc1R5cGVVc2VDb21wYXRpYmxlKG1l
+dGhvZERlY2wucmV0dXJuVHlwZSwgc2NvcGUpKSB7CisJCQkJCQkJCWJyZWFrIGNoZWNrVGFyZ2V0
+Q29tcGF0aWJpbGl0eTsKKwkJCQkJCQl9CiAJCQkJCQl9CiAJCQkJCQlicmVhazsKQEAgLTk5Niwx
+OCArMTAwMSwyOCBAQAogCQkJCQkJCWJyZWFrIGNoZWNrVGFyZ2V0Q29tcGF0aWJpbGl0eTsKIAkJ
+CQkJCX0gZWxzZSBpZiAoKG1ldGFUYWdCaXRzICYgVGFnQml0cy5Bbm5vdGF0aW9uRm9yVHlwZVVz
+ZSkgIT0gMCkgewotCQkJCQkJCWJyZWFrIGNoZWNrVGFyZ2V0Q29tcGF0aWJpbGl0eTsKKwkJCQkJ
+CQlGaWVsZEJpbmRpbmcgc291cmNlRmllbGQgPSAoRmllbGRCaW5kaW5nKSB0aGlzLnJlY2lwaWVu
+dDsKKwkJCQkJCQlTb3VyY2VUeXBlQmluZGluZyBzb3VyY2VUeXBlID0gKFNvdXJjZVR5cGVCaW5k
+aW5nKSBzb3VyY2VGaWVsZC5kZWNsYXJpbmdDbGFzczsKKwkJCQkJCQlGaWVsZERlY2xhcmF0aW9u
+IGZpZWxkRGVjbGFyYXRpb24gPSBzb3VyY2VUeXBlLnNjb3BlLnJlZmVyZW5jZUNvbnRleHQuZGVj
+bGFyYXRpb25PZihzb3VyY2VGaWVsZCk7CisJCQkJCQkJaWYgKGlzVHlwZVVzZUNvbXBhdGlibGUo
+ZmllbGREZWNsYXJhdGlvbi50eXBlLCBzY29wZSkpIHsKKwkJCQkJCQkJYnJlYWsgY2hlY2tUYXJn
+ZXRDb21wYXRpYmlsaXR5OworCQkJCQkJCX0KIAkJCQkJCX0KIAkJCQkJCWJyZWFrOwogCQkJCQlj
+YXNlIEJpbmRpbmcuTE9DQUwgOgotCQkJCQkJaWYgKCgoKExvY2FsVmFyaWFibGVCaW5kaW5nKXRo
+aXMucmVjaXBpZW50KS50YWdCaXRzICYgVGFnQml0cy5Jc0FyZ3VtZW50KSAhPSAwKSB7CisJCQkJ
+CQlMb2NhbFZhcmlhYmxlQmluZGluZyBsb2NhbFZhcmlhYmxlQmluZGluZyA9IChMb2NhbFZhcmlh
+YmxlQmluZGluZyl0aGlzLnJlY2lwaWVudDsKKwkJCQkJCWlmICgobG9jYWxWYXJpYWJsZUJpbmRp
+bmcudGFnQml0cyAmIFRhZ0JpdHMuSXNBcmd1bWVudCkgIT0gMCkgewogCQkJCQkJCWlmICgobWV0
+YVRhZ0JpdHMgJiBUYWdCaXRzLkFubm90YXRpb25Gb3JQYXJhbWV0ZXIpICE9IDApIHsKIAkJCQkJ
+CQkJYnJlYWsgY2hlY2tUYXJnZXRDb21wYXRpYmlsaXR5OwogCQkJCQkJCX0gZWxzZSBpZiAoKG1l
+dGFUYWdCaXRzICYgVGFnQml0cy5Bbm5vdGF0aW9uRm9yVHlwZVVzZSkgIT0gMCkgewotCQkJCQkJ
+CQlicmVhayBjaGVja1RhcmdldENvbXBhdGliaWxpdHk7CisJCQkJCQkJCWlmIChpc1R5cGVVc2VD
+b21wYXRpYmxlKGxvY2FsVmFyaWFibGVCaW5kaW5nLmRlY2xhcmF0aW9uLnR5cGUsIHNjb3BlKSkg
+eworCQkJCQkJCQkJYnJlYWsgY2hlY2tUYXJnZXRDb21wYXRpYmlsaXR5OworCQkJCQkJCQl9CiAJ
+CQkJCQkJfQogCQkJCQkJfSBlbHNlIGlmICgoYW5ub3RhdGlvblR5cGUudGFnQml0cyAmIFRhZ0Jp
+dHMuQW5ub3RhdGlvbkZvckxvY2FsVmFyaWFibGUpICE9IDApIHsKIAkJCQkJCQlicmVhayBjaGVj
+a1RhcmdldENvbXBhdGliaWxpdHk7CiAJCQkJCQl9IGVsc2UgaWYgKChtZXRhVGFnQml0cyAmIFRh
+Z0JpdHMuQW5ub3RhdGlvbkZvclR5cGVVc2UpICE9IDApIHsKLQkJCQkJCQlicmVhayBjaGVja1Rh
+cmdldENvbXBhdGliaWxpdHk7CisJCQkJCQkJaWYgKGlzVHlwZVVzZUNvbXBhdGlibGUobG9jYWxW
+YXJpYWJsZUJpbmRpbmcuZGVjbGFyYXRpb24udHlwZSwgc2NvcGUpKSB7CisJCQkJCQkJCWJyZWFr
+IGNoZWNrVGFyZ2V0Q29tcGF0aWJpbGl0eTsKKwkJCQkJCQl9CiAJCQkJCQl9CiAJCQkJCQlicmVh
+azsKQEAgLTEwMjMsNCArMTAzOCwxNCBAQAogCQlyZXR1cm4gdGhpcy5yZXNvbHZlZFR5cGU7CiAJ
+fQorCXByaXZhdGUgYm9vbGVhbiBpc1R5cGVVc2VDb21wYXRpYmxlKFR5cGVSZWZlcmVuY2UgcmVm
+ZXJlbmNlLCBTY29wZSBzY29wZSkgeworCQlpZiAoIShyZWZlcmVuY2UgaW5zdGFuY2VvZiBTaW5n
+bGVUeXBlUmVmZXJlbmNlKSkgeworCQkJQmluZGluZyBiaW5kaW5nID0gc2NvcGUuZ2V0UGFja2Fn
+ZShyZWZlcmVuY2UuZ2V0VHlwZU5hbWUoKSk7CisJCQlQYWNrYWdlQmluZGluZyBwYWNrYWdlQmlu
+ZGluZyA9IChiaW5kaW5nID09IG51bGwpID8gbnVsbCA6IChQYWNrYWdlQmluZGluZykgYmluZGlu
+ZzsKKwkJCWlmIChwYWNrYWdlQmluZGluZyAhPSBudWxsKSB7CisJCQkJcmV0dXJuIGZhbHNlOwor
+CQkJfQorCQl9CisJCXJldHVybiB0cnVlOworCX0KIAogCXB1YmxpYyBhYnN0cmFjdCB2b2lkIHRy
+YXZlcnNlKEFTVFZpc2l0b3IgdmlzaXRvciwgQmxvY2tTY29wZSBzY29wZSk7
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>466308</bug_id>
+          
+          <creation_ts>2015-05-04 09:01:00 -0400</creation_ts>
+          <short_desc>[hovering] Javadoc header for parameter is wrong with annotation-based null analysis</short_desc>
+          <delta_ts>2015-05-08 16:36:23 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/47113</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=93613529f4763965d02155d2aaa1cabf71be7897</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 RC1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Noopur Gupta">noopur_gupta</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>saammana</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="64620"
+          type_id="1"
+          status="+"
+          setter="saammana"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2556034</commentid>
+    <comment_count>0</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2015-05-04 09:01:52 -0400</bug_when>
+    <thetext>Eclipse 4.5 M7 - I20150430-1445
+
+- Create a Java project and open java.util.List.
+
+- Go to #equals method and hover on the parameter name &quot;o&quot;. The Javadoc header shows: 
+Object o - java.util.List.equals(Object)
+
+- Now enable annotation-based null analysis for the project.
+
+- Hovering on the parameter name &quot;o&quot; now shows the Javadoc header as:
+java.util.List&lt;E&gt;</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2556402</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-05-04 12:47:07 -0400</bug_when>
+    <thetext>This should be investigated in JDT/Core: DOM bindings have trouble with method parameters.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2556583</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-05-04 19:43:17 -0400</bug_when>
+    <thetext>It&apos;s two bugs actually:
+
+1: The fix in bug 463330 failed to resolve an enclosing binary method in org.eclipse.jdt.internal.core.LocalVariable.getKey(true), resulting in a signature mismatch in BindingKeyResolver.consumeMethod(char[], char[]).
+=&gt; ASTParser.createBindings() didn&apos;t even find the method &quot;equals&quot;.
+
+2: If the class file has no local variable table, then BindingKeyResolver.consumeLocalVar(char[], int) cannot match the local variable/parameter.
+
+
+(1) is trivially fixed in LocalVariable, but (2) is a bit trickier.
+
+I have a draft where the binding key for a local variable is extended to also include the parameter rank. This would allow as to match method parameters without names. For this solution we have to verify, that no external clients depend on the current format of the binding key (aka LVB.computeUniqueKey()) of a local variable.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2556595</commentid>
+    <comment_count>3</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-05-04 20:46:12 -0400</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/47113</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2558537</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-05-05 18:34:03 -0400</bug_when>
+    <thetext>Sasi, at your convenience, could you please check the patch and give +1 for inclusion in RC1? TIA
+
+
+Motivation for inclusion in RC1:
+- new implementation from bug 403917 (JDT/UI) is inferior (in this particular situation) to old implementation because it hits an incompleteness in JDT/Core
+
+
+Description of the change:
+
+--------
+
+Part (1) from comment 2 is simple, see first chunk of changes in LocalVariable.getKey(boolean), passing forceOpen when appropriate.
+
+--------
+
+For part (2):
+
+Given:
+- We have a binding key of a local variable
+- During ASPParser.createBindings(..) we want to retrieve the DOM binding matching that binding key
+
+Problem:
+- When looking at a class file without local variables table, we have no method parameter names, and hence fail to match the name-based binding key against the MethodBinding (compiler) (inside BindingKeyResolver.consumeLocalVar(..)).
+
+Solution:
+- Extend the binding key for method parameters (as a special case of local variables), by appending &quot;#parameterRank&quot; (which makes the preceding 
+&quot;#occurrenceCount&quot; mandatory, even if 0).
+  See comment ahead of LocalVariableBinding.computeUniqueKey(boolean)).
+- For consistency apply the same extension also to Java model&apos;s LocalVariable
+
+I checked the javadoc of IBinding.getKey() to confirm, that the details of binding keys are not API, even if those keys *are* exposed to clients. Good.
+
+--------
+
+Additional Problem:
+- Once we obtained the DOM VariableBinding for the method parameter, we need it to correctly answer to #getDeclaringMethod() (which all local variables must answer).
+- On the way from binding key to VariableBinding we use a SyntheticLocalVariableBinding for transferring all relevant information. This class was recently added via the predecessor bug 463330.
+- Instances of that class SyntheticLocalVariableBinding have no #declaringScope and hence the implementation of VariableBinding#getDeclaringMethod() which relies on this scope, does not work in this situation.
+
+Additional Solution:
+- Simply shift responsibility from VariableBinding (DOM) to LocalVariableBinding (compiler) so that SyntheticLocalVariableBinding can conveniently override with the answer we already have in our hands.
+
+--------
+
+Hudson gave + 1 &amp; I&apos;ve tested that this resolves the UI issue.
+
+While this patch is bigger than the previous one (bug 466279), that&apos;s mostly because this is a three-part fix. After checking the API relevance of IBinding.getKey() I don&apos;t see specific risks in this patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2560509</commentid>
+    <comment_count>5</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2015-05-08 05:46:48 -0400</bug_when>
+    <thetext>Thanks Stephan, for the description. Was of great help. +1 for RC1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2560977</commentid>
+    <comment_count>6</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-05-08 16:35:42 -0400</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/47113 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=93613529f4763965d02155d2aaa1cabf71be7897</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2560978</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-05-08 16:36:23 -0400</bug_when>
+    <thetext>thanks</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

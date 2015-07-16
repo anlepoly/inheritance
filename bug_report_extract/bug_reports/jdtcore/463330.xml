@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>463330</bug_id>
+          
+          <creation_ts>2015-03-27 18:46:00 -0400</creation_ts>
+          <short_desc>[dom] DOMFinder doesn&apos;t find the VariableBinding corresponding to a method argument</short_desc>
+          <delta_ts>2015-04-27 05:17:52 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://bugs.eclipse.org/bugs/show_bug.cgi?id=403917</see_also>
+    
+    <see_also>https://git.eclipse.org/r/44796</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=a4e58088a1010e10b50ef0d8683567f65215eac1</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="64411"
+          type_id="1"
+          status="+"
+          setter="jarthana"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2538740</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-27 18:46:32 -0400</bug_when>
+    <thetext>When you invoke the DOMFinder with a LocalVariable element, nothing is found.
+
+See that DOMFinder has a visit(VariableDeclarationFragment) but no visit(SingleVariableDeclaration).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2538768</commentid>
+    <comment_count>1</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-03-27 21:06:47 -0400</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/44793</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2538769</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-27 21:16:27 -0400</bug_when>
+    <thetext>There is a bit more to it than just one omission in DOMFinder:
+
+Arguments of binary methods fall through some cracks here and there:
+- the don&apos;t answer getKey()
+- they have no compiler binding
+
+This made CompilationUnitResolver.resolve(IJavaElement[], int, Map, IJavaProject, WorkingCopyOwner, int, IProgressMonitor) fail when passed a LocalVariable representing such an argument of a binary method.
+
+I drafted a solution that supports the required round-trip involving LocalVariable, its key, a synthesized LocalVariableBinding, which has a good answer for computeUniqueKey(boolean), where BindingKeyResolver ties everything together, so that the basic scenario works for source &amp; binary alike.
+
+Let&apos;s see what hudson has to say, OR if anybody remembers a deliberate decision not to &quot;find&quot; these arguments?
+
+BTW. Binding.computeUniqueKey() still (implicitly) claimed that LocalVariableBinding would answer null, but this is not true.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2538820</commentid>
+    <comment_count>3</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-03-28 10:29:39 -0400</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/44796</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2538825</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-28 10:59:49 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #2)
+&gt; This made CompilationUnitResolver.resolve(IJavaElement[], int, Map,
+&gt; IJavaProject, WorkingCopyOwner, int, IProgressMonitor) fail when passed a
+&gt; LocalVariable representing such an argument of a binary method.
+
+To be more specific: 
+Without the patch when passing a LocalVariable into one of
+ - ASTParser.createBindings(IJavaElement[], IProgressMonitor)
+ - CompilationUnitResolver.resolve(IJavaElement[], int, Map, IJavaProject, WorkingCopyOwner, int, IProgressMonitor)
+
+we get a CCE: LocalVariable cannot be cast to BinaryMember.
+
+Inside CUR.resolve we assume that every SourceRefElement is either contained in an ICompilationUnit or is a BinaryMember. This assumption is wrong for LocalVariable, and I believe the same bug also applies to some of the other subtypes of SourceRefElement, like TypeParameter, Annotation, which, too, can be obtained from a binary element without being a subtype of BinaryMember.
+
+I read this as indication that we indeed have unintended omissions (bugs) rather than a deliberate decision.
+
+@Jay, do you remember if excluding LocalVariables from some of these use cases is by design?
+
+Next, *if* we want to let LocalVariable participate in the getKey() protocol, should we invent a new (internal) supertype &quot;KeyedElement&quot; to avoid checking for all possible variants of keyed elements? (TypeParameter etc. may want to follow suite...).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2538843</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-28 13:34:21 -0400</bug_when>
+    <thetext>The draft solution lets BindingKeyResolver create new LocalVariableBindings on the fly. When trying to find out if these could cause undesirable effects downstream, all I see is that these bindings will be passed to DefaultBindingResolver.getBinding() and be forgotten afterwards.
+
+Next I was wondering if bad things could happen, by duplicate LVBs created for the same argument (because those are not stored any where). All clients of BindingKeyResolver.getCompilerBinding() actually instantiate a short-lived DefaultBindingResolver, but reuse of bindings should be achieved via CompilationUnitResolver.bindingTables.
+
+If it is crucial to avoid duplication of DOM-VariableBindings, then a custom pair of equals/hashCode in the synthetic LVBs is probably in order. I could implement those based on the key. Should I?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2542164</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-03 18:09:08 -0400</bug_when>
+    <thetext>Jay, a second opinion design-wise would be great.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2542369</commentid>
+    <comment_count>7</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-04-06 02:44:28 -0400</bug_when>
+    <thetext>Interesting to note that some of the existing tests (testLocalVariable6() etc.) use custom ASTVisitor to carry out testing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2542387</commentid>
+    <comment_count>8</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-04-06 04:16:07 -0400</bug_when>
+    <thetext>Stephan, I am curious about the background/motivation for this bug. Can you please share a few words? Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2542419</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-06 06:45:11 -0400</bug_when>
+    <thetext>(In reply to Jay Arthanareeswaran from comment #8)
+&gt; Stephan, I am curious about the background/motivation for this bug. Can you
+&gt; please share a few words? Thanks!
+
+Sure: this occurred during working on / testing bug 403917. In that bug we have a new binding-based label composer, in order to show type annotations in hovers.
+
+Noopur observed (bug 403917 comment 11) that this approach doesn&apos;t currently work for method arguments. I found this to be caused by this current bug: the call chain ASTParser.createBindings() -&gt; CompilationUnitResolver.resolve() -&gt; Requestor (local class) -&gt; DOMFinder.search() failed, and can be made to work with the proposed change.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2542672</commentid>
+    <comment_count>10</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-04-07 00:46:06 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #5)
+&gt; If it is crucial to avoid duplication of DOM-VariableBindings, then a custom
+&gt; pair of equals/hashCode in the synthetic LVBs is probably in order. I could
+&gt; implement those based on the key. Should I?
+
+Yes, just as a precaution, it may not be a bad idea to do this if that&apos;s not too much effort? I have looked at the patch at a high level and fine with it.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2545236</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-11 11:56:58 -0400</bug_when>
+    <thetext>(In reply to Jay Arthanareeswaran from comment #10)
+&gt; (In reply to Stephan Herrmann from comment #5)
+&gt; &gt; If it is crucial to avoid duplication of DOM-VariableBindings, then a custom
+&gt; &gt; pair of equals/hashCode in the synthetic LVBs is probably in order. I could
+&gt; &gt; implement those based on the key. Should I?
+&gt; 
+&gt; Yes, just as a precaution, it may not be a bad idea to do this if that&apos;s not
+&gt; too much effort? I have looked at the patch at a high level and fine with it.
+
+I&apos;ve added the equals/hashCode methods but I failed to create a test that properly exercises these.
+
+Reuse of CompilationUnitResolver.bindingTables as mentioned in comment 5 happens via *ASTRequestor.createBindings(), but ASTRequestors are only relevant when we have an AST, in which case we get the standard LocalVariableBinding, not the synthetic one from my patch.
+
+Conversely, when we repeatedly invoke ASTParser.createBindings() passing ILocalVariable we will invariably get distinct VariableBindings (dom) due to short-livedness of DefaultBindingResolver. This is an inherent property, not introduced by this patch.
+
+Anyway, having appropriate equals/hashCode certainly won&apos;t hurt :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2545248</commentid>
+    <comment_count>12</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-04-11 13:22:30 -0400</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/44796 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=a4e58088a1010e10b50ef0d8683567f65215eac1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2545249</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-04-11 13:22:59 -0400</bug_when>
+    <thetext>.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2552069</commentid>
+    <comment_count>14</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-04-27 05:17:52 -0400</bug_when>
+    <thetext>Verified for 4.5 M7 with build I20150426-2000.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

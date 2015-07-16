@@ -1,0 +1,523 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>393719</bug_id>
+          
+          <creation_ts>2012-11-06 17:17:00 -0500</creation_ts>
+          <short_desc>[compiler] inconsistent warnings on iteration variables</short_desc>
+          <delta_ts>2014-04-16 09:48:13 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>divers</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2180278</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-11-06 17:17:40 -0500</bug_when>
+    <thetext>The assignment to an iteration variable of a foreach loop has different hickups for different warnings:
+
+	void testRawType(@SuppressWarnings(&quot;rawtypes&quot;) List&lt;List&gt; lists) {
+		List&lt;String&gt; stringList = lists.get(0); // (1)
+		for (List&lt;String&gt; strings : lists)         // (2)
+			stringList = strings;
+		System.out.println(stringList.get(0));
+	}
+
+Here (2) is wrongly silent, compare with (1) which correctly reports:
+  Type safety: The expression of type List needs unchecked conversion to conform to List&lt;String&gt;
+  
+Trying the same game with unchecked conversion from unannotated to @NonNull:
+  
+	void testNonNull(List&lt;String&gt; strings) {
+		@NonNull String nonNullString = strings.get(0); // (1)
+		for (@NonNull String string : strings) // (2)
+			nonNullString = string;
+		System.out.println(nonNullString);
+	}
+  
+Here both locations (1) &amp; (2) correctly report:
+  Null type safety: The expression of type String needs unchecked conversion to conform to &apos;@NonNull String&apos;
+  
+However, in the latter case suppressing the warning doesn&apos;t work:
+
+	void testNonNull(List&lt;String&gt; strings) {
+		@NonNull String nonNullString = strings.get(0); // (1)
+		for (@SuppressWarnings(&quot;null&quot;) @NonNull String string : strings) // (2)
+			nonNullString = string;
+		System.out.println(nonNullString);
+	}
+
+It even complains that the @SW is unnecessary.
+For the rawtypes example adding @SuppressWarnings(&quot;unchecked&quot;) in the corresponding location is silently accepted.
+
+Note, that bug 321085 has added the unchecked warning for the array case but not the collection case, so this gives the expected warnings:
+	
+	void testArray(@SuppressWarnings(&quot;rawtypes&quot;) List[] lists) {
+		List&lt;String&gt; stringList = lists[0];
+		for (List&lt;String&gt; strings : lists)
+			stringList = strings;
+		System.out.println(stringList.get(0));		
+	}
+	
+but again @SW on the iteration variable doesn&apos;t work.
+
+Summarizing I see two (releated?) bugs:
+- missing &quot;unchecked&quot; warning for iteration variable in foreach over collection of raw
+- @SW on the iteration variable doesn&apos;t work in any of these cases.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2204223</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-17 09:17:29 -0500</bug_when>
+    <thetext>I have a patch under test that fixes both parts of the issue:
+
+- @SuppressWarnings had no effect because it had too short a source range.
+  Adjusting the declaration{Source}End of ForeachStatement.elementVariable
+  (to include the collection expression) fixes this part.
+
+- The exact same patch as released in bug 321085 can be applied to the
+  collections branch, too.
+
+I wasn&apos;t quite happy about the way how bug 321085 reports this issue:
+
+for (Set&lt;String&gt; BUG : new Set[] { x, y }) {
+                       ^^^^^^^^^^^^^^^^^^
+Type safety: The expression of type Set[] needs unchecked conversion to conform to Set&lt;String&gt;[]
+
+I&apos;d say that nobody expects a &quot;Set&lt;String&gt;[]&quot;, so I&apos;m proposing the following:
+
+Type safety: The element expression of type Set needs unchecked conversion to conform to Set&lt;String&gt;
+
+This approach is also easier to transfer to the collection case :)
+
+Srikanth, did you have any reasons for your variant which I fail to see?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2204352</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-17 12:03:05 -0500</bug_when>
+    <thetext>For comparison:
+
+void foo(List&lt;String&gt; strings) {
+	for (Integer i : strings)
+		System.out.println(i);
+}
+
+Type mismatch: cannot convert from element type String to Integer
+
+So we do have a precedent in the direction of my proposal in comment 1.
+Here&apos;s another version of that proposal:
+
+Type safety: Elements of type Set need unchecked conversion to conform to Set&lt;String&gt;
+
+Sounds even more natural to me, since we don&apos;t literally have an &quot;element expression&quot;.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2204389</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-17 12:54:58 -0500</bug_when>
+    <thetext>Since changing source position potentially affects JDT/UI I ran their tests and found one regression:
+
+in AssistQuickFixTest.testConvertEnhancedForList01() 4 proposals are expected of which two are not produced with my change:
+- &quot;Remove surrounding &apos;for&apos; statement&quot;
+- &quot;Remove block from body statement&quot;
+
+Dani, Markus for your reference: the proposed change is to include the collection expression in the source range of the element variable of a foreach declaration (per declarationSourceEnd). Purpose: make @SuppressWarnings work on this element variable just as it does for normal variables with initialization.
+
+Has this analogy between local variable and element variable been discussed and rejected or is the different handling on oversight?
+
+
+The regression is simply explained: the test invokes assist at the &quot;:&quot; of a foreach loop, which after the change no longer selects the foreach itself, but the element variable. Changing the test to requesting assists at &quot;for&quot; fixes the regression. Is this change acceptable, or is it necessary to shield DOM AST against this change?
+
+I&apos;m going to run the refactoring tests now.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2204407</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-17 13:11:14 -0500</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; I&apos;m going to run the refactoring tests now.
+
+All is fine at this front.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2204418</commentid>
+    <comment_count>5</comment_count>
+      <attachid>225781</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-17 13:27:14 -0500</bug_when>
+    <thetext>Created attachment 225781
+proposed patch pending final touch
+
+These are the changes I have thus far.
+If no-one objects these additional changes are necessary:
+
+- JDT/Core tests:
+  adjust CompilerInvocationTests (trivial)
+  adjust some expected results in ASTConverter15(JLS4)Test 
+
+- JDT/UI: 
+  always accept IProblem.UnsafeElementTypeConversion where
+  IProblem.UnsafeTypeConversion is accepted
+
+- JDT/UI test: 
+  adopt the adjustment in AssistQuickFixTest.testConvertEnhancedForList01</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2204485</commentid>
+    <comment_count>6</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-01-17 14:40:29 -0500</bug_when>
+    <thetext>(In reply to comment #3 and comment #5)
+This patch violates an important property of the DOM AST. In ASTParser#setKind(int), the Javadoc guarantees that source ranges nest properly and that source ranges are defined by the tokens that make up an ASTNode. You can&apos;t just include the EnhancedForStatement&apos;s expression in the source range of its parameter.
+
+However, I have no problem with expanding the scope of an @SW on the EnhancedForStatement&apos;s parameter to also include the expression.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2204488</commentid>
+    <comment_count>7</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-01-17 14:42:56 -0500</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; I&apos;d say that nobody expects a &quot;Set&lt;String&gt;[]&quot;
+
+If you convert the example to an indexed for loop (e.g. using the quick assist, which implements the transformation defined in JLS7), you get:
+
+        Set&lt;String&gt;[] sets= new Set[] { x, y };
+        for (int i= 0; i &lt; sets.length; i++) {
+            Set&lt;String&gt; BUG= sets[i];
+        }
+
+On the ArrayCreation, you get this warning: &quot;Type safety: The expression of type Set[] needs unchecked conversion to conform to Set&lt;String&gt;[]&quot;. I guess that&apos;s where the original wording is coming from. It technically makes sense, because that&apos;s how the enhanced for loop is specified. But I&apos;m also fine with the new wording from the patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2204514</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-17 15:53:42 -0500</bug_when>
+    <thetext>(In reply to comment #6)
+&gt; (In reply to comment #3 and comment #5)
+&gt; This patch violates an important property of the DOM AST. In
+&gt; ASTParser#setKind(int), the Javadoc guarantees that source ranges nest properly
+&gt; and that source ranges are defined by the tokens that make up an ASTNode. You
+&gt; can&apos;t just include the EnhancedForStatement&apos;s expression in the source range of
+&gt; its parameter.
+
+Thanks for clarifying.
+I see, since a local variable contains the initialization as its child, it uses the larger source range, but the collection of a foreach is parented at the foreach and siblings cannot overlap.  No doubt about it.
+ 
+&gt; However, I have no problem with expanding the scope of an @SW on the
+&gt; EnhancedForStatement&apos;s parameter to also include the expression.
+
+Combining both requirements can be easily achieved by hiding my change in the compiler AST from DOM AST: When converting an element variable I use sourceEnd as the right end and declarationSourceEnd otherwise.
+
+This obsoletes the mentioned change in AssistQuickFixTest and the todo regarding ASTConverter15(JLS4)Test .
+Retesting.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2204530</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-17 16:34:35 -0500</bug_when>
+    <thetext>Improved fix released for 4.3 M5 via commit 994f6c0e00bbca016e96f8cedb045f0d49961de5
+
+This fix no longer affects DOM AST.
+
+I&apos;m leaving this bug open for hand-shake:
+
+* Srikanth: let me know if you disagree with my change to your message from bug 321085 
+
+* JDT/UI: please always accept IProblem.UnsafeElementTypeConversion where IProblem.UnsafeTypeConversion is accepted
+
+thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2205479</commentid>
+    <comment_count>10</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-01-21 09:58:01 -0500</bug_when>
+    <thetext>&gt; * JDT/UI: please always accept IProblem.UnsafeElementTypeConversion where
+&gt; IProblem.UnsafeTypeConversion is accepted
+
+Fixed with http://git.eclipse.org/c/jdt/eclipse.jdt.ui.git/commit/?id=8090b38460fbebe106579e2de113b876132bb0c3
+
+&gt; * Srikanth: let me know if you disagree with my change to your message from
+&gt; bug 321085 
+
+Assuming silent consensus. Please reopen if you disagree.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2205529</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-21 11:27:08 -0500</bug_when>
+    <thetext>(In reply to comment #10)
+&gt; &gt; * JDT/UI: please always accept IProblem.UnsafeElementTypeConversion where
+&gt; &gt; IProblem.UnsafeTypeConversion is accepted
+&gt; 
+&gt; Fixed with
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.ui.git/commit/
+&gt; ?id=8090b38460fbebe106579e2de113b876132bb0c3
+
+thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2229398</commentid>
+    <comment_count>12</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2013-03-12 06:00:54 -0400</bug_when>
+    <thetext>Verified for 4.3 M6 using  build I20130310-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>225781</attachid>
+            <date>2013-01-17 13:27:00 -0500</date>
+            <delta_ts>2013-01-17 13:27:14 -0500</delta_ts>
+            <desc>proposed patch pending final touch</desc>
+            <filename>Bug-393719--compiler-inconsistent-warnings-on-iterat.patch</filename>
+            <type>text/plain</type>
+            <size>10718</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0ZvcmVhY2hTdGF0ZW1l
+bnRUZXN0LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3Jn
+L2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9Gb3JlYWNoU3RhdGVt
+ZW50VGVzdC5qYXZhCmluZGV4IDEzZjY5MjAuLmQ5ZWIxZWUgMTAwNjQ0Ci0tLSBhL29yZy5lY2xp
+cHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0
+cy9jb21waWxlci9yZWdyZXNzaW9uL0ZvcmVhY2hTdGF0ZW1lbnRUZXN0LmphdmEKKysrIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3Jl
+L3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vRm9yZWFjaFN0YXRlbWVudFRlc3QuamF2YQpAQCAt
+MzgsNyArMzgsNyBAQAogLy8gU3RhdGljIGluaXRpYWxpemVyIHRvIHNwZWNpZnkgdGVzdHMgc3Vi
+c2V0IHVzaW5nIFRFU1RTXyogc3RhdGljIHZhcmlhYmxlcwogLy8gQWxsIHNwZWNpZmllZCB0ZXN0
+cyB3aGljaCBkbyBub3QgYmVsb25nIHRvIHRoZSBjbGFzcyBhcmUgc2tpcHBlZC4uLgogc3RhdGlj
+IHsKLS8vCVRFU1RTX05BTUVTID0gbmV3IFN0cmluZ1tdIHsgInRlc3QwMDAiIH07CisvLwlURVNU
+U19OQU1FUyA9IG5ldyBTdHJpbmdbXSB7ICJ0ZXN0MDU1IiB9OwogLy8JVEVTVFNfTlVNQkVSUyA9
+IG5ldyBpbnRbXSB7IDUwLCA1MSwgNTIsIDUzIH07CiAvLwlURVNUU19SQU5HRSA9IG5ldyBpbnRb
+XSB7IDM0LCAzOCB9OwogfQpAQCAtMjgxNSw3ICsyODE1LDcgQEAKIAkJCSIyLiBXQVJOSU5HIGlu
+IFguamF2YSAoYXQgbGluZSAxMClcbiIgKyAKIAkJCSIJZm9yIChTZXQ8U3RyaW5nPiBCVUcgOiBu
+ZXcgU2V0W10geyB4LCB5IH0pIHtcbiIgKyAKIAkJCSIJICAgICAgICAgICAgICAgICAgICAgICBe
+Xl5eXl5eXl5eXl5eXl5eXl5cbiIgKyAKLQkJCSJUeXBlIHNhZmV0eTogVGhlIGV4cHJlc3Npb24g
+b2YgdHlwZSBTZXRbXSBuZWVkcyB1bmNoZWNrZWQgY29udmVyc2lvbiB0byBjb25mb3JtIHRvIFNl
+dDxTdHJpbmc+W11cbiIgKyAKKwkJCSJUeXBlIHNhZmV0eTogRWxlbWVudHMgb2YgdHlwZSBTZXQg
+bmVlZCB1bmNoZWNrZWQgY29udmVyc2lvbiB0byBjb25mb3JtIHRvIFNldDxTdHJpbmc+XG4iICsg
+CiAJCQkiLS0tLS0tLS0tLVxuIiArIAogCQkJIjMuIFdBUk5JTkcgaW4gWC5qYXZhIChhdCBsaW5l
+IDE0KVxuIiArIAogCQkJIglTZXQgW10gc2V0ID0gbmV3IFNldFtdIHsgeCwgeSB9O1xuIiArIApA
+QCAtMjgyNSw3ICsyODI1LDcgQEAKIAkJCSI0LiBXQVJOSU5HIGluIFguamF2YSAoYXQgbGluZSAx
+NSlcbiIgKyAKIAkJCSIJZm9yIChTZXQ8U3RyaW5nPiBCVUcgOiBzZXQpIHtcbiIgKyAKIAkJCSIJ
+ICAgICAgICAgICAgICAgICAgICAgICBeXl5cbiIgKyAKLQkJCSJUeXBlIHNhZmV0eTogVGhlIGV4
+cHJlc3Npb24gb2YgdHlwZSBTZXRbXSBuZWVkcyB1bmNoZWNrZWQgY29udmVyc2lvbiB0byBjb25m
+b3JtIHRvIFNldDxTdHJpbmc+W11cbiIgKyAKKwkJCSJUeXBlIHNhZmV0eTogRWxlbWVudHMgb2Yg
+dHlwZSBTZXQgbmVlZCB1bmNoZWNrZWQgY29udmVyc2lvbiB0byBjb25mb3JtIHRvIFNldDxTdHJp
+bmc+XG4iICsgCiAJCQkiLS0tLS0tLS0tLVxuIiArIAogCQkJIjUuIEVSUk9SIGluIFguamF2YSAo
+YXQgbGluZSAyMClcbiIgKyAKIAkJCSIJWm9yayB6O1xuIiArIApAQCAtMjgzMyw2ICsyODMzLDc1
+IEBACiAJCQkiWm9yayBjYW5ub3QgYmUgcmVzb2x2ZWQgdG8gYSB0eXBlXG4iICsgCiAJCQkiLS0t
+LS0tLS0tLVxuIik7CiB9CisvLyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvMzkzNzE5CisvLyBs
+aWtlIHRlc3QwNTQgYnV0IHN1cHByZXNzaW5nIHRoZSB3YXJuaW5ncy4KK3B1YmxpYyB2b2lkIHRl
+c3QwNTUoKSB0aHJvd3MgRXhjZXB0aW9uIHsKKwl0aGlzLnJ1bk5lZ2F0aXZlVGVzdCgKKwkJCW5l
+dyBTdHJpbmdbXSB7CisJCQkJIlguamF2YSIsCisJCQkJImltcG9ydCBqYXZhLnV0aWwuSGFzaFNl
+dDtcbiIgKworCQkJCSJpbXBvcnQgamF2YS51dGlsLlNldDtcbiIgKworCQkJCSJwdWJsaWMgY2xh
+c3MgWCB7XG4iICsKKwkJCQkiICAgIHZvaWQgZm9vKCkge1xuIiArCisJCQkJIiAgICAgICBIYXNo
+U2V0PFN0cmluZz4geCA9IG5ldyBIYXNoU2V0PFN0cmluZz4oKTtcbiIgKworCQkJCSIgICAgICAg
+IHguYWRkKFwiYVwiKTtcbiIgKworCQkJCSIgICAgICAgIEhhc2hTZXQ8SW50ZWdlcj4geSA9IG5l
+dyBIYXNoU2V0PEludGVnZXI+KCk7XG4iICsKKwkJCQkiICAgICAgICB5LmFkZCgxKTtcbiIgKwor
+CQkJCSIgICAgICAgIEBTdXBwcmVzc1dhcm5pbmdzKFwidW5jaGVja2VkXCIpIFNldDxTdHJpbmc+
+IFtdIE9LPSBuZXcgU2V0W10geyB4LCB5IH07XG4iICsKKwkJCQkiICAgICAgICBmb3IgKEBTdXBw
+cmVzc1dhcm5pbmdzKFwidW5jaGVja2VkXCIpIFNldDxTdHJpbmc+IEJVRyA6IG5ldyBTZXRbXSB7
+IHgsIHkgfSkge1xuIiArCisJCQkJIiAgICAgICAgICAgIGZvciAoU3RyaW5nIHN0ciA6IEJVRylc
+biIgKworCQkJCSIgICAgICAgICAgICAgICAgU3lzdGVtLm91dC5wcmludGxuKHN0cik7XG4iICsK
+KwkJCQkiICAgICAgICB9XG4iICsKKwkJCQkiICAgICAgICBAU3VwcHJlc3NXYXJuaW5ncyh7XCJy
+YXd0eXBlc1wiLCBcInVuY2hlY2tlZFwifSkgU2V0IFtdIHNldCA9IG5ldyBTZXRbXSB7IHgsIHkg
+fTtcbiIgKworCQkJCSIgICAgICAgIGZvciAoQFN1cHByZXNzV2FybmluZ3MoXCJ1bmNoZWNrZWRc
+IikgU2V0PFN0cmluZz4gQlVHIDogc2V0KSB7XG4iICsKKwkJCQkiICAgICAgICAgICAgZm9yIChT
+dHJpbmcgc3RyIDogQlVHKVxuIiArCisJCQkJIiAgICAgICAgICAgICAgICBTeXN0ZW0ub3V0LnBy
+aW50bG4oc3RyKTtcbiIgKworCQkJCSIgICAgICAgIH1cbiIgKworCQkJCSIgICAgfVxuIiArCisJ
+CQkJIiAgICBab3JrIHo7XG4iICsKKwkJCQkifVxuIiwKKwkJCX0sCisJCQkiLS0tLS0tLS0tLVxu
+IiArIAorCQkJIjEuIEVSUk9SIGluIFguamF2YSAoYXQgbGluZSAyMClcbiIgKyAKKwkJCSIJWm9y
+ayB6O1xuIiArIAorCQkJIgleXl5eXG4iICsgCisJCQkiWm9yayBjYW5ub3QgYmUgcmVzb2x2ZWQg
+dG8gYSB0eXBlXG4iICsgCisJCQkiLS0tLS0tLS0tLVxuIik7Cit9CisvLyBodHRwczovL2J1Z3Mu
+ZWNsaXBzZS5vcmcvMzkzNzE5CisvLyAidW5jaGVja2VkIiB3YXJuaW5nIGFnYWluc3QgdGhlIGNv
+bGxlY3Rpb24KK3B1YmxpYyB2b2lkIHRlc3QwNTYoKSB0aHJvd3MgRXhjZXB0aW9uIHsKKwl0aGlz
+LnJ1bk5lZ2F0aXZlVGVzdCgKKwkJCW5ldyBTdHJpbmdbXSB7CisJCQkJIlguamF2YSIsCisJCQkJ
+ImltcG9ydCBqYXZhLnV0aWwuTGlzdDtcbiIgKworCQkJCSJwdWJsaWMgY2xhc3MgWCB7XG4iICsK
+KwkJCQkiICAgIHZvaWQgdGVzdFJhd1R5cGUoQFN1cHByZXNzV2FybmluZ3MoXCJyYXd0eXBlc1wi
+KSBMaXN0PExpc3Q+IGxpc3RzKSB7XG4iICsgCisJCQkJIgkJTGlzdDxTdHJpbmc+IHN0cmluZ0xp
+c3QgPSBsaXN0cy5nZXQoMCk7IC8vICgxKVxuIiArIAorCQkJCSIJCWZvciAoTGlzdDxTdHJpbmc+
+IHN0cmluZ3MgOiBsaXN0cykgICAgICAvLyAoMilcbiIgKyAKKwkJCQkiCQkJc3RyaW5nTGlzdCA9
+IHN0cmluZ3M7XG4iICsgCisJCQkJIgkJU3lzdGVtLm91dC5wcmludGxuKHN0cmluZ0xpc3QuZ2V0
+KDApKTtcbiIgKyAKKwkJCQkiCSB9XG4iICsKKwkJCQkiICAgIFpvcmsgejtcbiIgKworCQkJCSJ9
+XG4iLAorCQkJfSwKKwkJCSItLS0tLS0tLS0tXG4iICsgCisJCQkiMS4gV0FSTklORyBpbiBYLmph
+dmEgKGF0IGxpbmUgNClcbiIgKyAKKwkJCSIJTGlzdDxTdHJpbmc+IHN0cmluZ0xpc3QgPSBsaXN0
+cy5nZXQoMCk7IC8vICgxKVxuIiArIAorCQkJIgkgICAgICAgICAgICAgICAgICAgICAgICAgIF5e
+Xl5eXl5eXl5eXlxuIiArIAorCQkJIlR5cGUgc2FmZXR5OiBUaGUgZXhwcmVzc2lvbiBvZiB0eXBl
+IExpc3QgbmVlZHMgdW5jaGVja2VkIGNvbnZlcnNpb24gdG8gY29uZm9ybSB0byBMaXN0PFN0cmlu
+Zz5cbiIgKyAKKwkJCSItLS0tLS0tLS0tXG4iICsgCisJCQkiMi4gV0FSTklORyBpbiBYLmphdmEg
+KGF0IGxpbmUgNSlcbiIgKyAKKwkJCSIJZm9yIChMaXN0PFN0cmluZz4gc3RyaW5ncyA6IGxpc3Rz
+KSAgICAgIC8vICgyKVxuIiArIAorCQkJIgkgICAgICAgICAgICAgICAgICAgICAgICAgICAgXl5e
+Xl5cbiIgKyAKKwkJCSJUeXBlIHNhZmV0eTogRWxlbWVudHMgb2YgdHlwZSBMaXN0IG5lZWQgdW5j
+aGVja2VkIGNvbnZlcnNpb24gdG8gY29uZm9ybSB0byBMaXN0PFN0cmluZz5cbiIgKyAKKwkJCSIt
+LS0tLS0tLS0tXG4iICsgCisJCQkiMy4gRVJST1IgaW4gWC5qYXZhIChhdCBsaW5lIDkpXG4iICsg
+CisJCQkiCVpvcmsgejtcbiIgKyAKKwkJCSIJXl5eXlxuIiArIAorCQkJIlpvcmsgY2Fubm90IGJl
+IHJlc29sdmVkIHRvIGEgdHlwZVxuIiArIAorCQkJIi0tLS0tLS0tLS1cbiIpOworfQogcHVibGlj
+IHN0YXRpYyBDbGFzcyB0ZXN0Q2xhc3MoKSB7CiAJcmV0dXJuIEZvcmVhY2hTdGF0ZW1lbnRUZXN0
+LmNsYXNzOwogfQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3Jn
+L2VjbGlwc2UvamR0L2NvcmUvY29tcGlsZXIvSVByb2JsZW0uamF2YSBiL29yZy5lY2xpcHNlLmpk
+dC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9jb3JlL2NvbXBpbGVyL0lQcm9ibGVtLmph
+dmEKaW5kZXggNWRhMDUzOC4uMTEyNTE2MSAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNv
+cmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2NvcmUvY29tcGlsZXIvSVByb2JsZW0uamF2YQor
+KysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvY29yZS9j
+b21waWxlci9JUHJvYmxlbS5qYXZhCkBAIC0xMTg3LDcgKzExODcsMTAgQEAKIAlpbnQgRHVwbGlj
+YXRlSW5oZXJpdGVkTWV0aG9kcyA9IE1ldGhvZFJlbGF0ZWQgKyA1ODM7CiAJLyoqIEBzaW5jZSAz
+LjggKi8KIAlpbnQgTWV0aG9kTmFtZUNsYXNoSGlkZGVuID0gTWV0aG9kUmVsYXRlZCArIDU4NDsK
+LQkKKworCS8qKiBAc2luY2UgMy45ICovCisJaW50IFVuc2FmZUVsZW1lbnRUeXBlQ29udmVyc2lv
+biA9IFR5cGVSZWxhdGVkICsgNTg1OworCiAJLyoqCiAJICogMS41IFN5bnRheCBlcnJvcnMgKHdo
+ZW4gc291cmNlIGxldmVsIDwgMS41KQogCSAqLwpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9Gb3Jl
+YWNoU3RhdGVtZW50LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNs
+aXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0ZvcmVhY2hTdGF0ZW1lbnQuamF2YQppbmRl
+eCAzYzllZTEwLi45MGIwY2I3IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21w
+aWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0ZvcmVhY2hTdGF0ZW1l
+bnQuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvY29tcGlsZXIvYXN0L0ZvcmVhY2hTdGF0ZW1lbnQuamF2YQpAQCAtNDA4LDcg
+KzQwOCw3IEBACiAJCQkJCQkmJiAhdGhpcy5zY29wZS5pc0JveGluZ0NvbXBhdGlibGVXaXRoKHRo
+aXMuY29sbGVjdGlvbkVsZW1lbnRUeXBlLCBlbGVtZW50VHlwZSkpIHsKIAkJCQkJdGhpcy5zY29w
+ZS5wcm9ibGVtUmVwb3J0ZXIoKS5ub3RDb21wYXRpYmxlVHlwZXNFcnJvckluRm9yZWFjaCh0aGlz
+LmNvbGxlY3Rpb24sIHRoaXMuY29sbGVjdGlvbkVsZW1lbnRUeXBlLCBlbGVtZW50VHlwZSk7CiAJ
+CQkJfSBlbHNlIGlmICh0aGlzLmNvbGxlY3Rpb25FbGVtZW50VHlwZS5uZWVkc1VuY2hlY2tlZENv
+bnZlcnNpb24oZWxlbWVudFR5cGUpKSB7IC8vIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy9idWdz
+L3Nob3dfYnVnLmNnaT9pZD0zMjEwODUKLQkJCQkgICAgdGhpcy5zY29wZS5wcm9ibGVtUmVwb3J0
+ZXIoKS51bnNhZmVUeXBlQ29udmVyc2lvbih0aGlzLmNvbGxlY3Rpb24sIGNvbGxlY3Rpb25UeXBl
+LCB1cHBlclNjb3BlLmNyZWF0ZUFycmF5VHlwZShlbGVtZW50VHlwZSwgMSkpOworCQkJCSAgICB0
+aGlzLnNjb3BlLnByb2JsZW1SZXBvcnRlcigpLnVuc2FmZUVsZW1lbnRUeXBlQ29udmVyc2lvbih0
+aGlzLmNvbGxlY3Rpb24sIHRoaXMuY29sbGVjdGlvbkVsZW1lbnRUeXBlLCBlbGVtZW50VHlwZSk7
+CiAJCQkJfQogCQkJCS8vIGluIGNhc2Ugd2UgbmVlZCB0byBkbyBhIGNvbnZlcnNpb24KIAkJCQlp
+bnQgY29tcGlsZVRpbWVUeXBlSUQgPSB0aGlzLmNvbGxlY3Rpb25FbGVtZW50VHlwZS5pZDsKQEAg
+LTQ4OCw2ICs0ODgsOCBAQAogCQkJCQlpZiAoIXRoaXMuY29sbGVjdGlvbkVsZW1lbnRUeXBlLmlz
+Q29tcGF0aWJsZVdpdGgoZWxlbWVudFR5cGUpCiAJCQkJCQkJJiYgIXRoaXMuc2NvcGUuaXNCb3hp
+bmdDb21wYXRpYmxlV2l0aCh0aGlzLmNvbGxlY3Rpb25FbGVtZW50VHlwZSwgZWxlbWVudFR5cGUp
+KSB7CiAJCQkJCQl0aGlzLnNjb3BlLnByb2JsZW1SZXBvcnRlcigpLm5vdENvbXBhdGlibGVUeXBl
+c0Vycm9ySW5Gb3JlYWNoKHRoaXMuY29sbGVjdGlvbiwgdGhpcy5jb2xsZWN0aW9uRWxlbWVudFR5
+cGUsIGVsZW1lbnRUeXBlKTsKKwkJCQkJfSBlbHNlIGlmICh0aGlzLmNvbGxlY3Rpb25FbGVtZW50
+VHlwZS5uZWVkc1VuY2hlY2tlZENvbnZlcnNpb24oZWxlbWVudFR5cGUpKSB7IC8vIGh0dHBzOi8v
+YnVncy5lY2xpcHNlLm9yZy9idWdzL3Nob3dfYnVnLmNnaT9pZD0zOTM3MTkKKwkJCQkJICAgIHRo
+aXMuc2NvcGUucHJvYmxlbVJlcG9ydGVyKCkudW5zYWZlRWxlbWVudFR5cGVDb252ZXJzaW9uKHRo
+aXMuY29sbGVjdGlvbiwgdGhpcy5jb2xsZWN0aW9uRWxlbWVudFR5cGUsIGVsZW1lbnRUeXBlKTsK
+IAkJCQkJfQogCQkJCQlpbnQgY29tcGlsZVRpbWVUeXBlSUQgPSB0aGlzLmNvbGxlY3Rpb25FbGVt
+ZW50VHlwZS5pZDsKIAkJCQkJLy8gbm8gY29udmVyc2lvbiBuZWVkZWQgYXMgb25seSBmb3IgcmVm
+ZXJlbmNlIHR5cGVzCmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9v
+cmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL1BhcnNlci5qYXZhIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL3BhcnNlci9QYXJzZXIuamF2YQppbmRleCA2MzAzMzI4Li4yZGUyNmM1IDEwMDY0NAotLS0g
+YS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwv
+Y29tcGlsZXIvcGFyc2VyL1BhcnNlci5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2Nv
+bXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvUGFyc2VyLmph
+dmEKQEAgLTMwNTgsNiArMzA1OCw4IEBACiAJdGhpcy5leHByZXNzaW9uTGVuZ3RoUHRyLS07CiAJ
+ZmluYWwgRXhwcmVzc2lvbiBjb2xsZWN0aW9uID0gdGhpcy5leHByZXNzaW9uU3RhY2tbdGhpcy5l
+eHByZXNzaW9uUHRyLS1dOwogCXN0YXRlbWVudC5jb2xsZWN0aW9uID0gY29sbGVjdGlvbjsKKwlz
+dGF0ZW1lbnQuZWxlbWVudFZhcmlhYmxlLmRlY2xhcmF0aW9uU291cmNlRW5kID0gY29sbGVjdGlv
+bi5zb3VyY2VFbmQ7CisJc3RhdGVtZW50LmVsZW1lbnRWYXJpYWJsZS5kZWNsYXJhdGlvbkVuZCA9
+IGNvbGxlY3Rpb24uc291cmNlRW5kOwogCXN0YXRlbWVudC5zb3VyY2VFbmQgPSB0aGlzLnJQYXJl
+blBvczsKIAogCWlmKCF0aGlzLnN0YXRlbWVudFJlY292ZXJ5QWN0aXZhdGVkICYmCmRpZmYgLS1n
+aXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvcHJvYmxlbS9Qcm9ibGVtUmVwb3J0ZXIuamF2YSBiL29yZy5lY2xpcHNlLmpk
+dC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wcm9ibGVt
+L1Byb2JsZW1SZXBvcnRlci5qYXZhCmluZGV4IGVhNmMxODcuLmFkZTczNGUgMTAwNjQ0Ci0tLSBh
+L29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9j
+b21waWxlci9wcm9ibGVtL1Byb2JsZW1SZXBvcnRlci5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpk
+dC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9wcm9ibGVt
+L1Byb2JsZW1SZXBvcnRlci5qYXZhCkBAIC0yNTgsNiArMjU4LDcgQEAKIAkJY2FzZSBJUHJvYmxl
+bS5VbnNhZmVSYXdDb25zdHJ1Y3Rvckludm9jYXRpb246CiAJCWNhc2UgSVByb2JsZW0uVW5zYWZl
+UmF3TWV0aG9kSW52b2NhdGlvbjoKIAkJY2FzZSBJUHJvYmxlbS5VbnNhZmVUeXBlQ29udmVyc2lv
+bjoKKwkJY2FzZSBJUHJvYmxlbS5VbnNhZmVFbGVtZW50VHlwZUNvbnZlcnNpb246CiAJCWNhc2Ug
+SVByb2JsZW0uVW5zYWZlUmF3RmllbGRBc3NpZ25tZW50OgogCQljYXNlIElQcm9ibGVtLlVuc2Fm
+ZUdlbmVyaWNDYXN0OgogCQljYXNlIElQcm9ibGVtLlVuc2FmZVJldHVyblR5cGVPdmVycmlkZToK
+QEAgLTc1ODgsNiArNzU4OSwyMSBAQAogCQlleHByZXNzaW9uLnNvdXJjZVN0YXJ0LAogCQlleHBy
+ZXNzaW9uLnNvdXJjZUVuZCk7CiB9CitwdWJsaWMgdm9pZCB1bnNhZmVFbGVtZW50VHlwZUNvbnZl
+cnNpb24oRXhwcmVzc2lvbiBleHByZXNzaW9uLCBUeXBlQmluZGluZyBleHByZXNzaW9uVHlwZSwg
+VHlwZUJpbmRpbmcgZXhwZWN0ZWRUeXBlKSB7CisJaWYgKHRoaXMub3B0aW9ucy5zb3VyY2VMZXZl
+bCA8IENsYXNzRmlsZUNvbnN0YW50cy5KREsxXzUpIHJldHVybjsgLy8gaHR0cHM6Ly9idWdzLmVj
+bGlwc2Uub3JnL2J1Z3Mvc2hvd19idWcuY2dpP2lkPTMwNTI1OQorCWludCBzZXZlcml0eSA9IGNv
+bXB1dGVTZXZlcml0eShJUHJvYmxlbS5VbnNhZmVFbGVtZW50VHlwZUNvbnZlcnNpb24pOworCWlm
+IChzZXZlcml0eSA9PSBQcm9ibGVtU2V2ZXJpdGllcy5JZ25vcmUpIHJldHVybjsKKwlpZiAoIXRo
+aXMub3B0aW9ucy5yZXBvcnRVbmF2b2lkYWJsZUdlbmVyaWNUeXBlUHJvYmxlbXMgJiYgZXhwcmVz
+c2lvbi5mb3JjZWRUb0JlUmF3KHRoaXMucmVmZXJlbmNlQ29udGV4dCkpIHsKKwkJcmV0dXJuOwor
+CX0KKwl0aGlzLmhhbmRsZSgKKwkJSVByb2JsZW0uVW5zYWZlRWxlbWVudFR5cGVDb252ZXJzaW9u
+LAorCQluZXcgU3RyaW5nW10geyBuZXcgU3RyaW5nKGV4cHJlc3Npb25UeXBlLnJlYWRhYmxlTmFt
+ZSgpKSwgbmV3IFN0cmluZyhleHBlY3RlZFR5cGUucmVhZGFibGVOYW1lKCkpLCBuZXcgU3RyaW5n
+KGV4cGVjdGVkVHlwZS5lcmFzdXJlKCkucmVhZGFibGVOYW1lKCkpIH0sCisJCW5ldyBTdHJpbmdb
+XSB7IG5ldyBTdHJpbmcoZXhwcmVzc2lvblR5cGUuc2hvcnRSZWFkYWJsZU5hbWUoKSksIG5ldyBT
+dHJpbmcoZXhwZWN0ZWRUeXBlLnNob3J0UmVhZGFibGVOYW1lKCkpLCBuZXcgU3RyaW5nKGV4cGVj
+dGVkVHlwZS5lcmFzdXJlKCkuc2hvcnRSZWFkYWJsZU5hbWUoKSkgfSwKKwkJc2V2ZXJpdHksCisJ
+CWV4cHJlc3Npb24uc291cmNlU3RhcnQsCisJCWV4cHJlc3Npb24uc291cmNlRW5kKTsKK30KIHB1
+YmxpYyB2b2lkIHVudXNlZEFyZ3VtZW50KExvY2FsRGVjbGFyYXRpb24gbG9jYWxEZWNsKSB7CiAJ
+aW50IHNldmVyaXR5ID0gY29tcHV0ZVNldmVyaXR5KElQcm9ibGVtLkFyZ3VtZW50SXNOZXZlclVz
+ZWQpOwogCWlmIChzZXZlcml0eSA9PSBQcm9ibGVtU2V2ZXJpdGllcy5JZ25vcmUpIHJldHVybjsK
+ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9wcm9ibGVtL21lc3NhZ2VzLnByb3BlcnRpZXMgYi9vcmcuZWNs
+aXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIv
+cHJvYmxlbS9tZXNzYWdlcy5wcm9wZXJ0aWVzCmluZGV4IDJkNDEwOTguLjE3YWRiMzMgMTAwNjQ0
+Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRl
+cm5hbC9jb21waWxlci9wcm9ibGVtL21lc3NhZ2VzLnByb3BlcnRpZXMKKysrIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3By
+b2JsZW0vbWVzc2FnZXMucHJvcGVydGllcwpAQCAtNTMyLDYgKzUzMiw3IEBACiA1ODAgPSBUeXBl
+IG1pc21hdGNoOiBjYW5ub3QgY29udmVydCBmcm9tIGVsZW1lbnQgdHlwZSB7MH0gdG8gezF9CiA1
+ODEgPSBDYW4gb25seSBpdGVyYXRlIG92ZXIgYW4gYXJyYXkgb3IgYW4gaW5zdGFuY2Ugb2YgamF2
+YS5sYW5nLkl0ZXJhYmxlCiA1ODIgPSBDYW4gb25seSBpdGVyYXRlIG92ZXIgYW4gYXJyYXkgb3Ig
+YW4gaW5zdGFuY2Ugb2YgamF2YS51dGlsLkNvbGxlY3Rpb24KKzU4NSA9IFR5cGUgc2FmZXR5OiBF
+bGVtZW50cyBvZiB0eXBlIHswfSBuZWVkIHVuY2hlY2tlZCBjb252ZXJzaW9uIHRvIGNvbmZvcm0g
+dG8gezF9CiAKICMjIyBTT1VSQ0UgTEVWRUwKIDU5MCA9IFN5bnRheCBlcnJvciwgdHlwZSBwYXJh
+bWV0ZXJzIGFyZSBvbmx5IGF2YWlsYWJsZSBpZiBzb3VyY2UgbGV2ZWwgaXMgMS41IG9yIGdyZWF0
+ZXI=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

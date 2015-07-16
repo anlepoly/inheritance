@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>433845</bug_id>
+          
+          <creation_ts>2014-04-30 08:06:00 -0400</creation_ts>
+          <short_desc>[1.8]Lambda Type inference fails on complex generics</short_desc>
+          <delta_ts>2014-08-06 01:57:16 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Thomas Schindl">tom.schindl</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>manpalat</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2395336</commentid>
+    <comment_count>0</comment_count>
+    <who name="Thomas Schindl">tom.schindl</who>
+    <bug_when>2014-04-30 08:06:59 -0400</bug_when>
+    <thetext>this is with JDT 20140317
+
+stripped down from e(fx)clipse code base ;-)
+
+---8&lt;---
+package test;
+
+
+public abstract class Test {
+	public interface MUIElement {
+		
+	}
+
+	private interface Listener&lt;W extends WWidget&lt;?&gt;&gt; {
+		public void call(Event&lt;W&gt; event);
+	}
+	
+	public static class Event&lt;W extends WWidget&lt;?&gt;&gt; {
+		
+	}
+	
+	public interface WWidget&lt;M extends MUIElement&gt; {
+		public void set(Listener&lt;? extends WWidget&lt;M&gt;&gt; handler);
+	}
+	
+	public static abstract class A&lt;M extends MUIElement, W extends WWidget&lt;M&gt;&gt; {
+		
+		public final W createWidget(final M element) {
+			W w = get(); 
+			// works
+			w.set((Event&lt;W&gt;e) -&gt; call(e));
+			// fails
+			w.set(this::call);
+			// fails
+			w.set((e) -&gt; call(e));
+			return w;
+		}
+		
+		private W get() {
+			return null;
+		}
+		
+		private void call(Event&lt;W&gt; event) {
+			
+		}
+	}
+}
+---8&lt;---</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2395587</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-30 14:04:26 -0400</bug_when>
+    <thetext>Didn&apos;t I mention in my talk that not every failure to find an inference solution is a bug in the compiler? :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2432982</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-29 07:08:32 -0400</bug_when>
+    <thetext>javac reports the same two errors, hence focusing on trying to understand why these errors should be correct.
+
+
+Cases 2 &amp; 3 fail during method lookup with these bits:
+- argument type:  Event&lt;WWidget&lt;M&gt;&gt;
+- parameter type: Event&lt;W&gt;
+
+The argument type is derived from the function type 
+   (Listener&lt;WWidget&lt;M&gt;&gt;) -&gt; void
+
+Since the function type is derived from the following (in WWidget):
+   public void set(Listener&lt;? extends WWidget&lt;M&gt;&gt; handler);
+what happened to the wildcard?
+
+Answer (from JLS 9.9):
+&quot;The function type of a parameterized functional interface type I&lt;A1...An&gt;, where one or more of A1...An is a wildcard, is the function type of the non-wildcard parameterization of I, I&lt;T1...Tn&gt;.  ...&quot;
+
+For reference: the three dots are implemented by ParameterizedTypeBinding.getNonWildcardParameterization(Scope)
+
+Since WWidget&lt;M&gt; is not &quot;contained in&quot; W, incompatibility is correctly reported.
+
+
+What&apos;s the difference to the case of the explicit lambda (which is accepted)?
+
+Answer: in that case the parameter type Event&lt;W&gt; participates in type inference (which doesn&apos;t apply to the other cases). In this scenario, the functional type contains an inference variable in place of the wildcard. The inference variable is *not* eliminated in JLS 9.9. Hence we can infer compatible typing for this example.
+
+
+(In reply to Stephan Herrmann from comment #1)
+&gt; Didn&apos;t I mention in my talk that not every failure to find an inference
+&gt; solution is a bug in the compiler? :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2432987</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-29 07:13:45 -0400</bug_when>
+    <thetext>Negative test released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=2d6dd32ebdeb3cb0db4aae1fd68101be25bf888e</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435551</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-08-05 05:15:34 -0400</bug_when>
+    <thetext>Stephan, I see three error messages with M1 candidate bits while javac issues
+two - could you take a quick look to see that all is well ? Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435596</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-05 06:22:35 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #4)
+&gt; Stephan, I see three error messages with M1 candidate bits while javac issues
+&gt; two - could you take a quick look to see that all is well ? Thanks.
+
+I assume you see the same errors as in the test?
+See http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=2d6dd32ebdeb3cb0db4aae1fd68101be25bf888e
+
+I counted these as &quot;two&quot; because (1) and (2) both concern the same invocation. 
+
+Do you think we should suppress one of the errors as being secondary?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2436078</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-08-06 01:57:16 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #5)
+&gt; (In reply to Srikanth Sankaran from comment #4)
+&gt; &gt; Stephan, I see three error messages with M1 candidate bits while javac issues
+&gt; &gt; two - could you take a quick look to see that all is well ? Thanks.
+&gt; 
+&gt; I assume you see the same errors as in the test?
+
+Yes, sorry I hadn&apos;t looked at the junit.
+
+&gt; Do you think we should suppress one of the errors as being secondary?
+
+I am OK with this being what it is.
+
+Verified for 4.5 M1.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

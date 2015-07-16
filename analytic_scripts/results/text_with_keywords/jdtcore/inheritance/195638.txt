@@ -1,0 +1,255 @@
+BUG REPORT COMMENTS:
+Build ID: I20070625-1500
+
+Steps To Reproduce:
+The following "dummy" code sample gives a compilation error :
+
+      String str = null;
+      for (int i = 0; i < 2; i++) {
+        try {
+          str = new String("Test");
+        } catch (Exception ex) {
+          ex.printStackTrace();
+        }
+        str.charAt(i); // Error : "Null pointer access: The
+                       // variable str can only be null at 
+                       // this location"
+        str = null;
+      }
+
+
+More information:
+In my point of view, this compilation error should be replaced with a warning (if so configured) that the variable str COULD be null (in case of catched exception).
+Reproduced with 3.3.
+The diagnostic is right, we should have a may be null diagnostic here.
+Released NullReferenceTest#746 (inactive) and 747 to illustrate the issue.
+
+If you contrast the original test case with the following, which behaves as expected:
+      String str = null;
+      for (int i = 0; i < 2; i++) {
+        try {
+          str = new String("Test");
+        } catch (Exception ex) {
+          ex.printStackTrace();
+        }
+        str.charAt(i); // Error : "Null pointer access: The
+                       // variable str can only be null at 
+                       // this location"
+        // str = null;
+      }
+you get the key for the bug. In fact, the checks for str.charAt are deferred (since we are within a loop), and the deferred check mistakenly considers that str can only be null - which is true at the end of the loop, but not when charAt is called.
+This is shading light to yet another limit of our current implementation, that is not easy to overcome. The current plans have no allowance for the corresponding investments, hence moving to P5.
+The following code exhibits the same behavior. Should I file a separate bug report?
+
+import java.sql.Connection;
+  void m() throws SQLException
+  {
+    Connection conn = null;
+    try
+    {
+      conn = createConnection();
+
+      for (; ; )
+      {
+        throwSomething();
+      }
+    }
+    catch (MyException e)
+    {
+      conn.rollback(); //The variable can never be null here...
+    }
+  }
+
+  private void throwSomething() throws MyException
+  {
+    throw new MyException();
+  }
+
+  class MyException extends Exception
+  {
+
+  }
+
+  private Connection createConnection()
+  {
+    return ...;
+  }
+Since we do not plan to invest in that area for now, my take would be to keep your additional test case here. If we undertake a major effort in the null diagnostics area and tackle this bug, it will be soon enough to double-check whether your test case is a variation of the same bug or a separate one.
+Thanks for sharing the test case anyway.
+Another test case where dummy can never be null:
+
+public class StrangeWarning {
+	public static void main(String[] args) {
+		String dummy = null;
+		for (int i = 0; i < 10; i++) {
+			if (i % 2 == 1) {
+				dummy = "Foo";
+			}
+			System.out.println("Hello");
+			if (i % 2 == 1) {
+				System.out.println(dummy.toLowerCase());
+			}
+			dummy = null;
+		}
+	}
+}
+
+Workaround to make the warning disappear (if you cannot remove the "dummy = null" code for any reason:
+
+public class StrangeWarningWorkaround {
+	public static void main(String[] args) {
+		String dummy = null;
+		for (int i = 0; i < 10; i++) {
+			if (i % 2 == 1) {
+				dummy = "Foo";
+			}
+			System.out.println("Hello");
+			if (dummy != null && i % 2 == 1) {
+				System.out.println(dummy.toLowerCase());
+			}
+			dummy = null;
+		}
+	}
+}
+I think we have another case where this is not working correctly. In my opinion, this should be changed to "could be null".  Actually, the way this method is written it can never be null...
+
+
+public class CanOnlyBeNullShouldBeMayBeNull {
+
+	private void method() {
+		String tblVarRpl = null;
+		while (true) {
+			boolean isOpenVariableMortageRateProduct = true;
+			boolean tblVarRplAllElementAddedIndicator = false;
+			if (isOpenVariableMortageRateProduct) {
+				if (tblVarRplAllElementAddedIndicator == false)
+					tblVarRpl = "";
+				tblVarRpl.substring(1);	//Can only be null???
+				return; 
+			}
+		}
+	}
+}
+
+Yet another one:
+
+    public void doStuff() throws Exception {
+        Exception e = null;
+        try {
+            doOtherStuff();
+            return;
+        }
+        catch (Exception oops) {
+            oops = e;
+        }
+        throw e; // wrong warning here
+    }
+    
+    public void doOtherStuff() throws Exception {
+        //...
+    }
+
+Actually, with Ganymede, I get the "may be null" warning, but still it's a wrong and misleading warning.
+In #7, the code should be
+
+e = oops;
+
+and not
+
+oops = e;
+
+shouldn't it? And in this case I don't get any warning.
+Sorry, I removed too much from the code. The code below triggers a "Potential null pointer access: The variable e may be null at this location" while that's impossible.
+
+    public void doStuff() throws Exception {
+        Exception e = null;
+        for (int i = 0; i < 3; i++) {
+            try {
+                doOtherStuff();
+                return;
+            }
+            catch (Exception oops) {
+                e = oops;
+            }
+        }
+        throw e; // wrong warning here
+    }
+
+    public void doOtherStuff() throws Exception {
+        //...
+    }
+
+Robert
+Another case:
+
+package ch.arrenbrecht.test;
+
+import java.io.IOException;
+
+import junit.framework.TestCase;
+
+public class NullInferenceBug extends TestCase {
+
+	public void testNullRef() throws Exception {
+		doNullRef( true );
+	}
+
+	public void doNullRef( boolean fail ) throws Exception {
+		Object v = null;
+		try {
+			try {
+				v = "Hello";
+			}
+			finally {
+				if (fail)
+					throw new IOException();
+			}
+		}
+		catch (IOException e) {
+			assertEquals( "Hello", v.toString() );
+		}
+	}
+
+}
+
+still present in 3.5 (for some strange bugzilla reason I cannot update the version number above...)
+(In reply to comment #6)
+> public class CanOnlyBeNullShouldBeMayBeNull {
+> 
+>     private void method() {
+>         String tblVarRpl = null;
+>         while (true) {
+>             boolean isOpenVariableMortageRateProduct = true;
+>             boolean tblVarRplAllElementAddedIndicator = false;
+>             if (isOpenVariableMortageRateProduct) {
+>                 if (tblVarRplAllElementAddedIndicator == false)
+>                     tblVarRpl = "";
+>                 tblVarRpl.substring(1);    //Can only be null???
+>                 return; 
+>             }
+>         }
+>     }
+> }
+
+In the above case, the return statement is the one causing the problem. If it is removed, we get the correct warning. This is because the way static analysis proceeds is as follows: In a loop, all statements are analysed one by one, and all the null checks are deferred until we've analysed all statements. So here, when we encounter the if else block inside which tblVarRpl is initialised as "", we do mark it as maybe null. Proceeding forward without the return statement would have invoked the deferred checks at the end of loop and correctly reported the maybe null status. Now, here, as soon as we hit the return statement, we mark the flowInfo of the block which contains the return statement as FlowInfo.DEAD_END ie. we assume that if are going ahead of that block in the execution then we wouldn't have entered the block at all. So with the marking of the flowInfo as DEAD_END, all the analysis for that block is rejected, effectively causing the maybe null status of tblVarRpl to be erased. So now when the deffered null check is done, it finds the status to be still NULL, coming from the declaration statement itself.
+
+A possible strategy to counter this would be to invoke the deferred null checks as soon as we hit the return statement. This would correctly report the maybe null status of tblVarRpl. However, it would break the following case : 
+
+public class X {
+	               void foo (boolean b) {
+			    Object o = null;
+			    for (int i = 0; i < 25; i++) {
+			      if (b) {
+			        if (o == null) {   //should report always null
+			          o = new Object();
+			        }
+			        return;
+			      }
+			    }
+			  }
+			}
+
+This is because here after the if(o==null)... else... block the status of 'o' becomes surely not null and now if we invoke the deferred check at return statement itself, it'll act on the flowInfo of the if(b).. block  - which has 'o' set to non null. This gives a never null warning for 'o' in if(o == null). However, the ideal behavior should be to give an always null warning on 'o' in if(o == null).
+
+So the correct strategy would be to NOT defer the null check when we have a return statement in the block , and to defer it in case we don't. However, there's no way to predict that a return statement will be found ahead, and hence no easy to way fix this predicament.
+

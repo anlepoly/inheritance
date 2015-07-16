@@ -1,0 +1,1601 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>366063</bug_id>
+          
+          <creation_ts>2011-12-08 11:37:00 -0500</creation_ts>
+          <short_desc>Compiler should not add synthetic @NonNull annotations</short_desc>
+          <delta_ts>2012-03-12 04:55:35 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>3.8 M6</target_milestone>
+          
+          <blocked>366007</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Markus Keller">markus_keller</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>deepakazad</cc>
+    
+    <cc>pbenedict</cc>
+    
+    <cc>satyam.kandula</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2037860</commentid>
+    <comment_count>0</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2011-12-08 11:37:08 -0500</bug_when>
+    <thetext>From bug 365387 comment 47, I learned that the compiler creates synthetic @NonNull annotations if an enclosing element is annotated with @NonNullByDefault. 
+
+This makes the Eclipse compiler incompatible with a standard Java compiler, since the generated class files are not equivalent any more. We should not deviate unless absolutely necessary.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2037958</commentid>
+    <comment_count>1</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-12-08 13:32:04 -0500</bug_when>
+    <thetext>I think we&apos;d discussed this point already during the review and the alternative strategy proposed in bug 365531 should cover this. (Basically I had suggested that null annotations should work just like @Override, which becomes effective for all enclosed classes and methods without actually generating synthetic annotations) 
+Stephan, feel free to close as a dup.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2038042</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-12-08 15:24:24 -0500</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; (Basically I had suggested
+&gt; that null annotations should work just like @Override, which becomes effective
+&gt; for all enclosed classes and methods without actually generating synthetic
+&gt; annotations) 
+
+For the records: You mean @Deprecated. 
+
+
+Anyway, these are two related but distinguishable issues:
+
+bug 365531 starts out from how information is internally encoded during
+compilation. The question is basically about TypeBindings vs. tagBits.
+One of the questions there is, whether resolving of the NonNull annotation
+is needed if the code makes no mention of it. (This could eventually
+result in affecting the class files, too, but we&apos;re not there yet).
+
+This current bug is clearly about the class files.
+
+
+Let me explain my initial motivation for generating these synthetic
+annotations: Performance. The lookup of nullness defaults is more involved
+than the case of @Deprecated for two reasons:
+- it affects everything from each single method parameter to methods,
+  to types, to packages to project settings.
+- in addition to plain propagation outside-&gt;in we also have cancellation
+I surely didn&apos;t want to penalize each reading of a binary type with
+sophisticated computations.
+
+While some issues could possibly be solved with some diligence,
+I currently don&apos;t see how we could integrate project-wide (or even
+workspace-wide) non-null default without synthetic annotations.
+
+Any ideas? 
+Otherwise this might already hit the clause &quot;unless absolutely necessary&quot;.
+
+
+As to the risks involved, it would take an additional nullness checker
+to potentially produce different results w/ vs. w/o synthetic annotations
+(no other tool should care about these).
+
+(1) Other nullness checker reads annotations from class files into which the
+JDT Compiler generated synthetic annotations: the checker will see a binary
+that syntactically differs from the source code but is semantically equivalent.
+If the other nullness checker has no notion of @NonNullByDefault, *only* the
+version with synthetic annotations will give a full representation of the
+intended semantics.
+
+(2) JDT Compiler consumes class files from javac (other checkers are
+typically not part of a compiler): if our compiler relies on seeing
+synth. annotations it will not see any defaults applying to those class
+files. We will fall back to seeing lots of signatures without null-ness
+specification, i.e., with javac in the loop we&apos;re back in legacy mode.
+So, when consuming class files from javac for which defaults should apply,
+our compiler may raise more errors/warnings than when consuming its own 
+class files. In this case these errs/warns would need to be downgraded
+to warn/ign in order compile.
+
+What conclusion should we draw from these?
+
+PS: why did you mark this bug as blocking bug 366007?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2038204</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-12-09 02:15:28 -0500</bug_when>
+    <thetext>(In reply to comment #0)
+
+&gt; This makes the Eclipse compiler incompatible with a standard Java compiler,
+&gt; since the generated class files are not equivalent any more. We should not
+&gt; deviate unless absolutely necessary.
+
+I agree with this goal. So we did absolutely the right thing in disqualifying
+the earlier proposal around COMPILER_DEFAULT_IMPORT_NULL_ANNOTATION_TYPES 
+(see https://bugs.eclipse.org/bugs/show_bug.cgi?id=186342#c83).
+
+But in the current issue at hand I don&apos;t see how this concern comes into play.
+
+    - These annotations are propagated into individual annotatable entities
+in binaries only when the annotation based null analysis is on.
+
+    - Toggling the analysis on/off would trigger a rebuild, so what is persisted
+in class files reflects the current setting choice.
+
+    - Annotations are *the* linguistic machinery in Java to do extra lingual
+stuff. Every Java compiler is required to accept non-predefined annotations
+in source and binaries and other than processing the meta annotations in the
+former case, consumethem gracefully and not choke on them.
+
+    - Annotation processors are not expected to choke on &quot;alien&quot; annotations.
+
+    - What is persisted has the language recommended reverse domain name
+structure package naming convention to avoid name space collision/pollution.
+
+    - Another way of looking at this is that the transformations are applied
+not by the compiler, but by the annotation processor for null family of
+annotations (though by design annotation processors are presented only a
+read-only view of the sources - so this is not exactly true in this argument)
+
+    - So the only party who can be influenced by this decision is another
+null annotation processor that recognized org.eclipse.jdt.annotation.* 
+
+&gt; since the generated class files are not equivalent any more. We should not
+&gt; deviate unless absolutely necessary.
+
+So I see this case falling in the same class as our generated instruction 
+stream not being the same or local variable ranges or exception tables looking
+different.
+
+(In reply to comment #2)
+
+[...]
+
+&gt; Let me explain my initial motivation for generating these synthetic
+&gt; annotations: Performance. The lookup of nullness defaults is more involved
+&gt; than the case of @Deprecated for two reasons:
+
+See also https://bugs.eclipse.org/bugs/show_bug.cgi?id=365387#c25. The master
+switch is not truly &quot;global&quot;, for example we should not impose NonNull
+contract on methods coming from JRE classes.
+
+If annotations are not synthesized and propagated but are to be materialized
+out of thin air from binaries, this distinction should be maintained. (I don&apos;t know that it cannot be done or done easily.)
+ 
+&gt; As to the risks involved, it would take an additional nullness checker
+&gt; to potentially produce different results w/ vs. w/o synthetic annotations
+&gt; (no other tool should care about these).
+
+To further qualify, it would take an additional nullness checker that is
+equipped to understand our annotations to potentially produce different
+results.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052408</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-18 13:17:13 -0500</bug_when>
+    <thetext>I think the strongest reason in this issue is that project/workspace wide defaults need to be persisted somehow so that dependent projects can see the effective annotations.
+
+From this I&apos;m inclined to close as WONTFIX. Still I see two options we might want to weigh:
+
+(a) Store all annotations exactly as the compiler sees them after applying any defaults.
+(b) Translated global default into @NonNullByDefault into each affected type, without adding anything to methods (future: fields).
+
+Pro (a): For the small possibility that a 3rd party processor for null annotations wants to leverage our annotations that processor will get the correct semantics without the need of interpreting our @NonNullByDefault.
+
+Potentially pro (b): For quick fixes it should be interesting to distinguish explicit annotations vs. annotations generated from a default, because some quick fixes should only offer to add new annotations, not replace existing ones with their opposite (even more relevant for clean-ups). However, I don&apos;t exactly know ATM what information the quick fixes exactly use - depending on that, we should check how Core can provide the required distinction.
+
+(a) is currently implemented and works fine. For realizing (b) we would probably need bug 365531 whose feasibility I haven&apos;t fully evaluated. It seems doable, but comes with some effort.
+
+Did I miss any options?
+
+Markus, can you comment on the overall theme and also on the quick fix issue?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052435</commentid>
+    <comment_count>5</comment_count>
+    <who name="Paul Benedict">pbenedict</who>
+    <bug_when>2012-01-18 14:17:47 -0500</bug_when>
+    <thetext>I am curious, what happens if Eclipse embeds its @NonNull annotations in my classes (which seems seriously wrong) and I go run my classes outside the IDE? Is my program going to blow up because it references annotations that are not on my classpath?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052463</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-18 14:49:25 -0500</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; I am curious, what happens if Eclipse embeds its @NonNull annotations in my
+&gt; classes (which seems seriously wrong) 
+
+why wrong? Do you see a better option?
+
+All annotations with @Retention(CLASS) or @Retention(RUNTIME) are stored
+in your class file as per the JLS/JVM-spec. This is not specific to
+null annotations.
+
+&gt; and I go run my classes outside the IDE?
+&gt; Is my program going to blow up because it references annotations that are not
+&gt; on my classpath?
+
+Nothing like that will happen. These annotations have @Retention(CLASS)
+i.e., *not* @Retention(RUNTIME) so the VM will completely ignore these
+annotations during program execution. It has been designed this way
+specifically to allow running programs with these annotations without
+adding demands regarding your runtime classpath.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052493</commentid>
+    <comment_count>7</comment_count>
+    <who name="Paul Benedict">pbenedict</who>
+    <bug_when>2012-01-18 16:05:50 -0500</bug_when>
+    <thetext>(In reply to comment #6)
+&gt; why wrong? Do you see a better option?
+
+I can&apos;t make any better points than what was said before. Markus has a nice explanation that equals my sentiments:
+
+&gt; This makes the Eclipse compiler incompatible with a standard Java compiler,
+&gt; since the generated class files are not equivalent any more. We should not
+&gt; deviate unless absolutely necessary.
+
+I think it is a justifiable cost to have slower analysis for null-checking, if it must be, rather than the current solution of creating synthetic annotations. It doesn&apos;t seem &quot;right&quot; to substitute/add annotations simply because one IDE (i.e., Eclipse) finds it convenient. I prefer compatible binaries any day of the week.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052512</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-18 16:27:55 -0500</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; (In reply to comment #6)
+&gt; &gt; why wrong? Do you see a better option?
+&gt; 
+&gt; I can&apos;t make any better points than what was said before. Markus has a nice
+&gt; explanation that equals my sentiments:
+&gt; 
+&gt; &gt; This makes the Eclipse compiler incompatible with a standard Java compiler,
+&gt; &gt; since the generated class files are not equivalent any more. We should not
+&gt; &gt; deviate unless absolutely necessary.
+&gt; 
+&gt; I think it is a justifiable cost to have slower analysis for null-checking, if
+&gt; it must be, rather than the current solution of creating synthetic annotations.
+&gt; It doesn&apos;t seem &quot;right&quot; to substitute/add annotations simply because one IDE
+&gt; (i.e., Eclipse) finds it convenient. I prefer compatible binaries any day of
+&gt; the week.
+
+Two different compilers will hardly ever create exactly the same bytes.
+
+Please let us know what you think will break.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052515</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-18 16:30:16 -0500</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; I think it is a justifiable cost to have slower analysis for null-checking, if
+&gt; it must be, 
+
+Forgot to answer this: it&apos;s not just performance, without generating any annotations we *cannot* support the option to specify a project or workspace wide default.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2052605</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-18 23:34:55 -0500</bug_when>
+    <thetext>(In reply to comment #7)
+
+&gt; (i.e., Eclipse) finds it convenient. I prefer compatible binaries any day of
+&gt; the week.
+
+The binaries _are_ compatible. See comment# 3.
+
+The VM shouldn&apos;t care about these decorations. Nor should a compiler. 
+Nor should an annotation processor that is not designed to process 
+these annotations.
+
+That said, there can be some pathological situations
+where ripples can occur: See for example bug 288658.
+If the test case in https://bugs.eclipse.org/bugs/show_bug.cgi?id=288658#c8
+were to have coded a bit &quot;loosely&quot; to use java.lang.reflect.Method.getDeclaredAnnotations() in place of
+java.lang.reflect.Method.getAnnotation(Class&lt;T&gt;)
+then interesting results could occur with the propagated annotation
+in place.
+
+(In reply to comment #9)
+&gt; (In reply to comment #7)
+&gt; &gt; I think it is a justifiable cost to have slower analysis for null-checking, if
+&gt; &gt; it must be, 
+&gt; 
+&gt; Forgot to answer this: it&apos;s not just performance, without generating any
+&gt; annotations we *cannot* support the option to specify a project or workspace
+&gt; wide default.
+
+yes,
+
+(In reply to comment #4)
+
+&gt; (b) Translated global default into @NonNullByDefault into each affected type,
+&gt; without adding anything to methods (future: fields).
+
+This definitely looks much less invasive/intrusive while maintaining 
+the same semantics and so is worth a look post M5.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2053047</commentid>
+    <comment_count>11</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-01-19 12:42:35 -0500</bug_when>
+    <thetext>There are a few real problems:
+
+a) &quot;Pollution&quot; of class files with many annotations that are not in source.
+
+b) Class files compiled with a non-Eclipse compiler will not contain the synthetic annotations, so compiling against such class files will yield different results than compiling against Eclipse-generated class files. In that scenario, the class files are really incompatible.
+
+c) Generated Javadoc won&apos;t contain the defaults, so the class files and the Javadoc will deviate.
+
+For quick fixes / clean ups, the storage doesn&apos;t matter, since we have all annotations available when computing the fixes, so the implementation can play the game of defaults by walking the enclosing scopes without much overhead.
+
+But for the Javadoc hovers (bug 366007), it will make a difference. The method parameter annotations are currently fetched from Java model elements: IMethod#getParameters() and then getAnnotations(). This currently returns the synthetic annotations from class files, but doesn&apos;t return them for source elements. We could also find the defaults using IJavaElements, but I think that will be more expensive, and we will have to pay this price all the time (because every method parameter is potentially affected by defaults). So we will have to talk about caching the defaults anyway.
+
+Whatever we do in Eclipse, we will deviate from the output of the Javadoc tool as soon as we add any defaults. Maybe we should just remove the default setting from the project or turn it into a warning if a package or type in the project doesn&apos;t have the @NonNullByDefault annotation. That way, at least the Javadoc and the generated class files stay in sync. And then we can also avoid generating class files with inherited annotations.
+
+In the Eclipse hovers, we could still add some smartness to show inherited null annotations.
+
+Sorry if it looks like I deviated from the main topic of this bug, but the storage and presentation of null annotations are really inertwined and must be considered together.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2053088</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-19 13:44:58 -0500</bug_when>
+    <thetext>(In reply to comment #11)
+
+Thanks, Markus, for your comments. And, it was me who asked for impact regarding the UI so I don&apos;t see that as a deviation :)
+
+&gt; a) &quot;Pollution&quot; of class files with many annotations that are not in source.
+
+What &quot;environmental damage&quot; are you thinking of? Is that a concern regarding file size?
+
+&gt; b) Class files compiled with a non-Eclipse compiler will not contain the
+&gt; synthetic annotations, so compiling against such class files will yield
+&gt; different results than compiling against Eclipse-generated class files. In that
+&gt; scenario, the class files are really incompatible.
+
+Using Srikanth&apos;s POV (I think) the compiler will not behave differently, it&apos;s just the integrated annotation processor. In other words, only null-related warnings will differ, the produced class files will be strictly compatible wrt their runtime behavior (thanks to the fact, actually, that we never eliminate any code that appears to be dead based on null analysis). So, yes, if you use a compiler that doesn&apos;t support this kind of analysis then the analysis will be incomplete. That&apos;s a tautology.
+
+&gt; c) Generated Javadoc won&apos;t contain the defaults, so the class files and the
+&gt; Javadoc will deviate.
+
+Yes, that&apos;s a pity. I wish there were a mechanism to make this information show up in the Javadoc, too. I have no answer for this.
+
+&gt; Maybe we should just remove the default setting from the project or ...
+
+Really?? I&apos;m surprised to see that you are willing to sacrifice the global defaults in favor of avoiding synthetic annotations. From my recollections global defaults were unanimously considered as a necessary feature to make null annotations practical.
+
+As argued above I&apos;m not convinced that synthetic annotations really cause any harm that motivates such drastic conclusion, but if that is indeed your conclusion, then how about the following solution:
+
+Instead of generating synthetic annotations just generate a custom bytecode attribute using the org.eclipse.jdt name space. Such bytecode attributes are explicitly designed for the purpose of storing tool-specific information in a class file. No other tool is supposed to ever look at any bytecode attributes it doesn&apos;t know of.
+
+At that point we could actually stick to storing this information at all individual locations using any representation of our choosing without the need to tell anybody about it.
+
+Again, I don&apos;t see the need but as a last resort this could make us perfectly honest without sacrificing essential functionality.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2053163</commentid>
+    <comment_count>13</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-19 15:28:18 -0500</bug_when>
+    <thetext>(In reply to comment #11)
+
+&gt; b) Class files compiled with a non-Eclipse compiler will not contain the
+&gt; synthetic annotations, so compiling against such class files will yield
+&gt; different results than compiling against Eclipse-generated class files. In that
+&gt; scenario, the class files are really incompatible.
+
+Can you describe a case or cases where we would see the difference
+you are referring to ? Perhaps I am overlooking some nuances 
+altogether and categorically asserting all will be well ?
+
+On further thought, there _are_ a few cases where eclipse compiler 
+behaves differently from javac when compiling against class files 
+that reference a missing type in annotations - I have prima facie
+held these to be bugs on our side, but these do show such behavioral
+differences today. See 
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=320965  
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=239639
+
+Also:
+
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=36397
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=283687.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2053535</commentid>
+    <comment_count>14</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-01-20 09:09:34 -0500</bug_when>
+    <thetext>&gt; &gt; a) &quot;Pollution&quot; of class files with many annotations that are not in source.
+&gt; What &quot;environmental damage&quot; are you thinking of?
+File size, unexpected annotations, confusion of somebody looking at the classfiles and comparing them to source and Javadoc.
+
+&gt; &gt; b) Class files compiled with a non-Eclipse compiler will not contain the
+&gt; &gt; synthetic annotations, so compiling against such class files will yield
+&gt; &gt; different results than compiling against Eclipse-generated class files. In that
+&gt; &gt; scenario, the class files are really incompatible.
+
+To be specific, the scenario is that code with null annotations gets compiled by a non-Eclipse compiler (e.g. on an external build system), and then another project uses those pre-compiled class files as dependency. In that case, any tricks we do to add more annotations than what&apos;s in source or to add custom attributes will cause trouble, since the compiled dependency is incomplete.
+
+The only way out is to strictly adhere to the original JVM spec. Therefore my proposal to avoid custom information in class files.
+
+&gt; &gt; Maybe we should just remove the default setting from the project or ...
+&gt; 
+&gt; Really?? I&apos;m surprised to see that you are willing to sacrifice the global
+&gt; defaults in favor of avoiding synthetic annotations. From my recollections
+&gt; global defaults were unanimously considered as a necessary feature to make null
+&gt; annotations practical.
+
+Yes, I like and want to keep the global defaults, but I think they are not practical because they essentially store a flag for a compile participant, but Java doesn&apos;t support compile participants that modify existing types. Therefore my suggestion to just emit a warning if a global default is set, but a package doesn&apos;t specify @NonNullByDefault. Then the source stays completely clean and self-contained, and even Javadocs are correct. And a simple quick fix can add the missing annotation in the source.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2054068</commentid>
+    <comment_count>15</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-21 20:38:40 -0500</bug_when>
+    <thetext>(In reply to comment #14)
+
+&gt; &gt; &gt; b) Class files compiled with a non-Eclipse compiler will not contain the
+&gt; &gt; &gt; synthetic annotations, so compiling against such class files will yield
+&gt; &gt; &gt; different results than compiling against Eclipse-generated class files. In that
+&gt; &gt; &gt; scenario, the class files are really incompatible.
+&gt; 
+&gt; To be specific, the scenario is that code with null annotations gets compiled
+&gt; by a non-Eclipse compiler (e.g. on an external build system), and then another
+&gt; project uses those pre-compiled class files as dependency. In that case, any
+&gt; tricks we do to add more annotations than what&apos;s in source or to add custom
+&gt; attributes will cause trouble, since the compiled dependency is incomplete.
+
+Sorry for being particularly unimaginative, I am still going to need
+a bit more help/information to understand what trouble you are anticipating.
+Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2054099</commentid>
+    <comment_count>16</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-22 07:37:26 -0500</bug_when>
+    <thetext>Maybe we can avoid some unnecessary iterations in this discussion if we first agree on what exactly is to be shown:
+
+Speaking of incompatibilities and troubles caused can mean quite different things. IMHO comment 5 illustrates that generally speaking of incompatible class files raises fears, e.g., of bad things happening at runtime.
+
+Specifically, do we see any of these dangers:
+- A virtual machine could fail to execute our class files or could execute
+  them with wrong runtime behavior?
+- Another compiler could fail to read and interpret class files produced
+  by the JDT?
+- The JDT compiler could fail to interpret class files produced by another
+  compiler to the effect that legal Java would not result in legal Java
+  class files?
+Should more tools aside from JVM and compilers be considered? Which?
+What bad effects can happen?
+
+By contrast, all unintended effects that I can see so far boil down to different ways how our advanced null analysis could be incomplete if class files produced by another compiler are involved. This is different in so far as no aspects of a program that are under the laws of JLS and JVM-spec are affected but only the additional service of our advanced analysis.
+
+The worst case that I can see so far is: when consuming class files from another compiler a project could fail to compile because our advanced null analysis is lacking information in those class files, but by disabling this analysis the consuming project can always be compiled without problems.
+
+Before we discuss the severity of this problem (and possible remedies), could we please first agree whether this is indeed the worst case or whether anyone anticipates worse scenarios.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2054100</commentid>
+    <comment_count>17</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-22 07:40:54 -0500</bug_when>
+    <thetext>(In reply to comment #16)
+&gt; Before we discuss the severity of this problem (and possible remedies), could
+&gt; we please first agree whether this is indeed the worst case or whether anyone
+&gt; anticipates worse scenarios.
+
+I *did* intend to place a question mark :)
+I mean it as an open question indeed.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2054292</commentid>
+    <comment_count>18</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-01-23 06:01:38 -0500</bug_when>
+    <thetext>(In reply to comment #16)
+I don&apos;t see any run-time incompatibilities, only compile-time problems and confusion when someone (or a tool like the Eclipse Java model) inspects class files. =&gt; I agree about the worst-case scenario, but I&apos;d say it&apos;s not only a problem for compilers but also for other tools that consume class files (reflective tools, Java model).
+
+Before this change, class files produced by javac and by ecj were functionally equivalent, i.e. for correct Java source, they produced results that only had small differences in terms of performance, but no other externally visible differences.
+
+Therefore, it was always possible to replace ecj by javac without any impact on the compilation results. With this change, this is no longer true.
+
+Concrete scenario:
+- project A uses null annotations
+- project B requires A and uses null annotations as well
+- project A is built independently of B, and developers of B work with a compiled JAR of A and generated Javadocs of A
+
+- if project A is compiled using ecj, the compiled class files contain synthetic null annotations (but the Javadocs don&apos;t)
+- if project A changes its build system to use javac, the class files will not contain the synthetic null annotations any more. When B uses ecj to compile against the new A.jar, it will get compile errors because the synthetic null annotations in A.jar are missing. Hence, class files produced by the two compilers are not completely exchangeable any more.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2054310</commentid>
+    <comment_count>19</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-23 06:46:51 -0500</bug_when>
+    <thetext>(In reply to comment #18)
+
+&gt; Concrete scenario:
+&gt; - project A uses null annotations
+&gt; - project B requires A and uses null annotations as well
+&gt; - project A is built independently of B, and developers of B work with a
+&gt; compiled JAR of A and generated Javadocs of A
+&gt; 
+&gt; - if project A is compiled using ecj, the compiled class files contain
+&gt; synthetic null annotations (but the Javadocs don&apos;t)
+&gt; - if project A changes its build system to use javac, the class files will not
+&gt; contain the synthetic null annotations any more. When B uses ecj to compile
+&gt; against the new A.jar, it will get compile errors because the synthetic null
+&gt; annotations in A.jar are missing. 
+
+Stephan, is the last statement strictly true ? Can you construct an
+example ? I can readily construct a test case for the scenario where
+the difference is that something that would not compile if A were to
+be compiled with ecj to start compiling when A is compiled with javac.
+
+(In reply to comment #12)
+
+&gt; Instead of generating synthetic annotations just generate a custom bytecode
+&gt; attribute using the org.eclipse.jdt name space. Such bytecode attributes are
+&gt; explicitly designed for the purpose of storing tool-specific information in a
+&gt; class file. No other tool is supposed to ever look at any bytecode attributes
+&gt; it doesn&apos;t know of.
+
+This then will have the same problem ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2055344</commentid>
+    <comment_count>20</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-01-24 13:17:08 -0500</bug_when>
+    <thetext>An alternative for implementing a global @NonNullByDefault would be to put this into the MANIFEST.MF. Then, also packaged JARs would contain all necessary information. This would still have the disadvantage that the default is not visible in the Javadoc, but at least the compiler wouldn&apos;t need to know any magic.
+
+The MANIFEST.MF came to my mind when I was reflecting on bug 369079 and bug 331651. Maybe we should also put the annotation names into the MANIFEST.MF, so that a JAR can be self-contained and tell the compiler what annotations it uses.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2055371</commentid>
+    <comment_count>21</comment_count>
+    <who name="Paul Benedict">pbenedict</who>
+    <bug_when>2012-01-24 13:34:44 -0500</bug_when>
+    <thetext>(In reply to comment #20)
+&gt; An alternative for implementing a global @NonNullByDefault would be to put this
+&gt; into the MANIFEST.MF.
+
+Markus, would this still be an effective strategy with tools like Maven? I use Maven, but ECJ is simply where things are compiled in the IDE; my project is totally recompiled outside Eclipse during package time. BTW, the project built with Maven wouldn&apos;t have the synthetic @NonNull annotations due to shelling out to another compiler.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2055383</commentid>
+    <comment_count>22</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-24 13:46:06 -0500</bug_when>
+    <thetext>(In reply to comment #21)
+&gt; Markus, would this still be an effective strategy with tools like Maven? I use
+&gt; Maven, but ECJ ...
+
+Just a quick not on &quot;Maven vs. ECJ&quot;:
+
+Although Maven by default uses javac, not ecj, this is not hard coded. It is not difficult to configure your poms for compiling with the &quot;jdt&quot; compiler.
+
+So, strictly spoken, there is no &quot;Maven vs. ECJ&quot;.
+
+In fact, for anybody interested in annotation based null analysis I&apos;d strongly recommend to use ecj also for Maven based builds. Otherwise you won&apos;t see these warnings/errors on the build server.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2055403</commentid>
+    <comment_count>23</comment_count>
+    <who name="Paul Benedict">pbenedict</who>
+    <bug_when>2012-01-24 14:02:18 -0500</bug_when>
+    <thetext>(In reply to comment #22)
+&gt; So, strictly spoken, there is no &quot;Maven vs. ECJ&quot;.
+
+Stephan, you are correct. This is not a Maven vs. ECJ argument. My apologies for any implication; that wasn&apos;t my intention. 
+
+My assumption is most people use Oracle&apos;s javac because the build process is usually done with Hudson/Jenkins and totally outside of Eclipse&apos;s influence. AFAIK in my experience, I haven&apos;t met a developer who uses ECJ for anything else but the IDE.
+
+I was alluding to comment #14 where Markus said:
+&gt; To be specific, the scenario is that code with null annotations gets compiled
+&gt; by a non-Eclipse compiler (e.g. on an external build system), and then another
+&gt; project uses those pre-compiled class files as dependency. In that case, any
+&gt; tricks we do to add more annotations than what&apos;s in source or to add custom
+&gt; attributes will cause trouble, since the compiled dependency is incomplete.
+
+With that said, I think the solution chosen for @NonNullByDefault must be portable across compilers. It shouldn&apos;t have to rely on ECJ to get correct diagnostics if my binaries was rebuilt by another compiler.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2055475</commentid>
+    <comment_count>24</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-24 15:03:18 -0500</bug_when>
+    <thetext>(In reply to comment #20)
+&gt; An alternative for implementing a global @NonNullByDefault would be to put this
+&gt; into the MANIFEST.MF. Then, also packaged JARs would contain all necessary
+&gt; information. This would still have the disadvantage that the default is not
+&gt; visible in the Javadoc, but at least the compiler wouldn&apos;t need to know any
+&gt; magic.
+
+I like this suggestion much better than, e.g., the idea to generate lots of package-info.java files (bearing also in mind how little tested the JDT&apos;s support for those was until recently :) ).
+
+Before you said this I was going to propose another view: projects with null annotations which OTOH are not compiled using the JDT compiler could be regarded as falling back to the &quot;legacy&quot; status, where missing null annotations would need to be provided using the mechanisms of bug 331651. And of course we could let our compiler create those profiles as a by-product of in-IDE-compilation.
+
+But maintaining the few entries inside a MANIFEST.MF is of course a lot easier.
+Looking at the spec of MANIFEST.MF I only see an indirect mention of custom entries, when it says that unknown attributes must be ignored. Is it safe to assume that we may add JDT specific attributes to the manifest?
+
+I&apos;ll soon start working on bug 331651. While doing so I will keep in mind the ideas of connecting the different bits via the MANIFEST.MF.
+
+What actually are the options for non-OSGi projects to manage their manifests using the JDT? Would it be straight-forward to transparently store information from the project preferences directly in the manifest, too? Or would management of the manifest vary too much depending on the kind of project?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2056403</commentid>
+    <comment_count>25</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-01-26 04:14:21 -0500</bug_when>
+    <thetext>Sigh! I finally made it through all the comments (sorry for being late).
+
+I agree with Markus on this topic. We shoot ourselves in the foot if we assume that the additional information is in the class file. While people might use our compiler in the IDE, they might build using javac as already noted in this bug. Those projects will loose the information when they import/use the built JARs. Also, in the light of being open, we should give non-Eclipse projects which only use javac the ability to enrich their code so that it can be consumed by Eclipse projects using our null annotation analysis.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2056454</commentid>
+    <comment_count>26</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-26 06:23:02 -0500</bug_when>
+    <thetext>(In reply to comment #24)
+&gt; (In reply to comment #20)
+&gt; &gt; An alternative for implementing a global @NonNullByDefault would be to put this
+&gt; &gt; into the MANIFEST.MF. Then, also packaged JARs would contain all necessary
+&gt; &gt; information. This would still have the disadvantage that the default is not
+&gt; &gt; visible in the Javadoc, but at least the compiler wouldn&apos;t need to know any
+&gt; &gt; magic.
+&gt; 
+&gt; I like this suggestion much better than, e.g., the idea to generate lots of
+&gt; package-info.java files (bearing also in mind how little tested the JDT&apos;s
+&gt; support for those was until recently :) ).
+
+Pardon my ignorance. In a scenario where some classes are compiled 
+using javac and packaged as a jar for consumption in other eclipse 
+projects, do we have control  over the manifest that goes with the 
+jar ?  Always, usually, sometimes ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2056491</commentid>
+    <comment_count>27</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-26 07:33:20 -0500</bug_when>
+    <thetext>Another way to solve this problem is for JDT compiler
+to not propagate the defaults, but for eclipse to allow
+for defaults to be specified at the dependency level.
+
+It would/could be clumsy to materialize this setting
+when handling binary types, but it can be made to work
+and can remove concerns around compatibility.
+
+Thinking aloud (not necessarily having thought through):
+May be we could invent a IClasspathAttribute that points
+to an xml options file ? Or May be the UI could allow
+someone to specify nullness defaults in the build path
+page ?  
+
+I don&apos;t know if these introduce more headaches than
+solved and whether how well it would fit within the
+overall UI design. Proposing these for discussion
+nevertheless so we can explore ways out of this deadlock.
+
+If the dependency comes in as a project, we can already
+handle that. Only for jar files we need to think of a way.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2056741</commentid>
+    <comment_count>28</comment_count>
+      <attachid>210141</attachid>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-01-26 13:44:21 -0500</bug_when>
+    <thetext>Created attachment 210141
+two projects showing that A must be compiled by ecj
+
+(In reply to comment #19)
+&gt; &gt; When B uses ecj to compile
+&gt; &gt; against the new A.jar, it will get compile errors because the synthetic null
+&gt; &gt; annotations in A.jar are missing. 
+&gt; 
+&gt; Can you construct an example ?
+
+See the attached projects A and B. There&apos;s a compile error in B, which goes away when you modify &lt;classpathentry kind=&quot;lib&quot; path=&quot;/A/javac_bin&quot;/&gt; in B/.classpath to refer to /A/bin.
+
+
+(In reply to comment #24)
+&gt; Would it be straight-forward to transparently store information
+&gt; from the project preferences directly in the manifest, too?
+
+We won&apos;t store the same option in multiple places. Either it&apos;s in the manifest, or it&apos;s in the preferences.
+
+For PDE projects, the location of the manifest is well-defined, but for plain Java projects, it can really be anywhere. In that case, we would have to ask the user for the location of the manifest and tell him to include it in the build. Or we just say that we support &lt;project&gt;/META-INF/MANIFEST.MF and maybe the first &lt;sourcefolder&gt;/META-INF/MANIFEST.MF, and that&apos;s it.
+
+External information is always a pain to deal with, so I would try to avoid solutions that require the client to fiddle with classpath attributes when adding a JAR.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2056802</commentid>
+    <comment_count>29</comment_count>
+    <who name="Paul Benedict">pbenedict</who>
+    <bug_when>2012-01-26 14:50:17 -0500</bug_when>
+    <thetext>(In reply to comment #26)
+&gt; Pardon my ignorance. In a scenario where some classes are compiled 
+&gt; using javac and packaged as a jar for consumption in other eclipse 
+&gt; projects, do we have control  over the manifest that goes with the 
+&gt; jar ?  Always, usually, sometimes ?
+
+Corporations who use Ant or Maven in their build process won&apos;t be able to use the MANIFEST.MF solution. These tools are well-known to creating the MANIFEST.MF file at packaging time.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2056813</commentid>
+    <comment_count>30</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-26 15:20:15 -0500</bug_when>
+    <thetext>(In reply to comment #29)
+&gt; (In reply to comment #26)
+&gt; &gt; Pardon my ignorance. In a scenario where some classes are compiled 
+&gt; &gt; using javac and packaged as a jar for consumption in other eclipse 
+&gt; &gt; projects, do we have control  over the manifest that goes with the 
+&gt; &gt; jar ?  Always, usually, sometimes ?
+&gt; 
+&gt; Corporations who use Ant or Maven in their build process won&apos;t be able to use
+&gt; the MANIFEST.MF solution. These tools are well-known to creating the
+&gt; MANIFEST.MF file at packaging time.
+
+How about, e.g., 
+http://maven.apache.org/shared/maven-archiver/examples/manifestFile.html
+:)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2056825</commentid>
+    <comment_count>31</comment_count>
+    <who name="Paul Benedict">pbenedict</who>
+    <bug_when>2012-01-26 15:32:46 -0500</bug_when>
+    <thetext>(In reply to comment #30)
+&gt; (In reply to comment #29)
+&gt; &gt; (In reply to comment #26)
+&gt; &gt; &gt; Pardon my ignorance. In a scenario where some classes are compiled 
+&gt; &gt; &gt; using javac and packaged as a jar for consumption in other eclipse 
+&gt; &gt; &gt; projects, do we have control  over the manifest that goes with the 
+&gt; &gt; &gt; jar ?  Always, usually, sometimes ?
+&gt; &gt; 
+&gt; &gt; Corporations who use Ant or Maven in their build process won&apos;t be able to use
+&gt; &gt; the MANIFEST.MF solution. These tools are well-known to creating the
+&gt; &gt; MANIFEST.MF file at packaging time.
+&gt; 
+&gt; How about, e.g., 
+&gt; http://maven.apache.org/shared/maven-archiver/examples/manifestFile.html
+&gt; :)
+
+Okay, yes, you can change your build process... but why would you? That&apos;s my point. People who already have an established configuration/process won&apos;t go for this solution. If I want to use Eclipse&apos;s @NonNullByDefault, I am forced to use ECJ and modify my corporate process to consume a different manifest? It&apos;s too much; the solution is overdone. It&apos;s not simple enough.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2056828</commentid>
+    <comment_count>32</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-26 15:40:49 -0500</bug_when>
+    <thetext>(In reply to comment #31)
+&gt; (In reply to comment #30)
+&gt; &gt; (In reply to comment #29)
+&gt; &gt; &gt; (In reply to comment #26)
+&gt; &gt; &gt; &gt; Pardon my ignorance. In a scenario where some classes are compiled 
+&gt; &gt; &gt; &gt; using javac and packaged as a jar for consumption in other eclipse 
+&gt; &gt; &gt; &gt; projects, do we have control  over the manifest that goes with the 
+&gt; &gt; &gt; &gt; jar ?  Always, usually, sometimes ?
+&gt; &gt; &gt; 
+&gt; &gt; &gt; Corporations who use Ant or Maven in their build process won&apos;t be able to use
+&gt; &gt; &gt; the MANIFEST.MF solution. These tools are well-known to creating the
+&gt; &gt; &gt; MANIFEST.MF file at packaging time.
+&gt; &gt; 
+&gt; &gt; How about, e.g., 
+&gt; &gt; http://maven.apache.org/shared/maven-archiver/examples/manifestFile.html
+&gt; &gt; :)
+&gt; 
+&gt; Okay, yes, you can change your build process... but why would you? That&apos;s my
+&gt; point. People who already have an established configuration/process won&apos;t go
+&gt; for this solution. If I want to use Eclipse&apos;s @NonNullByDefault, I am forced to
+&gt; use ECJ and modify my corporate process to consume a different manifest? It&apos;s
+&gt; too much; the solution is overdone. It&apos;s not simple enough.
+
+If you don&apos;t want to move even a millimeter just don&apos;t use default nullness and be content. We can&apos;t do miracles, OK?
+
+If we are not allowed any location where the information about a nullness default can be stored, than what should we do?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2056832</commentid>
+    <comment_count>33</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-26 15:48:58 -0500</bug_when>
+    <thetext>(In reply to comment #31)
+&gt; If I want to use Eclipse&apos;s @NonNullByDefault, I am forced to
+&gt; use ECJ and modify my corporate process to consume a different manifest? It&apos;s
+&gt; too much; the solution is overdone. It&apos;s not simple enough.
+
+To clarify, if you have followed this bug you should know that using the manifest approach is not for using @NonNullByDefault annotations but for specifying a global default.
+
+OTOH, if you haven&apos;t follow the discussion please be more careful with your statements.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2056981</commentid>
+    <comment_count>34</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-27 02:30:00 -0500</bug_when>
+    <thetext>(In reply to comment #28)
+&gt; Created attachment 210141 [details]
+&gt; two projects showing that A must be compiled by ecj
+&gt; 
+&gt; (In reply to comment #19)
+&gt; &gt; &gt; When B uses ecj to compile
+&gt; &gt; &gt; against the new A.jar, it will get compile errors because the synthetic null
+&gt; &gt; &gt; annotations in A.jar are missing. 
+&gt; &gt; 
+&gt; &gt; Can you construct an example ?
+&gt; 
+&gt; See the attached projects A and B. There&apos;s a compile error in B, which goes
+&gt; away when you modify &lt;classpathentry kind=&quot;lib&quot; path=&quot;/A/javac_bin&quot;/&gt; in
+&gt; B/.classpath to refer to /A/bin.
+
+OK, Thanks Markus. I see this as a specific instance of the general 
+problem of a project B expecting the annotation processed A, but instead 
+encountering plain A. I imagine we would be able to construct similar
+examples outside of the null annotation context.
+
+Nevertheless combined with the earlier feedback around teams using hybrid
+build set ups, I agree such build breakage is a real possibility and when
+that happens we can&apos;t quibble over pedantics. 
+
+So I concede the point that we should not add synthetic annotations.
+
+At the moment, having considered all suggestions, the simplest one
+appears to be the suggestion to warn if a package in the project
+doesn&apos;t have the @NonNullByDefault annotation (and augment that with
+quickfixes to generate package info where necessary and/or apply the
+annotations.)
+
+The way I see it, any one who applies project wide or workspace wide
+defaults is in for a certain amount of tweaking work anyways and this
+could be a part of it.
+
+I believe this is an issue only for classes in a jar file.
+If project B consumes project A as a required project or
+for classes with a project in an incremental build, this should not
+be an issue. (may need some code changes, but is not the major hurdle).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2057042</commentid>
+    <comment_count>35</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-01-27 06:13:51 -0500</bug_when>
+    <thetext>I quickly thought about using the package-info.java of the default package to
+define a project-wide default, but that doesn&apos;t work, since that file cannot be
+syntactically correct without a package declaration.
+
+We could also redefine the meaning of @NonNullByDefault and say that this also
+applies to subpackages. That&apos;s IMO still not as good as declaring it on each
+package, but it would avoid many package-info.java files.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2057070</commentid>
+    <comment_count>36</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-27 07:26:09 -0500</bug_when>
+    <thetext>(In reply to comment #35)
+&gt; I quickly thought about using the package-info.java of the default package to
+&gt; define a project-wide default, but that doesn&apos;t work, since that file cannot be
+&gt; syntactically correct without a package declaration.
+
+I was thinking about default packages, too: since package-info.java doesn&apos;t work for default packages, here we will need to insert @NonNullByDefault into each toplevel type, right?
+ 
+&gt; We could also redefine the meaning of @NonNullByDefault and say that this also
+&gt; applies to subpackages. That&apos;s IMO still not as good as declaring it on each
+&gt; package, but it would avoid many package-info.java files.
+
+For the time being, yes, when @NonNullByDefault can be applied recursively the burden is much smaller (with all hesitation connected to the concept of &quot;sub-packages&quot;).
+
+OTOH, I can see situations where a top level package contains API where @NonNullByDefault is desired, whereas all its subpackages could be internal without such default. I&apos;m saying this to illustrate that *always* applying the default recursively will cause a penalty for other use cases.
+
+Thus, I suggest to rethink what parameters @NonNullByDefault should have. Currently we have one boolean: default on or default off.
+
+In the context of null annotations for fields I was thinking that for certain programming styles fields tend to be nullable but methods provide nonnull access (e.g., lazy initialized fields). So, sometimes we&apos;d want @NonNullByDefault to apply to method signatures only, whereas in other code fields should be affected, too.
+
+Now we have the question of whether or not &quot;sub-packages&quot; should be affected.
+
+If we come up with a clean and powerful model for tuning @NonNullByDefault (and find an appropriate default (meta-default?)) I could actually start to like this solution.
+
+@Markus: in Ludwigsburg we deferred further parameterization to keep things simple. Is now the point to rethink this?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2057083</commentid>
+    <comment_count>37</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-27 08:08:07 -0500</bug_when>
+    <thetext>Stephan, can you take a look to see how easy or hard it is to
+(while internalizing a binary type), look up package-info for a 
+particular package at different levels of the sub package structure ?
+Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2057084</commentid>
+    <comment_count>38</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-27 08:10:14 -0500</bug_when>
+    <thetext>(In reply to comment #35)
+
+&gt; We could also redefine the meaning of @NonNullByDefault and say that this also
+&gt; applies to subpackages. That&apos;s IMO still not as good as declaring it on each
+&gt; package, but it would avoid many package-info.java files.
+
+Should we care about there being many package info files ? Why don&apos;t we
+keep it simple and opt for the most straightforward scheme ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2057373</commentid>
+    <comment_count>39</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-01-27 14:03:25 -0500</bug_when>
+    <thetext>(In reply to comment #36)
+Default packages are not meant for serious programming, so having to add @NonNullByDefault to all top-level types is not an issue.
+
+For tuning @NonNullByDefault with more options, we can always add more members. If the declaration specifies a default, then old clients stay compatible, e.g.
+    boolean includeSubpackages() default true;
+
+
+(In reply to comment #38)
+&gt; Should we care about there being many package info files ? Why don&apos;t we
+&gt; keep it simple and opt for the most straightforward scheme ?
+
+Also fine with me. It shouldn&apos;t be too hard to adjust the New Package and New Type wizards to also create the package-info.java when the &quot;non-null by default&quot; option is set on the project. But with the subpackage solution, we could even avoid the project-wide option and easily specify everything in code.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2057562</commentid>
+    <comment_count>40</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-28 00:32:05 -0500</bug_when>
+    <thetext>(In reply to comment #39)
+
+&gt; (In reply to comment #38)
+&gt; &gt; Should we care about there being many package info files ? Why don&apos;t we
+&gt; &gt; keep it simple and opt for the most straightforward scheme ?
+&gt; 
+&gt; Also fine with me. 
+
+It would be great if a user could sort the problems by id in the problems
+view, multi-select several messages and apply a quick fix at one go. Do we
+support such multi-fixes in other cases ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2059016</commentid>
+    <comment_count>41</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-31 23:03:26 -0500</bug_when>
+    <thetext>Can we agree on the course of action before Markus goes on vacation,
+so that work in JDT/Core is not stalled and can still proceed ?
+
+My preference is to keep things simple and not worry about there being
+many package info files. I worry that any short cut we devise may have
+some as yet unforeseen implication. (Particularly) If UI would support 
+multiselection and quickfix, it is a non-issue.
+
+This is not a strong preference however - if majority leans towards
+includeSubpackages approach, I am fine with it too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2059152</commentid>
+    <comment_count>42</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-02-01 06:14:03 -0500</bug_when>
+    <thetext>Discussed this again with Dani. The manifest approach entails many little things that will add complexity. Finding the manifest in all cases is not trivial (special cases for class folders or other projects on the classpath, etc.), it would often also need changes in external build system, it would not be visible in generated Javadoc, and it would also need more special support in refactorings where you wouldn&apos;t expect it (e.g. moving a package from one project to another). The subpackges approach has similar limitations.
+
+We agree with Srikanth that the best solution is to keep this simple and in line with the Java language: Packages are the biggest elements that can have an @NonNullByDefault annotation in the source files. We keep the per-project option, but change its meaning to &quot;the project *intends* to use @NonNullByDefault in all packages&quot;.
+
+The only disadvantage of that approach is that for non-null-by-default projects, each package needs a package-info.java file. We can ease the pain with a few enhancements:
+- Core: Show a warning when the project setting is enabled.
+- UI: Have a multi-quick fix for the above warning that can fix all these warnings at once.
+- UI: Toggling the project-wide default adds/removes @NonNullByDefault for all packages (remove only after asking the user).
+- UI: New package/type wizards automatically add the package-info.java when a new package is created.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2059580</commentid>
+    <comment_count>43</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-01 15:49:00 -0500</bug_when>
+    <thetext>(In reply to comment #42)
+&gt; The subpackges approach has similar limitations.
+
+Do you have an example?
+
+&gt; - Core: Show a warning when the project setting is enabled.
+
+What element do I report the warning against?
+
+It seems most natural to report against each package lacking the annotated package-info.java, but I don&apos;t think the compiler has the infrastructure to report anything against a package. In bug 186342 I made experiments with reporting configuration problems with CAT_BUILDPATH. In bug 186342 comment 162 I reverted those experiments following a discussion in the team.
+
+This would leave me with reporting the problem against each individual compilation unit ;-P</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2059582</commentid>
+    <comment_count>44</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-01 15:55:36 -0500</bug_when>
+    <thetext>(In reply to comment #43)
+&gt; [..] In bug 186342 I made experiments with
+&gt; reporting configuration problems with CAT_BUILDPATH. In bug 186342 comment 162
+&gt; I reverted those experiments following a discussion in the team.
+
+Here&apos;s a better xref: bug 363858.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2059705</commentid>
+    <comment_count>45</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-02-01 23:59:43 -0500</bug_when>
+    <thetext>(In reply to comment #43)
+
+&gt; What element do I report the warning against?
+
+Can we report it against the package declaration of the &quot;first&quot; type
+from the package we encounter ? &quot;Encounter&quot; here could be in the
+context of full build, incremental build (we need to consider multiple
+waves not producing multiple warnings from the same package), reconcile
+operations in editor etc.
+
+
+&gt; It seems most natural to report against each package lacking the annotated
+&gt; package-info.java, but I don&apos;t think the compiler has the infrastructure to
+&gt; report anything against a package. 
+
+What would it take/mean to invent a CAT_PACKAGE ?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2061014</commentid>
+    <comment_count>46</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-04 07:08:24 -0500</bug_when>
+    <thetext>(In reply to comment #45)
+&gt; &gt; It seems most natural to report against each package lacking the annotated
+&gt; &gt; package-info.java, but I don&apos;t think the compiler has the infrastructure to
+&gt; &gt; report anything against a package. 
+&gt; 
+&gt; What would it take/mean to invent a CAT_PACKAGE ?
+
+We&apos;d have to define at least two things:
+
+- What&apos;s the life cycle of the corresponding markers?
+  This will require more stuff in the builder, I guess.
+
+- Ask UI to implement visualization and navigation.
+
+Not sure if that&apos;s all.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2061229</commentid>
+    <comment_count>47</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-02-06 02:30:41 -0500</bug_when>
+    <thetext>&gt; - Ask UI to implement visualization and navigation.
+
+Not sure what you mean here? The annotations should go on each package. Inventing some kind of hierarchy where the annotation is inherited from a super package will not work well outside Eclipse.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2061245</commentid>
+    <comment_count>48</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-06 03:10:13 -0500</bug_when>
+    <thetext>(In reply to comment #47)
+&gt; &gt; - Ask UI to implement visualization and navigation.
+&gt; 
+&gt; Not sure what you mean here? The annotations should go on each package.
+
+visualization:
+Does the package explorer display error markers on packages?
+
+navigation:
+Does the Problems view support double click on a marker that refers to a package?
+
+I don&apos;t think we have use cases for this, yet, do we?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2061252</commentid>
+    <comment_count>49</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2012-02-06 03:32:10 -0500</bug_when>
+    <thetext>(In reply to comment #48)
+&gt; (In reply to comment #47)
+&gt; &gt; &gt; - Ask UI to implement visualization and navigation.
+&gt; &gt; 
+&gt; &gt; Not sure what you mean here? The annotations should go on each package.
+&gt; 
+&gt; visualization:
+&gt; Does the package explorer display error markers on packages?
+Yes.
+
+
+&gt; navigation:
+&gt; Does the Problems view support double click on a marker that refers to a
+&gt; package?
+Double-click means open it in an editor, hence the answer is &quot;no, and it won&apos;t be implemented&quot;. To select a marker in a specific view, one can use &apos;Show In&apos;, which also works for packages.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2061416</commentid>
+    <comment_count>50</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-06 08:30:33 -0500</bug_when>
+    <thetext>(In reply to comment #49)
+&gt; (In reply to comment #48)
+&gt; &gt; (In reply to comment #47)
+&gt; &gt; &gt; &gt; - Ask UI to implement visualization and navigation.
+&gt; &gt; &gt; 
+&gt; &gt; &gt; Not sure what you mean here? The annotations should go on each package.
+&gt; &gt; 
+&gt; &gt; visualization:
+&gt; &gt; Does the package explorer display error markers on packages?
+&gt; Yes.
+&gt; 
+&gt; 
+&gt; &gt; navigation:
+&gt; &gt; Does the Problems view support double click on a marker that refers to a
+&gt; &gt; package?
+&gt; Double-click means open it in an editor, hence the answer is &quot;no, and it won&apos;t
+&gt; be implemented&quot;. To select a marker in a specific view, one can use &apos;Show In&apos;,
+&gt; which also works for packages.
+
+Thanks for clarification. That means UI is done in this regard. :)
+
+Remains the issue of the markers&apos; life cycle. I&apos;ll look into that.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2061976</commentid>
+    <comment_count>51</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-02-07 06:40:56 -0500</bug_when>
+    <thetext>This hybrid compilation model is worrisome: Consider this situation
+where a @NonNull annotated method actually returns null and is compiled
+with javac and so gets by. On the eclipse project side, the @NonNull
+method&apos;s return could be captured in a @NonNull local and dereferences
+without guarding code such code having been deleted by the user because
+eclipse encouraged him/her to ? 
+
+i.e original eclipse side code:
+class X {
+   void foo() {
+       @NonNull Object o = Y.goo();
+       if (o != null) {  // &lt;&lt;&lt;--- we encourage elimination of this check 
+           o.toString();
+       } 
+   }
+}
+
+
+Y.java (compiled with javac or with eclipse without null annotations turned
+on and loaded into a jar which is added to build path of project with X.java:)
+
+class Y {
+    @NonNull static Object goo() {
+        return null;
+    }
+}
+
+If the programmer deleted the &quot;if (o != null)&quot; because of our advice,
+he/she would be in trouble.
+
+So it is not just a question how the annotations are persisted in the
+binary file that matters, We also need to know somehow whether the
+annotations were validated at the time the class file got generated.
+
+I don&apos;t yet have a suggestion how this may be handled, but would
+like to hear opinions.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2061981</commentid>
+    <comment_count>52</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-07 06:56:04 -0500</bug_when>
+    <thetext>Sure, the intention behind systematically using null checks exactly
+where needed includes the advice to eliminate unnecessary null checks.
+
+And, sure, the guarantees given by any contract are only valid if
+the obligations of the same contract are also checked.
+
+If Y advertises goo() as non-null this is part of the contract and the
+party breaking the contract acts illegally, here the programmer writing
+that goo() method returning null has to expect a possibly high fine.
+IMHO that&apos;s the nature of specifications and contracts.
+
+It will always be possible to deliberately create examples that violate
+a contract if the contract checker doesn&apos;t see all parts of the game.
+
+It&apos;s not our job to make NPE *impossible*, is it?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2061984</commentid>
+    <comment_count>53</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-07 06:59:12 -0500</bug_when>
+    <thetext>Srikanth,
+
+At second reading I&apos;m actually not 100% sure which way your comment
+was heading, so another attempt at interpreting:
+
+(In reply to comment #51)
+&gt; This hybrid compilation model is worrisome:
+
+Are you saying, we should advise users against using code from two different
+compilers in the same project?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2061988</commentid>
+    <comment_count>54</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-02-07 07:08:22 -0500</bug_when>
+    <thetext>(In reply to comment #52)
+
+&gt; It will always be possible to deliberately create examples that violate
+&gt; a contract if the contract checker doesn&apos;t see all parts of the game.
+
+Agreed.
+
+&gt; It&apos;s not our job to make NPE *impossible*, is it?
+
+Agreed again. My point was about whether we could inadvertently encourage 
+users to inadvertently shoot themselves in their foot.
+
+And a more academic side to the question was to see if there is a
+way to know when looking a class file whether a persisted annotation was
+actually acted upon by a processor and if so which one.
+
+It looks like a reasonably interesting, important and useful query to me.
+
+(In reply to comment #53)
+
+&gt; Are you saying, we should advise users against using code from two different
+&gt; compilers in the same project?
+
+No. Actually after I wrote about javac and eclipse being mixed in a hybrid
+model, I realized that you don&apos;t even need two compilers. ECJ itself is
+enough. A jar file could be loaded with classes that were annotated but 
+compiled without annotations enabled. If this jar file is added to the
+build path of a project which uses null annotations then the problem
+scenario could show up again.
+
+So the intent of the question is really to know if there is a way to
+find out the presence of @NonNull on a binary method constitutes
+a guarantee or not and recover suitably if that is possible.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2062460</commentid>
+    <comment_count>55</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-07 18:30:55 -0500</bug_when>
+    <thetext>So the question is: can the compiler find out whether it can trust any contract annotations it finds in the byte code of already-compiled classes?
+
+This, IMHO, is a perfectly legal use case for a custom bytecode attribute: just drop a note:
+This class file was generated by ecj version 3.8.0 with the following irritants checked as errors: ...
+
+If the attribute is there: go ahead, fully trust the contracts (depending on the irritants).
+If the attribute is not there but contracts are contained: use the contracts during null analysis, but report that the other side of the contract may not have been checked (default: error).
+XXL-variant: provide an additional compiler option:
+ Handle null annotations not checked by ecj:
+ ( ) trust 
+ ( ) ignore
+ (o) report as error</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2062467</commentid>
+    <comment_count>56</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-02-07 19:37:45 -0500</bug_when>
+    <thetext>(In reply to comment #55)
+&gt; So the question is: can the compiler find out whether it can trust any contract
+&gt; annotations it finds in the byte code of already-compiled classes?
+
+Yes,
+
+&gt; This, IMHO, is a perfectly legal use case for a custom bytecode attribute: just
+&gt; drop a note:
+&gt; This class file was generated by ecj version 3.8.0 with the following irritants
+&gt; checked as errors: ...
+
+So out of the box, there is no way to know ?
+
+&gt; XXL-variant: provide an additional compiler option:
+&gt;  Handle null annotations not checked by ecj:
+&gt;  ( ) trust 
+&gt;  ( ) ignore
+&gt;  (o) report as error
+
+This sounds like a good idea particularly since we encourage programmers
+to remove null checks. I&apos;ll file a follow up bug for post 3.8.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2065575</commentid>
+    <comment_count>57</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-02-14 11:40:39 -0500</bug_when>
+    <thetext>(In reply to comment #51)
+I find the proposed compiler option / custom bytecode attribute worrisome, and I don&apos;t think we need this.
+
+The presence of the annotations should be enough for a nullness checker to treat them as contracts. Similarly, an API method that promises to return a List&lt;Integer&gt; can also just return a raw List, but we still trust the API.
+
+If a build system uses javac and e.g. FindBugs to verify the @NonNull annotations, then we would generate useless warnings, although everything is fine.
+
+In a setup where not even the developers of a library use the Eclipse compiler to verify the nullness annotations, I don&apos;t think there&apos;s much justification for them to believe that the nullness annotations in their APIs are validated anywere -- so this is not a situation we should have to worry about.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2065579</commentid>
+    <comment_count>58</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-14 11:47:06 -0500</bug_when>
+    <thetext>(In reply to comment #57)
+&gt; (In reply to comment #51)
+&gt; I find the proposed compiler option / custom bytecode attribute worrisome, and
+&gt; I don&apos;t think we need this.
+
+I can agree that there&apos;s no (strong) need for it, but I didn&apos;t understand what&apos;s worrisome about it. Do you care to expand, or should we just forget about it?
+
+BTW, a patch for the blocking bug 365531 is about to be released.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2065764</commentid>
+    <comment_count>59</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-02-14 15:44:15 -0500</bug_when>
+    <thetext>The proposal doesn&apos;t worry me on the technical side, but I think it hampers usability.
+
+The invisible bytecode attribute is hard to understand, especially from the viewpoint that the nullness checker should just act like an external annotation processor. That we implemented this in the compiler is an implementation detail.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2065796</commentid>
+    <comment_count>60</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-14 16:40:29 -0500</bug_when>
+    <thetext>After the fix in bug 365531 I reverted the now broken global default via commit c5e448ecc90e8d75bf431155e497df695586ca94.
+
+At this point we no longer generate any synthetic annotations but the global default is completely without effect.
+As a consequence several tests had to be disabled.
+
+I propose to open a new bug for the replacement for the global default (aka the intended default).
+My previous attempts in implementing errors without a compilation unit to report against were not received enthusiastically (bug 363858), so I&apos;d like to step back from that task.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2066197</commentid>
+    <comment_count>61</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-02-15 11:25:44 -0500</bug_when>
+    <thetext>(In reply to comment #60)
+&gt; My previous attempts in implementing errors without a compilation unit to
+&gt; report against were not received enthusiastically (bug 363858), so I&apos;d like to
+&gt; step back from that task.
+Stephan, I vaguely remember discussing this. Did we investigate the option of a buildpath error instead? I think it won&apos;t cause bug 363858 -like problems. If it&apos;s not too complicated, it may be worth a shot. :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2066213</commentid>
+    <comment_count>62</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-02-15 11:45:48 -0500</bug_when>
+    <thetext>(In reply to comment #61)
+&gt; (In reply to comment #60)
+&gt; &gt; My previous attempts in implementing errors without a compilation unit to
+&gt; &gt; report against were not received enthusiastically (bug 363858), so I&apos;d like to
+&gt; &gt; step back from that task.
+&gt; Stephan, I vaguely remember discussing this. Did we investigate the option of a
+&gt; buildpath error instead? I think it won&apos;t cause bug 363858 -like problems. If
+&gt; it&apos;s not too complicated, it may be worth a shot. :)
+
+One of the issues is to determine the life-cycle for those error markers. The builder handles markers per CU which can be incrementally added and removed. And it also handles build path markers which are much more sticky but I don&apos;t have the details right now. I&apos;m afraid that for package level markers the builder lacks the event for removal.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2068114</commentid>
+    <comment_count>63</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-02-20 05:14:44 -0500</bug_when>
+    <thetext>(In reply to comment #60)
+
+&gt; I propose to open a new bug for the replacement for the global default (aka the
+&gt; intended default).
+
+Hi Stephan,
+
+Has a new bug been raised ? I see two issues with the current state of
+affairs:
+
+(1) NonNullByDefault annotation at the package/type level is not
+honored for binary types on HEAD.
+
+and
+
+(2) 
+(In reply to comment #11)
+
+[...]
+
+&gt; Whatever we do in Eclipse, we will deviate from the output of the Javadoc tool
+&gt; as soon as we add any defaults. Maybe we should just remove the default setting
+&gt; from the project or turn it into a warning if a package or type in the project
+&gt; doesn&apos;t have the @NonNullByDefault annotation. That way, at least the Javadoc
+&gt; and the generated class files stay in sync. And then we can also avoid
+&gt; generating class files with inherited annotations.
+
+We need to implement this behavior.
+
+Markus,
+
+Do you want to propose what the UI label for this new scheme would say,
+so we have a common vocabulary to speak/think about this new behavior ?
+
+(1) Is a must for M6, (2) is nice to have for M6.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2068127</commentid>
+    <comment_count>64</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-02-20 05:55:52 -0500</bug_when>
+    <thetext>(In reply to comment #63)
+&gt; (1) NonNullByDefault annotation at the package/type level is not
+&gt; honored for binary types on HEAD.
+bug 372011
+
+&gt; (2) 
+&gt; We need to implement this behavior.
+bug 372012
+&gt; Markus,
+&gt; 
+&gt; Do you want to propose what the UI label for this new scheme would say,
+&gt; so we have a common vocabulary to speak/think about this new behavior ?
+bug 372013</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2078539</commentid>
+    <comment_count>65</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-03-12 04:55:35 -0400</bug_when>
+    <thetext>Verified for 3.8 M6 using Build id: I20120306-0800</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>210141</attachid>
+            <date>2012-01-26 13:44:00 -0500</date>
+            <delta_ts>2012-01-26 13:44:21 -0500</delta_ts>
+            <desc>two projects showing that A must be compiled by ecj</desc>
+            <filename>projects_A_B.zip</filename>
+            <type>multipart/x-zip</type>
+            <size>7991</size>
+            <attacher name="Markus Keller">markus_keller</attacher>
+            
+              <data encoding="base64">UEsDBBQACAgIABR3N0AAAAAAAAAAAAAAAAAMAAAAQS8uY2xhc3NwYXRonZBBSwMxEIXPFfofltw7
+awXBw65FZIUWWqVde5U0Gbaj6SSdJGL/vdVaFKEevM0bvnnvMdXobeOKV5RInms1hHNVIBtvibta
+PbZ3gys1uu6fVcbpGINO673ofSvkJLvihdjWKopRxcfyMJanSeP5SHrpAI2jEBGebQKnM5v1Ph0m
+8+bp9n7W3oxnzbz8zREnFNYOLK5yB5m+LlFgkTRbLXY5bXcBy8nFohkM4fIfhYJFMF4QBLeZBO2D
+yx1x/MvK5xRyOrqtiD/hqvz5wHdQSwcIY3PMwM4AAAB2AQAAUEsDBBQACAgIAKqbOkAAAAAAAAAA
+AAAAAAAyAAAAQS8uZXh0ZXJuYWxUb29sQnVpbGRlcnMvamF2YWNfYnVpbGQgYnVpbGRlci5sYXVu
+Y2jNlU9vmzAYxu+T9h0Qm3LKSLtdpqZZ5ABJWBlExnTayXKIS2kdu/OfrNW07z5TaKIsUZWml12Q
+Afv38D7vg30+vF8yZ0WlqgQfuKfeietQXohFxcuBm6Pxh8+uozThC8IEpwOXC3f45e2bc0YML659
+wa+q0kii7XJHP9zZGUKWHi1YdaeoR7j2ANcjU7EFlfHuGmSXuDVvLgSjhAOtZTU3mjq39GGXZSoP
+IAQxAnASogznswCgMHCdFWHGamtpqNt7ES8IxyCPEb78hqMkQyCO17QrwlSLUxbDy2doCzo3pVcI
+SZsvhOEYhtkUZ346C9fE979/CXlrSVhRfdZhur/lf+enEbpvm9AMNp1o7h/b0QyHnVL3O+9OP9WX
+k35NklQJIwuqdl9Vmi6dO6KvW1AP9G7IihR4XvFW6rF3zfhjO2mX09vS+HOo0403T72LQZ74U2s2
+HgH/YgLTPAmOsvxmob0mhnae58cgy2YATfEMppdREMI1dF+KuPYZUao2ZSbFqrLxPLScbd2n/Kz1
+94TxhaXYAr6GPsK1XWsaOBBli6P3mkpOmLalqMb0UR7FwX8bRiWLV8fwSGPi1AcoSpN/XLHBKChm
+ojjb/Cv1JuZZh14nCPOk7cZFlATZJvmGsW7FC0mXlGvCusRo0T00k/u1EIwmkxBm2E+TcTTJ4d6t
+8shCvqfQVjDBQQRtWFP44xkLW8t6e04N+/wvUEsHCFRTVFQaAgAAhQYAAFBLAwQUAAgICACrmzpA
+AAAAAAAAAAAAAAAACgAAAEEvLnByb2plY3S9U01PAjEUPGPifyB74ISt3kwoSxQ1HtSYgGdTu49S
+7LabfhD497aliyIQPXHaN7PvdaYvUzJa1bK7BGOFVsPiCl0WXVBMV0LxYfE2fbi4Lkbl+RlpjF4A
+c3dgmRGNC92B7RBFayhvCE7fSDBd16BcSXBbRTZP2wTwDvrwQlaTBlhEGY7DKFVVYrKGNhwBk6Kx
+gBaVQ0ybUNAlTQNgvi2ECWq4j9o2Y7xLELyn8i/dpgL0TJWYgXW3p5WdsDnU9ISiXiBYOTCKSqe1
+tOg+o2lAh3w4IzgPOSqpd7o/81L2hWIGohUq+wRvGw767pBKsBgrataZ6ZBPWJdP1Cs2H2s1E/wx
+GJZAcOTbniWVHsqedIMcqx53A7w1/8OuxTEv7D1dv5tzg2Q6n+DNOdkL/m3m77Vmpk1y2KjzBnL3
+BhwP8eZ/3GfqOzYTk/AqPRfqZW+graPi9ontPtcvUEsHCNf/ebhaAQAA7QMAAFBLAwQUAAgICABR
+mDpAAAAAAAAAAAAAAAAAJgAAAEEvLnNldHRpbmdzL29yZy5lY2xpcHNlLmpkdC5jb3JlLnByZWZz
+rVhLc9s4DL7vzP4Vz/TQow+242y909qeOtucaRKS2FCkyocT7a9fQJRlJ91JBbmXjO0QH4jXB4Ag
+jW4CzBoPBXiwEsLsBD5oZ+cf/vzD+XIG/ZHvKs6k84B/6kYb8DNhrYsi4tmZddYmY+ZvBa6ObJ3d
+4hE+6LFVUIhk4gj0ZXuXz/LV6HBWo3QQRwOKg4EAJPPuFfszXFgrTBt0mIMddSvpFJRgZ9oabeHv
+4JdtBPqRCxCFLyHujYiF8/X8w+zjWMlkUwD12Ulh5phZAfzpl1bTB6MFZuAYTQqOqZyRgdtUH8HP
+US14EX+pphekq30TXncx48kGl7yEe80QbLxDPfVVZA+pAb+xEXwh0OJn4a225WicgC6NGwU26kKj
+9eC986OlU3RH94L65rq0eGSsIP2APrNl1kzRZV5cgVArSkW2HKaR7Dx3g+jG3vVfIN9ibKH/D9Zj
+BXaHTOm1wstccL9ArJziI+sgMa9ECerrmYm5lkLdxPaA+QU1hocZW7CpnppQ8IKVK3U07co4LPwF
+Jlj3qasu3j0KYUysvEtltRKBLx2F2TUUIGHWZAM7Emi+UZ+6qHKVa1S6F17UgHW9dMkqbgg7CNMu
+kZ+eti6uiBMhIsAWGZj+wwZ0/qgVxvWSVazQVp3wSkRZdZfi6tdWmqSQLdGpYdO16MW5n3Ej02MR
+xsYW7t67etER4SQo4rKo8duWiKECr7F6B0buy5hvbY4YrLGcDs8a3cZMIm2VRiqJVMdaLiQOZIEJ
+8aq5TcrkurP+Ucdq5WyIPsno/BbzmuuQWofwih4XQwfkXikjfRKhIuru4zMJo6dtuPUuP+PcO/8m
+gzaUDkTHWc/ICeyNogMmJ0a0H8unheDQWom0avW/oHaXhJ/kR+vWRYE5itWHgl2zYV7KOnIM9YxD
+pIEC0+w0zTwc3tcv6HIkFTItw31G0zxOJ0yzkFgm0iSJHhqQGxtSUaBd6BPiKLY1Pc437UyfMZxr
+uGEg2Qv5hMNEvwxNY7Pm3Mqu4szzaONQEj8hjWmaLYRZOmdA2BsQI80owmxfBYtr2TXKDf4ecEz7
+DzYnmn2mzj1ePD+0DUw2yYPCeUPYmFvswGy3wKwq4Hf8AYH8isNkHpd3BVm38GWioHM72gWT1iY9
+rE1clMb5vhZWwi5hfwlfbre3Ak5CCeSnq8Exd+xuYmLPNeFqavgKEjQSAjeAITW0s4dXYzR/xDrD
+PGbto58vBvnWxgoGa9Z1MlN6dcS0e+NarkOSFSenFd3+L1r4taRc3uf/su1K2IexrEARyK6h94MJ
+dZpupBssJye7WgS1pr0xT/dckEpYhbb3MX5wTzDBEgsUYOHbtWEvfFfS5M/MWFyIHwmHB9z7VFd0
+k2bu/OJ1hwcFktUDTlrPOJdIaCak7LtY6xda84evC5sPdCnAzsR39GzysnXnJC6hlCdXk9FvVPP6
+GYVNMhkbZ0nkYX7idY+U4gjsZ6zr981Jorvjd5qfDa1qkzNkoLXbpH93pAdgiu2w/6CLFkdcJYUc
+/77+Du4lZ3B1kB5/norq9QkX0y/QvSJPCuYt7HdCo3wZzoPRFpDSRRidy/ktOj+Y/wdQSwcIqA5h
+8qYEAADLGQAAUEsDBBQACAgIACJ3N0AAAAAAAAAAAAAAAAAWAAAAQS9NRVRBLUlORi9NQU5JRkVT
+VC5NRl2MwQrCMBBE7/mK0HuCeox4UPBYEQXv23RbVtMkTRPRvzcYKyJzmnnMq8FSh1MUFwwTOav4
+Ui7YLtnWoKg/8MtWMznAgIpv53p+Do0zpP/mX2fOmMBQRxjY/uFdiOII+gZ9fnh2wjFRQFGeirvQ
+S9SG/ITy2kYJ1roIMdvWTZHfi3xTveUVewFQSwcIpdZsfIgAAADKAAAAUEsDBBQACAgIANabOkAA
+AAAAAAAAAAAAAAAPAAAAQS9iaW4vcC9BLmNsYXNzjZDLSgMxFIb/9DJTa7W1ahVcCUWqosGNm4pQ
+FUEYqqh0n07TmjJNyjRT8K10JbjwAXwo8cx0KFhdGMj5zy3fSfL59f4B4ATbLjIM2TFvucgxVIZi
+Kngg9IDfdofStwzOmdLKnlNTY7/DkLs0PVlEFksl5OEwlD2lZTsadWX4KLqBZKh6xhdBR4QqjtNk
+zj6pCUPeo1FNgvWNYdhreIsDm/u/Uww795G2aiRv9FRNFAFbWhsrrDKaoHXPhAMu/UCNJ5IPe5aL
+eZm3jW5HQUCQ+iLkToRiJK0Mf9CyIhzEj/jjGsUHE4W+vFbxi5zWcdzCcPSP8RfPV7IvosA2sQua
+gXhlyKM/JOtSxEkZaf7gDYXXpFwk6yRJB8tkS7MG0hVShlWUCVVJu9ZIq7RdlgYx9ZT8TAw7fFlA
+FhJkbVZNkbG3jo3kzGYS1eb4LeAbUEsHCGy72cdNAQAANwIAAFBLAwQUAAgICAAUdzdAAAAAAAAA
+AAAAAAAAEgAAAEEvYnVpbGQucHJvcGVydGllcyvOLy1KTtXTU7BVKC5K1uflSsrM08vMS84pTUkt
+Bgr6uoY46nr6uenrxPByKaACPV4uAFBLBwh5faXcMwAAAD8AAABQSwMEFAAICAgArps6QAAAAAAA
+AAAAAAAAABUAAABBL2phdmFjX2Jpbi9wL0EuY2xhc3NlTj1rAkEUnHend8YvYp3KRjRBtkipBDQ2
+ghiwsF91lT02u5LbE/xXpgpY+AP8USHvRCziK2aYN/N4c/49ngC8ol5GiEqMaowaIeprq/0bIWx3
+5oTCu1spFmvnCK32JJE7KYy0G/GxSNTS9zr3K8LTLLNef6qx3elUL4waWOu89NrZlNCduK+NUEuj
+t6kSycoLebPF1NlpZsxwP1JrmRnfq6KAIjfYigHh8f8zNBFw/XwCUB5ljFg1mIm5+PwD+r4ECDFK
+V7vOHORHL4er98AYMZeBP1BLBwhx/+fM1AAAABsBAABQSwMEFAAICAgAeJs6QAAAAAAAAAAAAAAA
+ABEAAABBL2phdmFjX2J1aWxkLnhtbFVQMW7EIBCs7VegVapIgaRLgX1dXpDUpzWsfVh4sQCfIkX5
+ezD2Fel2ltmZYfTle/HiTjG5wB28yVcQxCZYx1MHX58fL+8gUka26ANTBxzg0rd6jWEmkwXjUpYz
+3tGIYXPeUgRhacTN5w7qBsSAiayLHUjo26ZtdMY40eP4IJWHRh86llKu9Aqvg2MQI7rdP8ZQ9jlu
+BMKx8Zsl5AI5u+UIt+s02nhMacV8q7DRo/OUimOVffoh492aSN7CQr9q9dvkOB2nhXwKn/FCnOSD
+P9sskTlkzKWu67OcMYI6PdRpciRQ/yPoFI3YUQdlUiDqlVb1i2XU6uhk70ers92+/QNQSwcI8Hm/
+/AABAACfAQAAUEsDBBQACAgIAJ2bOkAAAAAAAAAAAAAAAAAOAAAAQS9zcmMvcC9BLmphdmFtzTEO
+wjAQBMDalvyHKyGF8wAaQNThDRfjWA6Hz7LPBUL8nRBBg5C2Gu1qM7orBg95Z7TR8Za5CHAJ1juK
+uXo7X8RiSiwokZMdOA2N6Hg/+QkbyTrb/6rRuY0UHTjCWuEAD6PVh/ruW+96OI+zdwIT8+afYwnb
+dauKl1bSG5ZH9TR6yQtQSwcIyyf1koQAAAC8AAAAUEsDBBQACAgIAAacOkAAAAAAAAAAAAAAAAAM
+AAAAQi8uY2xhc3NwYXRonZBBSwMxEIXPCv6HJfdOrCB42LUUWcGCVdq115JNhu3UOFknSbH/3hZc
+FMEevM0bvvd4vHLy8eaLHUqkwJUaw6UqkG1wxF2lXpr70Y2a3F6cl9abGHuTNgdx9q2Qk+yLV2JX
+qZBTn5Mqjv9KtcRK/w3bwAMZpAO0nvqIsHUJvMlsN4cCMFvU67uneTN9mNcL/ZsjTihsPDhscweZ
+vpwosEyGnRG3emz2PerZ1bIejeH6H4V6h2CDIAi+ZxJ0zz53xPFUVBQ7RB3PE6SndiD1VG/Nztj1
+MFypf27+CVBLBwiqRNAr3AAAAKkBAABQSwMEFAAICAgAKXg3QAAAAAAAAAAAAAAAAAoAAABCLy5w
+cm9qZWN0vZLBbgIhEIbPNvEdzN4L9tYDroltvGma2D4AwrhiloEAa3x8gbI1m00TD8YT8//Mn28C
+w5YX3c7O4LwyuKjeyLyaAQojFTaL6ud7/fpeLevpC7POnECET/DCKRtid3QnDLmGesVoPpMhjNaA
+oWa0r5Jb0j4LOlD7TrVyZ0EkVeRHjHKU2SkM4xoColXWAznJQIRxseBnngPgbiPEBHdNl9i+aDo0
+GB1R7uJaCWTDUR3Ah9VzsTtxBM0fAi1O/+SRFzoHpftXjPBfbdco3ObLRM9N/wUG34OjTF8n4t8u
+DPfqClBLBwjwcyF94gAAAJYCAABQSwMEFAAICAgAHZg6QAAAAAAAAAAAAAAAACYAAABCLy5zZXR0
+aW5ncy9vcmcuZWNsaXBzZS5qZHQuY29yZS5wcmVmc61YS3PbOAy+78z+Fc/00KMPtuNsvdPanjrb
+nGkSkthQpMqHE+2vX0CUZSfdSQW5l4ztEB+I1weAII1uAswaDwV4sBLC7AQ+aGfnH/78w/lyBv2R
+7yrOpPOAf+pGG/AzYa2LIuLZmXXWJmPmbwWujmyd3eIRPuixVVCIZOII9GV7l8/y1ehwVqN0EEcD
+ioOBACTz7hX7M1xYK0wbdJiDHXUr6RSUYGfaGm3h7+CXbQT6kQsQhS8h7o2IhfP1/MPs41jJZFMA
+9dlJYeaYWQH86ZdW0wejBWbgGE0KjqmckYHbVB/Bz1EteBF/qaYXpKt9E153MePJBpe8hHvNEGy8
+Qz31VWQPqQG/sRF8IdDiZ+GttuVonIAujRsFNupCo/XgvfOjpVN0R/eC+ua6tHhkrCD9gD6zZdZM
+0WVeXIFQK0pFthymkew8d4Poxt71XyDfYmyh/w/WYwV2h0zptcLLXHC/QKyc4iPrIDGvRAnq65mJ
+uZZC3cT2gPkFNYaHGVuwqZ6aUPCClSt1NO3KOCz8BSZY96mrLt49CmFMrLxLZbUSgS8dhdk1FCBh
+1mQDOxJovlGfuqhylWtUuhde1IB1vXTJKm4IOwjTLpGfnrYurogTISLAFhmY/sMGdP6oFcb1klWs
+0Fad8EpEWXWX4urXVpqkkC3RqWHTtejFuZ9xI9NjEcbGFu7eu3rREeEkKOKyqPHbloihAq+xegdG
+7suYb22OGKyxnA7PGt3GTCJtlUYqiVTHWi4kDmSBCfGquU3K5Lqz/lHHauVsiD7J6PwW85rrkFqH
+8IoeF0MH5F4pI30SoSLq7uMzCaOnbbj1Lj/j3Dv/JoM2lA5Ex1nPyAnsjaIDJidGtB/Lp4Xg0FqJ
+tGr1v6B2l4Sf5Efr1kWBOYrVh4Jds2FeyjpyDPWMQ6SBAtPsNM08HN7XL+hyJBUyLcN9RtM8TidM
+s5BYJtIkiR4akBsbUlGgXegT4ii2NT3ON+1MnzGca7hhINkL+YTDRL8MTWOz5tzKruLM82jjUBI/
+IY1pmi2EWTpnQNgbECPNKMJsXwWLa9k1yg3+HnBM+w82J5p9ps49Xjw/tA1MNsmDwnlD2Jhb7MBs
+t8CsKuB3/AGB/IrDZB6XdwVZt/BloqBzO9oFk9YmPaxNXJTG+b4WVsIuYX8JX263twJOQgnkp6vB
+MXfsbmJizzXhamr4ChI0EgI3gCE1tLOHV2M0f8Q6wzxm7aOfLwb51sYKBmvWdTJTenXEtHvjWq5D
+khUnpxXd/i9a+LWkXN7n/7LtStiHsaxAEciuofeDCXWabqQbLCcnu1oEtaa9MU/3XJBKWIW29zF+
+cE8wwRILFGDh27VhL3xX0uTPzFhciB8Jhwfc+1RXdJNm7vzidYcHBZLVA05azziXSGgmpOy7WOsX
+WvOHrwubD3QpwM7Ed/Rs8rJ15yQuoZQnV5PRb1Tz+hmFTTIZG2dJ5GF+4nWPlOII7Ges6/fNSaK7
+43eanw2tapMzZKC126R/d6QHYIrtsP+gixZHXCWFHP++/g7uJWdwdZAef56K6vUJF9Mv0L0iTwrm
+Lex3QqN8Gc6D0RaQ0kUYncv5LTo/mP8HUEsHCKgOYfKmBAAAyxkAAFBLAwQUAAgICADDmzpAAAAA
+AAAAAAAAAAAAFgAAAEIvTUVUQS1JTkYvTUFOSUZFU1QuTUZdjT0PgjAQhnd+RcPeRkhcalxIWExw
+kMS90MOcKVcoLdF/L1owxtz03vN+VIqwg8nzK7gJLUmWiV1SBNIGeLXCL8s3clY9SFZssn72jTXY
+/r1/O5cbgzLYIbiNX2AM6ECXD2iDX5wlzegs9UBeslNelzwT+2S18ZiSzLqbgNbgMIG4ay8UkfXq
+nT80sXiOw8f0M5wmL1BLBwilSqX7lQAAAOYAAABQSwMEFAAICAgA/Js6QAAAAAAAAAAAAAAAAA8A
+AABCL2Jpbi9iL0IuY2xhc3NtkN9KwzAUxk+6rdVanc7/eCUM2SYYvHUibIIglCkqu0+7OFO6ZKTp
+nkuvBl74AD6UeNIVkWkuznfOyZdfcvL59f4BAOdw6IFDoBLRvgdVTKa0R8C9FFKYKyxb7SGB6rUa
+cR8qsBpADVwC9VBIPsgnEddPLEo5gUaoYpYOmRa2LptV8yIyArUQ6V2EPStF4KQVJmzGaMrkmN5F
+CY9Nt/23ReDoIZdGTPitnIlMILAnpTLMCCUR2gyVHlMep2KacZqMDGU/23Sg5CBPU4Q0lyH3TLMJ
+N1z/otnRdgLYgDo+kumxHeefB/mPKtcxvxF2Nrd/Zi1wDHgG7HIww9/B6GFFUQlqrTOHlbdi28fo
+Fk0P1jAGCwPqOiqx9yNqs3RtoTasl5SFpV4gxrGGzukctl+XsH6B3Vs4SqzNdrFnKfuF/+AbUEsH
+CM4WEk9CAQAA/AEAAFBLAwQUAAgICAApeDdAAAAAAAAAAAAAAAAAEgAAAEIvYnVpbGQucHJvcGVy
+dGllcyvOLy1KTtXTU7BVKC5K1uflyi8tKSgtAQskZeYBBYCkXmZeck5pSmoxUNDXNcRR19PPTV8n
+hpdLARXo8XIBAFBLBwjSW2D7PwAAAFAAAABQSwMEFAAICAgAYpc6QAAAAAAAAAAAAAAAAA4AAABC
+L3NyYy9iL0IuamF2YV2NMQ7CMAxF50TKHTzCkguwtBygPUOamColxJHjICTE3WmrDgjJg///z9/F
++bubEaaL0UbHRyEWIJ4t+hRLRbsEsS5nEieRsh0oDy2lX7rYfpelTSl68MnVClfAl2AOFXp4G626
+8YnMMeC6H2B3dME4LegFbkSnf8/xfN7vFaM0zlBbQbYbukXrX/Uxep0vUEsHCOWKsYyPAAAAyAAA
+AFBLAQIUABQACAgIABR3N0Bjc8zAzgAAAHYBAAAMAAAAAAAAAAAAAAAAAAAAAABBLy5jbGFzc3Bh
+dGhQSwECFAAUAAgICACqmzpAVFNUVBoCAACFBgAAMgAAAAAAAAAAAAAAAAAIAQAAQS8uZXh0ZXJu
+YWxUb29sQnVpbGRlcnMvamF2YWNfYnVpbGQgYnVpbGRlci5sYXVuY2hQSwECFAAUAAgICACrmzpA
+1/95uFoBAADtAwAACgAAAAAAAAAAAAAAAACCAwAAQS8ucHJvamVjdFBLAQIUABQACAgIAFGYOkCo
+DmHypgQAAMsZAAAmAAAAAAAAAAAAAAAAABQFAABBLy5zZXR0aW5ncy9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS5wcmVmc1BLAQIUABQACAgIACJ3N0Cl1mx8iAAAAMoAAAAWAAAAAAAAAAAAAAAAAA4KAABB
+L01FVEEtSU5GL01BTklGRVNULk1GUEsBAhQAFAAICAgA1ps6QGy72cdNAQAANwIAAA8AAAAAAAAA
+AAAAAAAA2goAAEEvYmluL3AvQS5jbGFzc1BLAQIUABQACAgIABR3N0B5faXcMwAAAD8AAAASAAAA
+AAAAAAAAAAAAAGQMAABBL2J1aWxkLnByb3BlcnRpZXNQSwECFAAUAAgICACumzpAcf/nzNQAAAAb
+AQAAFQAAAAAAAAAAAAAAAADXDAAAQS9qYXZhY19iaW4vcC9BLmNsYXNzUEsBAhQAFAAICAgAeJs6
+QPB5v/wAAQAAnwEAABEAAAAAAAAAAAAAAAAA7g0AAEEvamF2YWNfYnVpbGQueG1sUEsBAhQAFAAI
+CAgAnZs6QMsn9ZKEAAAAvAAAAA4AAAAAAAAAAAAAAAAALQ8AAEEvc3JjL3AvQS5qYXZhUEsBAhQA
+FAAICAgABpw6QKpE0CvcAAAAqQEAAAwAAAAAAAAAAAAAAAAA7Q8AAEIvLmNsYXNzcGF0aFBLAQIU
+ABQACAgIACl4N0DwcyF94gAAAJYCAAAKAAAAAAAAAAAAAAAAAAMRAABCLy5wcm9qZWN0UEsBAhQA
+FAAICAgAHZg6QKgOYfKmBAAAyxkAACYAAAAAAAAAAAAAAAAAHRIAAEIvLnNldHRpbmdzL29yZy5l
+Y2xpcHNlLmpkdC5jb3JlLnByZWZzUEsBAhQAFAAICAgAw5s6QKVKpfuVAAAA5gAAABYAAAAAAAAA
+AAAAAAAAFxcAAEIvTUVUQS1JTkYvTUFOSUZFU1QuTUZQSwECFAAUAAgICAD8mzpAzhYST0IBAAD8
+AQAADwAAAAAAAAAAAAAAAADwFwAAQi9iaW4vYi9CLmNsYXNzUEsBAhQAFAAICAgAKXg3QNJbYPs/
+AAAAUAAAABIAAAAAAAAAAAAAAAAAbxkAAEIvYnVpbGQucHJvcGVydGllc1BLAQIUABQACAgIAGKX
+OkDlirGMjwAAAMgAAAAOAAAAAAAAAAAAAAAAAO4ZAABCL3NyYy9iL0IuamF2YVBLBQYAAAAAEQAR
+AGgEAAC5GgAAAAA=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

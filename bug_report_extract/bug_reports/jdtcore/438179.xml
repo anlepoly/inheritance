@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>438179</bug_id>
+          
+          <creation_ts>2014-06-25 15:50:00 -0400</creation_ts>
+          <short_desc>[1.8][null] &apos;Contradictory null annotations&apos; error on type variable with explicit null-annotation.</short_desc>
+          <delta_ts>2014-08-28 03:39:24 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4.1</target_milestone>
+          
+          <blocked>438458</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Tom van den Berge">tom.vandenberge</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>clovis.seragiotto</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="63121"
+          type_id="1"
+          status="+"
+          setter="jarthana"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2420590</commentid>
+    <comment_count>0</comment_count>
+    <who name="Tom van den Berge">tom.vandenberge</who>
+    <bug_when>2014-06-25 15:50:30 -0400</bug_when>
+    <thetext>The luna final version that was released today still has problems with null annotations:
+
+@NonNullByDefault
+public class Test {	
+	private Fu&lt;String&gt; fu = new Fu&lt;&gt;();	
+	public void foo() {
+		fu.method();   // &apos;Contradictory null annotations&apos; error
+	}
+}
+class Fu&lt;T&gt; {		
+	@Nullable T method() {
+		return null;
+	}
+}
+
+The exact error is &quot;Contradictory null annotations: method was inferred as &apos;@NonNull @Nullable String method()&apos;, but only one of &apos;@NonNull&apos; and &apos;@Nullable&apos; can be effective at any location&quot;
+
+They might be related to similar bugs I reported before:
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=432223
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=434899</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2420921</commentid>
+    <comment_count>1</comment_count>
+    <who name="Clovis Seragiotto">clovis.seragiotto</who>
+    <bug_when>2014-06-26 09:29:41 -0400</bug_when>
+    <thetext>With @NonNullByDefault, 
+    private Fu&lt;String&gt;
+is understood as
+    private Fu&lt;@NonNull String&gt;
+and therefore,
+    @Nullable T method()
+reads
+    @Nullable @NonNull String method()
+
+I don&apos;t know if this analysis is reasonable, but it is sound :)
+
+So as a workaround, you can use 
+    private Fu&lt;@Nullable String&gt; fu = new Fu&lt;&gt;();
+or annotate the class with
+    @NonNullByDefault({ PARAMETER, RETURN_TYPE, FIELD, TYPE_BOUND })
+intead of only @NonNullByDefault
+
+(I tried to annotate the field fu with @NonNullByDefault({}), but it didn&apos;t work - I don&apos;t know if it is by design or if it is a bug)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2420990</commentid>
+    <comment_count>2</comment_count>
+    <who name="Tom van den Berge">tom.vandenberge</who>
+    <bug_when>2014-06-26 10:34:23 -0400</bug_when>
+    <thetext>That sounds reasonable indeed. I&apos;m probably mislead by my poor understanding of type annotations. Maybe you can help me explain the following:
+
+Suppose you want an element from a list containing non-null elements only:
+	List&lt;@NonNull String&gt; list = ;
+	String element = list.get(0);
+	
+java.util.List will throw an IndexOutOfBoundsException if the element does not exist, but suppose this list doesn&apos;t, and it will return null to indicate that there is no element at the requested index.
+
+Because the type variable is annotated with @NonNull, Eclipse will infer that the return type of get(index) method is also @NonNull, meaning that the method is not allowed have a @Nullable return type.
+
+What would be the best way to solve this? Should the list declaration not be annotated at all (which allows null values to be added to the list), or should I simply accept the fact that you can&apos;t return a @Nullable element?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2421131</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-06-26 15:14:28 -0400</bug_when>
+    <thetext>(In reply to Tom van den Berge from comment #0)
+&gt; They might be related to similar bugs I reported before:
+&gt; https://bugs.eclipse.org/bugs/show_bug.cgi?id=432223
+&gt; https://bugs.eclipse.org/bugs/show_bug.cgi?id=434899
+
+My quick guess is: those fixes might still be limited / too weak.
+
+When saying &apos;@Nullable T&apos; where T is a type variable, this is intended to override the nullness of the actual type argument (here: the &apos;@NonNull String&apos; from Fu&lt;String&gt;).
+
+(In reply to Tom van den Berge from comment #2)
+&gt; ...
+&gt; What would be the best way to solve this? Should the list declaration not be
+&gt; annotated at all (which allows null values to be added to the list), or
+&gt; should I simply accept the fact that you can&apos;t return a @Nullable element?
+
+It should be possible to declare a &apos;@Nullable T&apos; return, to make the desired exception for this method, i.e., allow a null return even if &apos;T&apos; is a free type variable and could be instantiated to a @NonNull type.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2421849</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-06-28 13:47:59 -0400</bug_when>
+    <thetext>Let&apos;s first get this into 4.5 M1.
+Also marking as dependency of a newly created umbrella bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2430261</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-22 10:16:40 -0400</bug_when>
+    <thetext>I have a fix under test:
+
+Previously, during generic type substitution we unconditionally combined all type annotations from the substitution with those on the current type use. For the example in comment 0 this implied:
+- fu implicitly has type &apos;Fu&lt;@NonNull String&gt;&apos;
+- when computing methods for this type we substitute T by &apos;@NonNull String&apos;
+=&gt; hence method had a return type of &apos;@Nullable @NonNull String&apos;
+
+This is being fixed by a new function TypeVariableBinding.combineTypeAnnotations(..) which detects the case where a type variable has a relevant use-site null-type-annotation (relevant meaning: not just repeating an annotation from the type parameter declaration).
+In this case we let the explicit use-site null-type-annotation override any null-type-annotations that were obtained during substitution.
+
+Ergo: the @Nullable annotation in method&apos;s signature overrides the @NonNull from &apos;Fu&lt;@NonNull String&gt;&apos;. 
+This realizes the desired semantics that &apos;@Nullable T&apos; means &quot;the nullable variant of whatever type T represents&quot;.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2430381</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-22 11:59:47 -0400</bug_when>
+    <thetext>Released for 4.5 M1 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=68b132a771077222c8a489923225ada23ba86a6a</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434902</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-02 09:52:38 -0400</bug_when>
+    <thetext>Proposing for 4.4.1
+
+In addition to wrong error reporting, this bug also contributed to bug 439298, which raised an IllegalArgumentException.
+
+I will check potential dependencies to other bugs in this cluster (children of bug 438458). In its current form the patch relies on the change from http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=1ab17a7eba14d35875267cc7b416da000a14dc1e
+This would be good to include in backporting, but may not be strictly necessary. Let me know if I should try to backport without that latter fix (e.g., if that one is considered too big for backporting).
+
+Correction re comment 6: I pasted the wrong link, the fix for this bug was actually http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=eca99cf8f2f41a7b6480d3a89bc3e5e01586e2d6</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434904</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-02 09:56:41 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #7)
+&gt; Proposing for 4.4.1
+&gt; 
+&gt; In addition to wrong error reporting, this bug also contributed to bug
+&gt; 439298, which raised an IllegalArgumentException.
+
+Correction: this bug didn&apos;t contribute to the IAE, but to &quot;Missing code implementation in the compiler&quot; being reporeted.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435232</commentid>
+    <comment_count>9</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-08-04 09:33:12 -0400</bug_when>
+    <thetext>+1 for back porting</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435910</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-05 13:29:50 -0400</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #9)
+&gt; +1 for back porting
+
+Thanks
+
+As part of the backporting exercise I will apply some more scrutiny to the required bits from bug 438458 (see comment 7).
+
+This bug is the bottom of my pile of pending backports, so all of them will have to wait a few more days...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2436698</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-07 09:25:58 -0400</bug_when>
+    <thetext>Released for 4.4.1 in two parts:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=R4_4_maintenance&amp;id=60ce0b39a760e48d61a108cbef0c9122196fa980
+
+Required parts from bug 438458 re TypeBinding.unannotated(boolean)
+with improvements applied:
+- fix from bug 438458 comment 6
+- issues found during testing and reported as bug 441338
+
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=R4_4_maintenance&amp;id=b15d04e770c3684cb44e6d568034939418181370
+
+The actual fix from comment 6</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2436699</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-07 09:27:55 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #11)
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/
+&gt; ?h=R4_4_maintenance&amp;id=b15d04e770c3684cb44e6d568034939418181370
+&gt; 
+&gt; The actual fix from comment 6
+
+Where the correct link for the original fix is http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=eca99cf8f2f41a7b6480d3a89bc3e5e01586e2d6</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2444690</commentid>
+    <comment_count>13</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-08-28 03:39:24 -0400</bug_when>
+    <thetext>Verified for 4.4.1 with build M20140827-0800
+
+and
+
+Verified for 4.5 M2 with build I20140819-2200</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

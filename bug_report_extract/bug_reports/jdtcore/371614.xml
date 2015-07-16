@@ -1,0 +1,360 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>371614</bug_id>
+          
+          <creation_ts>2012-02-15 07:23:00 -0500</creation_ts>
+          <short_desc>[compiler][resource] Wrong &quot;resource leak&quot; problem on return/throw inside while loop</short_desc>
+          <delta_ts>2015-04-27 03:44:52 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/44800</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=c3fe471c0fdcefebf95bb7bbebd413b0a2c46646</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M7</target_milestone>
+          
+          <blocked>386665</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Markus Keller">markus_keller</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>bugs</cc>
+    
+    <cc>cpjunk</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>frank</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>kurt2002</cc>
+    
+    <cc>njdoyle</cc>
+    
+    <cc>p_ansell</cc>
+    
+    <cc>richard.eckart</cc>
+    
+    <cc>wearyofallthiscrap</cc>
+          
+          <votes>5</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2066045</commentid>
+    <comment_count>0</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-02-15 07:23:27 -0500</bug_when>
+    <thetext>master
+
+In org.eclipse.egit.core.synchronize.GitResourceVariantComparator.compare(IResource, IResourceVariant), I see a bad resource leak problem on a return statement.
+
+Here&apos;s a snippet of that code that shows the problem:
+
+package p;
+
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+
+public class C {
+	public static void main(String[] args) {
+		FileInputStream fileInputStream= null;
+		try {
+			fileInputStream = new FileInputStream(args[0]);
+			while (true) {
+				if (fileInputStream.read() == -1) {
+					System.out.println(&quot;done&quot;);
+// Resource leak: &apos;fileInputStream&apos; is not closed at this location
+					return;
+				}
+			}
+		} catch (IOException e) {
+			e.printStackTrace();
+			return;
+		} finally {
+			closeStream(fileInputStream);
+		}
+	}
+	
+	private static void closeStream(InputStream stream) {
+		if (stream != null) {
+			try {
+				stream.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+}
+
+
+A &quot;potential&quot; problem on the return statement would be fine, but the unclosedCloseable is not.
+
+I also noticed that the exactly same problem is reported twice at the same location.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2066114</commentid>
+    <comment_count>1</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-02-15 08:55:37 -0500</bug_when>
+    <thetext>Maybe this is an example of bug 368546 comment 19?
+&gt; The only new concept is that we now include resource analysis into deferred
+&gt; checking for loops, which required a little refactoring in LoopingFlowContext.
+&gt; I am yet to find an example where this would require corresponding changes in
+&gt; FinallyFlowContext.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2082212</commentid>
+    <comment_count>2</comment_count>
+    <who name="kurt Mising name">kurt2002</who>
+    <bug_when>2012-03-17 03:44:22 -0400</bug_when>
+    <thetext>
+another testcase (eclipse 3.8M6).
+method test2() compiles without warnings, method test1() gets the following:
+
+Resource &apos;r&apos; should be managed by try-with-resource ResourceLeak.java /ZGen/src/ecerr line 16 Java Problem
+Resource leak: &apos;r&apos; is never closed  ResourceLeak.java /ZGen/src/ecerr line 16 Java Problem
+Potential resource leak: &apos;r&apos; may not be closed at this location ResourceLeak.java /ZGen/src/ecerr line 19 Java Problem
+
+
+strange that depending on the check(Reader) result, throwing an exception is marked with a warning or not.
+
+
+testcase:
+
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+
+public class ResourceLeak {
+
+  boolean check(final Reader r) throws IOException {
+    final int i = r.read();
+    return (i != -1);
+  }
+
+  public void test1() throws IOException {
+    try (Reader r = new InputStreamReader(System.in);) {
+      while (check(r)) {
+        if (check(r))
+          throw new IOException(&quot;fail&quot;);
+        if (!check(r))
+          throw new IOException(&quot;fail&quot;);
+      }
+    }
+  }
+
+  public void test2() throws IOException {
+    try (Reader r = new InputStreamReader(new FileInputStream(&quot;test.txt&quot;));) {
+      while (check(r)) {
+        if (check(r))
+          throw new IOException(&quot;fail&quot;);
+        if (!check(r))
+          throw new IOException(&quot;fail&quot;);
+      }
+    }
+  }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2082213</commentid>
+    <comment_count>3</comment_count>
+    <who name="kurt Mising name">kurt2002</who>
+    <bug_when>2012-03-17 03:49:07 -0400</bug_when>
+    <thetext>
+another testcase (eclipse 3.8M6).
+method test2() compiles without warnings, method test1() gets the following:
+
+Resource &apos;r&apos; should be managed by try-with-resource ResourceLeak.java /ZGen/src/ecerr line 16 Java Problem
+Resource leak: &apos;r&apos; is never closed  ResourceLeak.java /ZGen/src/ecerr line 16 Java Problem
+Potential resource leak: &apos;r&apos; may not be closed at this location ResourceLeak.java /ZGen/src/ecerr line 19 Java Problem
+
+
+strange that depending on the check(Reader) result, throwing an exception is marked with a warning or not.
+
+
+testcase:
+
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.Reader;
+
+public class ResourceLeak {
+
+  boolean check(final Reader r) throws IOException {
+    final int i = r.read();
+    return (i != -1);
+  }
+
+  public void test1() throws IOException {
+    try (Reader r = new InputStreamReader(System.in);) {
+      while (check(r)) {
+        if (check(r))
+          throw new IOException(&quot;fail&quot;);
+        if (!check(r))
+          throw new IOException(&quot;fail&quot;);
+      }
+    }
+  }
+
+  public void test2() throws IOException {
+    try (Reader r = new InputStreamReader(new FileInputStream(&quot;test.txt&quot;));) {
+      while (check(r)) {
+        if (check(r))
+          throw new IOException(&quot;fail&quot;);
+        if (!check(r))
+          throw new IOException(&quot;fail&quot;);
+      }
+    }
+  }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2082214</commentid>
+    <comment_count>4</comment_count>
+    <who name="kurt Mising name">kurt2002</who>
+    <bug_when>2012-03-17 03:52:49 -0400</bug_when>
+    <thetext>sorry got a &quot;Mid air collision&quot; and submitted twice - can anybody delete one of my comments ?
+thanks kurt</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2082221</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-03-17 06:59:06 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; another testcase (eclipse 3.8M6).
+
+Thanks. I can reproduce.
+
+&gt; strange that depending on the check(Reader) result, throwing an exception is
+&gt; marked with a warning or not.
+
+strange indeed
+
+(In reply to comment #4)
+&gt; can anybody delete one of my comments ?
+
+sorry, no.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2111616</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-05-22 09:02:49 -0400</bug_when>
+    <thetext>*** Bug 380207 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2111618</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-05-22 09:05:05 -0400</bug_when>
+    <thetext>Bug 380207 has more test cases to consider.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2114741</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-05-26 14:00:17 -0400</bug_when>
+    <thetext>Another pattern (from http://www.eclipse.org/forums/index.php/mv/msg/355689/877390/#msg_877390):
+
+    try (InputStreamReader socketIn = new InputStreamReader(fSocket.getInputStream())) {
+         while (true) {
+             if (socketIn.read(new char[1024]) &lt; 0)
+                 throw new IOException(&quot;Error&quot;);
+         }           
+     } catch (IOException e) {
+     }
+
+ecj &gt;= 3.8M6 reports:
+Resource leak: &apos;socketIn&apos; is never closed</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2436593</commentid>
+    <comment_count>9</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2014-08-07 04:58:35 -0400</bug_when>
+    <thetext>Would be nice to get a fix for this.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2436603</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-07 05:25:31 -0400</bug_when>
+    <thetext>Putting on my radar.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531262</commentid>
+    <comment_count>11</comment_count>
+    <who name="Corey Puffalt">cpjunk</who>
+    <bug_when>2015-03-13 19:21:50 -0400</bug_when>
+    <thetext>Is this still on someone&apos;s radar?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2531278</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-13 20:10:37 -0400</bug_when>
+    <thetext>It has target milestone 4.5, so yes. I&apos;m still planning to address this, but right now feature work involving new API has priority, next week we have API freeze ...
+
+In fact, just recently I triggered a similar warning in JDT&apos;s ExternalAnnotationUtil - even more motivation to fix the warning bug :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2532956</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-17 11:02:34 -0400</bug_when>
+    <thetext>*** Bug 462371 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2538873</commentid>
+    <comment_count>14</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-03-28 19:55:25 -0400</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/44800</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2538947</commentid>
+    <comment_count>15</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-03-29 08:47:11 -0400</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/44800 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=c3fe471c0fdcefebf95bb7bbebd413b0a2c46646</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2538948</commentid>
+    <comment_count>16</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-03-29 08:49:01 -0400</bug_when>
+    <thetext>Examples from this bug and its duplicate have been fixed.
+A similar problem still needs to be addressed in bug 463320.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2545541</commentid>
+    <comment_count>17</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-04-13 05:43:49 -0400</bug_when>
+    <thetext>Verified for 4.5 M7 with build I20150408-1100.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

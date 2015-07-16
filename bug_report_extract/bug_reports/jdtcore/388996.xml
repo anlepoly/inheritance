@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>388996</bug_id>
+          
+          <creation_ts>2012-09-06 16:23:00 -0400</creation_ts>
+          <short_desc>[compiler][resource] Incorrect &apos;potential resource leak&apos;</short_desc>
+          <delta_ts>2012-11-22 17:59:33 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Diego Plentz">diego</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>laurent.goubet</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2157098</commentid>
+    <comment_count>0</comment_count>
+    <who name="Diego Plentz">diego</who>
+    <bug_when>2012-09-06 16:23:46 -0400</bug_when>
+    <thetext>public void processRequest(RequestContext requestContext, ResponseContext responseContext, ServletContext servletContext) throws IOException {
+		OutputStream bao = null;
+		CountingOutputStream cos = null;
+		OutputStreamWriter osw = null;
+
+		try {
+			DefaultSyncParameters params = DefaultSyncParameters.parseParams(requestContext.getParams());
+			SyncUser syncUser = new SyncUser(params.getLogin(), params.getPassword(), requestContext.getIpAddress());
+
+			SynchronizationManager manager = SynchronizerUtil.getInstance().getManager();
+			manager.getSynchronizationCache().setUser(syncUser);
+			manager.authenticateUser(syncUser);
+
+			HttpServletResponse response = responseContext.getResponse();
+			response.setContentType(SyncGlobals.TEXT_PLAIN_CONTENT_TYPE);
+			response.setHeader(SyncGlobals.DEFAULT_RECEIVE_RESPONSE_HEADER_NAME, Long.toString((new Date()).getTime()));
+			response.setHeader(SyncGlobals.DEFAULT_SEND_RESPONSE_HEADER_NAME, SyncGlobals.DEFAULT_SEND_RESPONSE_HEADER_VALUE);
+
+			bao = response.getOutputStream(); &lt;&lt; here is the incorrect report!! (since I have that finally block)
+			cos = new CountingOutputStream(bao);
+			osw = new OutputStreamWriter(cos, Charset.forName(SyncGlobals.DEFAULT_CHARSET_ENCODING));
+
+			RequestParams requestParams = new RequestParams();
+			requestParams.setSyncUser(syncUser);
+			manager.receive(requestParams, osw);
+
+			cos.flush();
+			bao.flush();
+			response.setIntHeader(&quot;X-Content-Length&quot;, cos.getCount());
+		} finally {
+			if(osw != null) {
+				osw.close();
+			}
+			if(cos != null) {
+				cos.close();
+			}
+			if(bao != null) {
+				bao.close();
+			}
+		}
+	}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2157099</commentid>
+    <comment_count>1</comment_count>
+    <who name="Diego Plentz">diego</who>
+    <bug_when>2012-09-06 16:25:21 -0400</bug_when>
+    <thetext>Reduced case:
+
+	public void processRequest(ResponseContext responseContext) throws IOException {
+		OutputStream bao = null;
+
+		try {
+			HttpServletResponse response = responseContext.getResponse();
+
+			bao = response.getOutputStream(); &lt;&lt;&lt;&lt;
+		} finally {
+			if(bao != null) {
+				bao.close();
+			}
+		}
+	}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2157186</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-09-06 19:16:10 -0400</bug_when>
+    <thetext>Interestingly, the very first versions of this analysis got this right (3.8M3) but since 3.8M5 we report this bogus warning.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2160423</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-09-15 18:29:47 -0400</bug_when>
+    <thetext>Test &amp; fix have been released for 4.3 M2 via commit fb2a7c4287d62c5ea38390868d83f476b5ce22e3.
+
+The problem was similar to bug 386534 comment 5 (re out-of-order analysis of try-finally).
+The trick was to detect when a FakedTrackingVariable is created in a finally block, and if so, connect it to the FlowContext of the corresponding try statement.
+Now, when analysis thinks a resource variable is being re-assigned, we can see that the &quot;previous&quot; usage (from finally) was actually *after* the current location (within try).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2160424</commentid>
+    <comment_count>4</comment_count>
+    <who name="Diego Plentz">diego</who>
+    <bug_when>2012-09-15 18:42:01 -0400</bug_when>
+    <thetext>Thanks Stephan :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2161060</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-09-18 01:52:53 -0400</bug_when>
+    <thetext>Verified for 4.3 M2 using Build id: I20120917-0800</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2186850</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-11-22 17:59:33 -0500</bug_when>
+    <thetext>*** Bug 376938 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

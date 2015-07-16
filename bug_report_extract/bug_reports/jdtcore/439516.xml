@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>439516</bug_id>
+          
+          <creation_ts>2014-07-14 06:02:00 -0400</creation_ts>
+          <short_desc>[1.8][null] NonNullByDefault wrongly applied to implicit type bound of binary type</short_desc>
+          <delta_ts>2015-01-15 07:32:51 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M1</target_milestone>
+          
+          <blocked>438458</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>markus_keller</cc>
+    
+    <cc>mernst</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2427383</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-14 06:02:49 -0400</bug_when>
+    <thetext>Consider two classes
+   @NonNullByDefault
+   C1&lt;T&gt;
+and
+   @NonNullByDefault
+   C2&lt;T extends Object&gt;
+
+While the nullness default has no effect on C1, it changes the semantics of C2 to
+   C2&lt;T extends @NonNull Object&gt;
+
+This is because the nullness default affects explicit type bounds, but not implicit type bounds.
+
+Unfortunately, both classes create the same byte code, and we cannot distinguish from those bytes, whether a type bound was implicit or explicit. This causes us to incorrectly read the class file for C1 as &quot;C1&lt;T extends @NonNull Object&gt;&quot;.
+
+I&apos;m planning two changes:
+(1) always consider upper bounds of j.l.Object as &quot;implicit&quot; bounds (src &amp; bin)
+(2) issue a warning against classes like C2, signaling that the default is not applied although the type bound is explicit
+
+Perhaps, a note in the javadoc of DefaultLocation.TYPE_BOUND is appropriate, too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2427384</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-14 06:05:51 -0400</bug_when>
+    <thetext>Mike, I believe this is a weakness in the CLIMB-to-top rule: (to me) it is unclear if there is/should be a difference between &quot;C&lt;T&gt;&quot; and &quot;C&lt;T extends Object&gt;&quot;.
+
+My understanding is that a difference is intended, but technically that&apos;s not possible (see comment 0).
+
+How does the Checkers framework handle this?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2429481</commentid>
+    <comment_count>2</comment_count>
+    <who name="Michael Ernst">mernst</who>
+    <bug_when>2014-07-19 09:32:15 -0400</bug_when>
+    <thetext>Stephan-
+
+You are correct that 
+   C1&lt;T&gt;
+and
+   C2&lt;T extends Object&gt;
+produce identical bytecode.  The Checker Framework can distinguish them because it is a source code tool.  A bytecode tool is more limited and cannot distinguish them.
+
+The distinction is intentional:  it&apos;s not a weakness in the CLIMB-to-top rule, but something we added because it improves usability.
+
+As described at
+http://types.cs.washington.edu/checker-framework/current/checker-framework-manual.html#climb-to-top ,  the rationale is that 
+   C1&lt;T&gt;
+means &quot;no restriction at all on the instantiation of T&quot;, whereas
+   C2&lt;T extends D&gt;
+means &quot;some restriction on the instantiation of T&quot;, even if D is Object.  Furthermore, it would be weird for the &quot;Object&quot; in
+   C2&lt;T extends Object&gt;
+to mean something different than &quot;Object&quot; at nearby places in the code, such as in List&lt;Object&gt;.
+
+This rule means that the upper bound of
+  class C&lt;T&gt;
+is defaulted differently than the upper bound
+  class C&lt;T extends Object&gt;
+.  It would be more confusing for &quot;Object&quot; in
+  class C&lt;T extends Object&gt;
+to be defaulted differently than &quot;Object&quot; in an instantiation
+  C&lt;Object&gt;
+and for
+  class C&lt;T extends Object&gt;
+to
+be defaulted differently than
+  class C&lt;T extends Date&gt;
+
+I agree that it is a reasonable pragmatic choice for a bytecode tool to always consider upper bounds of j.l.Object as &quot;implicit&quot; bounds.  That is what I would do, faced with the need to implement a bytecode tool that has to work on bytecodes produced by a compiler that does not support pluggable types.
+
+At the source code level, I still prefer the CLIMB-to-top choice.  A source code tool such as the Checker Framework or Eclipse can output explicit annotations on every upper bound, so there is no ambiguity for the bytecode tool and it doesn&apos;t have to do any defaulting or inference.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2429493</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-19 12:56:24 -0400</bug_when>
+    <thetext>(In reply to Michael Ernst from comment #2)
+
+Thanks, Mike, for weighing in.
+
+Unfortunately, I&apos;m bound to treating ecj as a bytecode tool, not only for compatibility with other compilers but also to support incremental compilation.
+
+&gt; At the source code level, I still prefer the CLIMB-to-top choice.  A source
+&gt; code tool such as the Checker Framework or Eclipse can output explicit
+&gt; annotations on every upper bound, so there is no ambiguity for the bytecode
+&gt; tool and it doesn&apos;t have to do any defaulting or inference.
+
+We had a similar discussion in bug 366063 and my strategy of generating synthetic annotations has been voted down. Hence ecj cannot distinguish C&lt;T&gt; from C&lt;T extends Object&gt;.
+
+&gt; I agree that it is a reasonable pragmatic choice for a bytecode tool to
+&gt; always consider upper bounds of j.l.Object as &quot;implicit&quot; bounds.  That is
+&gt; what I would do, faced with the need to implement a bytecode tool that has
+&gt; to work on bytecodes produced by a compiler that does not support pluggable
+&gt; types.
+
+In our case, even consuming bytecode from our own compiler doesn&apos;t help.
+
+Cc&apos;ing Markus as the driver of bug 366063. If that decision still holds, I&apos;ll have to make a compromise along the following lines:
+
+Within the scope of @NonNullByDefault:
+
+- C&lt;T&gt; means: C&lt;T&gt;
+- C&lt;T extends Foo&gt; means: C&lt;T extends @NonNull Foo&gt;
+- C&lt;T extends Object&gt; means: C&lt;T extends Object&gt;
+
+The third case is weird and deserves a compiler warning.
+We may consider this weirdness to be tolerable, though, because it shouldn&apos;t occur normally in real life code.
+For code that avoids this warning, the semantics of ecj and checkers framework are the same.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2430370</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-22 11:55:00 -0400</bug_when>
+    <thetext>Resolved for 4.5 M1 by these commits:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=63231f253dc3aaae18caf57a7f77da85f8cefe96
+Don&apos;t apply nonnull-default on &lt;T extends Object&gt; when read from .class.
+
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=eba39b7d16632d43ea13707b696b73d1b911dc13
+For source level type parameters of the shape &lt;T extends Object&gt; do not apply the nonnull default to the type bound.
+Instead raise a compiler warning saying that the default for explicit type bounds does not apply here. 
+Also mention this fact in the javadoc of DefaultLocation.TYPE_BOUND
+
+This solution is not perfect, but within the given constraints a perfect solution doesn&apos;t seem to be possible.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2436081</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-08-06 02:08:58 -0400</bug_when>
+    <thetext>Verified for 4.5 M1 using code inspection.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2506029</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-15 07:32:51 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #4)
+&gt; http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/
+&gt; ?id=63231f253dc3aaae18caf57a7f77da85f8cefe96
+&gt; Don&apos;t apply nonnull-default on &lt;T extends Object&gt; when read from .class.
+
+This part has been back ported for 4.4.2 as prerequisite for bug 453475 (commit e0b75d21a26e97c9a42f6cf8d270088b82d36613).</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

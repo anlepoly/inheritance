@@ -1,0 +1,874 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>440474</bug_id>
+          
+          <creation_ts>2014-07-26 05:39:00 -0400</creation_ts>
+          <short_desc>[null] textual encoding of external null annotations</short_desc>
+          <delta_ts>2015-03-18 10:27:15 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/41870</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=0b6f06d77f121375ae3494c8c329aad2cfc0a1a4</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>4.5 M6</target_milestone>
+          
+          <blocked>331651</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>chris</cc>
+    
+    <cc>jal</cc>
+    
+    <cc>jarthana</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2432218</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-26 05:39:48 -0400</bug_when>
+    <thetext>To support external null annotations for libraries we need a file format. After initial experiments had used the binary class file format, we agreed that a textual format is to be preferred, mainly in order to better support versioning, comparison and merging of external annotations (involving manual intervention).
+
+In bug 331651 essentially four textual formats have been discussed: 
+- jaif: contains significant complexity that&apos;s not needed for our use case
+- IntelliJ&apos;s XML format: not yet ready for type annotations &amp; very verbose
+- Java signatures:
+  - source level method headers
+  - signature encoding as used in .class files
+
+The batch compiler will support exactly one of these formats. Whether or not the IDE will be able to handle alternative formats will be left to the future.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2432227</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-26 06:17:25 -0400</bug_when>
+    <thetext>In addition to defining how individual methods are encoded, we need to define the bundling of this information into bigger units:
+
+- grouping methods and fields into a chunk per class
+- packages
+- libraries
+
+Granularity of files: for first experiments it will be easiest to just use an open structure of directories / packages, which one annotation file per class.
+
+Later, the format can be optimized in several ways:
+- concat all classes of a package to one file (?)
+- pack directory structure into a zip file
+- add index information per package / per library
+
+For the time being these decisions are not a high priority.
+
+When being addressed, other concerns beside the compiler should be considered, too: how can interactive manipulation of external annotations be supported (think of quick assists)? We certainly don&apos;t want to create a new rewrite engine, but complete serialization of null annotations per class should produce minimal changes wrt previous versions. This creates two requirements:
+- transformation between internal representation (TypeBinding) and external
+  annotations must be unambiguous in both directions
+- order of elements (methods, fields) must be well-defined,
+  easiest would be to enforce all elements to be sorted, always.
+  Is this realistic?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2432274</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-26 20:42:41 -0400</bug_when>
+    <thetext>A quick x-ref to current work in bug 440477, which can be observed in a new feature branch [1]:
+
+While focus is on infra structure, not file format, I made a shy start at using the classfile variant of signatures, giving rise to the following observations:
+
+- that format is compact, providing for small files
+- the format is very convenient for processing
+- the format is painful to create without tool support
+- the format *might* be OK for manually comparing and merging versions
+  (provided the order of entries in a file is stable)
+
+
+I&apos;ll continue to elaborate this format. Once we have this, I might invite a volunteer to implement processing of source level method signatures, within the given structure [2] (look for MethodAnnotationWalker).
+
+
+
+[1] http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/log/?h=sherrmann/ExternalAnnotations
+
+[2] http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/tree/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/classfmt/ExternalAnnotationProvider.java?h=sherrmann/ExternalAnnotations</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2432942</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-29 05:58:33 -0400</bug_when>
+    <thetext>Just to document the format currently understood by work in the feature branch (I&apos;d never want to make any final decision before we have performance data, see bug 440629):
+
+I&apos;m using one file per class, first line must mention the class by its fully qualified name.
+
+Each method is annotated using a three-line entry:
+- method name
+- unannotated method signature (for disambiguation of overloads)
+- annotated method signature
+Lines 2 and 3 start with a single blank.
+
+Here&apos;s a simple example:
+
+//---
+class &lt;K:V:&gt;java/util/Map
+
+get
+ (Ljava/lang/Object;)TV;
+ (Ljava/lang/Object;)T0V;
+put
+ (TK;TV;)TV;
+ (TK;TV;)T0V;
+remove
+ (Ljava/lang/Object;)TV;
+ (Ljava/lang/Object;)T0V;
+//---
+
+For one of my tests I created the following (semantically invalid) example, showcasing a slightly more involved signature including bounded wildcards with an annotation on the type bound):
+
+//---
+class &lt;T:R:&gt;java/util/function/Function
+
+compose
+ &lt;V:Ljava/lang/Object;&gt;(Ljava/util/function/Function&lt;-TV;+TT;&gt;;)Ljava/util/function/Function&lt;TV;TR;&gt;;
+ &lt;V:Ljava/lang/Object;&gt;(Ljava/util/function/Function&lt;-TV;+T0T;&gt;;)Ljava/util/function/Function&lt;TV;TR;&gt;;
+//---
+
+(I hope bugzilla renders this without spurious line breaks).
+
+
+I&apos;ll hold back any discussion about style until we have performance data :)
+
+
+One way of doing experiments would be to only change the format for each third line in a method specification.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2448461</commentid>
+    <comment_count>4</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-09-06 11:19:39 -0400</bug_when>
+    <thetext>I played with the code and saw the format and it&apos;s parser.
+
+I have a few questions/remarks:
+* In the signature format, is not the &quot;unannotated&quot; signature directly derivable from the &quot;annotated&quot; one by simply removing all 0 and 1&apos;s? If so why not forego the original signature?
+
+* As mentioned in the UI &quot;bug&quot; using single small files for the annotations will probably cause very bad performance in Windows as it reads small files 20 to 40 times slower than Linux. I also gave some pointers there on how to handle zip rewriting.
+
+* I want to quickly write a converter for KAnnotator&apos;s format into your format. This will help us with having a real body of external annotations which can be used for performance and completeness tests. The problem there is that your format requires the class name header to be qualified including types; this information is not available in the KAnnotator file. Would it be a problem to remove them?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2451432</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-09-14 10:44:55 -0400</bug_when>
+    <thetext>Hi Frits
+
+(In reply to Frits Jalvingh from comment #4)
+&gt; I played with the code and saw the format and it&apos;s parser.
+&gt; 
+&gt; I have a few questions/remarks:
+&gt; * In the signature format, is not the &quot;unannotated&quot; signature directly
+&gt; derivable from the &quot;annotated&quot; one by simply removing all 0 and 1&apos;s? If so
+&gt; why not forego the original signature?
+
+This might be a future optimization, but please see, that we cannot simple remove all 0 and 1&apos;s, some might be part of a Java identifier :) - i.e., derivation requires &quot;parsing&quot;. Right now I&apos;m simply not sure which is better, my gut feeling saying: make lookup as simple as possible, hence the unannotated version. Remind me to discuss when we have run first real experiments.
+ 
+&gt; * As mentioned in the UI &quot;bug&quot; using single small files for the annotations
+&gt; will probably cause very bad performance in Windows as it reads small files
+&gt; 20 to 40 times slower than Linux. I also gave some pointers there on how to
+&gt; handle zip rewriting.
+
+That&apos;s a good point. For easier reference, that&apos;s bug 440815 comment 4.
+ 
+&gt; * I want to quickly write a converter for KAnnotator&apos;s format into your
+&gt; format. This will help us with having a real body of external annotations
+&gt; which can be used for performance and completeness tests. The problem there
+&gt; is that your format requires the class name header to be qualified including
+&gt; types; this information is not available in the KAnnotator file. Would it be
+&gt; a problem to remove them?
+
+Are you saying you don&apos;t have the qualified name of the current class? Sounds strange to me, I&apos;m fetching the name directly from the class file, but if you confirm you need ability to use the unqualified name in the annotation file&apos;s header, I can certainly add this in the branch. We only loose one chance to detect corruption :)
+
+Note, that my ExternalAnnotationProvider isn&apos;t complete yet. But IIRC KAnnotator doesn&apos;t produce type annotations, right? In that light supporting method parameters &amp; return should probably suffice atm, right? Does KAnnotator produce field annotations?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2451433</commentid>
+    <comment_count>6</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-09-14 11:08:48 -0400</bug_when>
+    <thetext>&gt; This might be a future optimization, but please see, that we cannot simple 
+&gt; remove all 0 and 1&apos;s, some might be part of a Java identifier :)
+Lost the big picture there ;-) Yes, you&apos;re of course right ;-)
+
+&gt; Are you saying you don&apos;t have the qualified name of the current class?
+Yes. The KAnnotator XML format is quite odd: it is very flat, is at package level, has no &quot;class&quot; entries but &quot;encodes&quot; the class inside each method/field specification:
+&lt;item name=&apos;java.util.AbstractCollection java.util.Iterator&amp;lt;E&amp;gt; iterator()&apos;&gt;
+
+The only way I can encode the class&apos;s type signature is to read the annotated .jar in parallel with the generated set of annotations. I can of course do that later if indeed it&apos;s found that doing these checks are worthwhile. For now it would be easier/quicker to have the unadorned name of the class (or at least- not to bark when it&apos;s missing) ;-)
+
+&gt; But IIRC KAnnotator doesn&apos;t produce type annotations, right
+No. I think Eclipse is the only compiler that supports nullity annotations as type annotations in Java. IntelliJ does have language-level nullity support in their new JVM-based language Kotlin but that part has not yet trickled down into their Java support.
+
+&gt; Does KAnnotator produce field annotations?
+Yep, it does, and that should be the end of the silly requirement having to annotate nonnull finals ;-)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2451435</commentid>
+    <comment_count>7</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-09-14 11:13:54 -0400</bug_when>
+    <thetext>&gt;&gt; Does KAnnotator produce field annotations?
+&gt;Yep, it does, and that should be the end of the silly requirement having to 
+&gt; annotate nonnull finals ;-)
+Ah, of course not - in source we&apos;ll still have to do this 8-/ Even flippant remarks require thought..</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2451449</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-09-14 13:15:11 -0400</bug_when>
+    <thetext>I&apos;ve pushed some updates to the branch:
+
+- handle annotations on array dimensions
+
+- handle annotations on fields
+
+- accept simple class name in annotation file (without package)
+
+Hope, that the latter two help for the KAnnotator case.
+
+But wait: 
+
+(In reply to Frits Jalvingh from comment #6)
+&gt; &lt;item name=&apos;java.util.AbstractCollection java.util.Iterator&amp;lt;E&amp;gt;
+&gt; iterator()&apos;&gt;
+
+If this is about a method in Iterator we *do* have the qualified name?
+Maybe the difference is just that I expect java/util/Iterator where you have java.util.Iterator&lt;E&gt;??
+
+I&apos;m confused :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2451450</commentid>
+    <comment_count>9</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-09-14 15:25:27 -0400</bug_when>
+    <thetext>&gt; If this is about a method in Iterator we *do* have the qualified name?
+Sorry to have confused you ;-)
+
+Look at the example XML:
+&lt;item name=&apos;java.util.AbstractCollection java.util.Iterator&amp;lt;E&amp;gt; iterator()&apos;&gt;
+
+The thing starts with the class name this method is in: java.util.AbstractCollection. This _class name_ is not typed here - that is the problem. Because I do not know the class&apos;s type parameters I cannot generate the &quot;AbstractCollection&lt;E&gt;&quot; thingy required in your earlier map files.
+
+The _method is_ properly typed as you observed, so that is not a problem - I should be able to generate whatever&apos;s needed from that.
+
+Thanks for the format change; I will try to create a QD conversion asap.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2451451</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-09-14 17:13:19 -0400</bug_when>
+    <thetext>(In reply to Frits Jalvingh from comment #9)
+&gt; &gt; If this is about a method in Iterator we *do* have the qualified name?
+&gt; Sorry to have confused you ;-)
+&gt; 
+&gt; Look at the example XML:
+&gt; &lt;item name=&apos;java.util.AbstractCollection java.util.Iterator&amp;lt;E&amp;gt;
+&gt; iterator()&apos;&gt;
+&gt; 
+&gt; The thing starts with the class name this method is in:
+&gt; java.util.AbstractCollection. This _class name_ is not typed here - that is
+&gt; the problem. Because I do not know the class&apos;s type parameters I cannot
+&gt; generate the &quot;AbstractCollection&lt;E&gt;&quot; thingy required in your earlier map
+&gt; files.
+&gt; 
+&gt; Thanks for the format change;
+
+I probably changed the wrong thing. I first understood that the *qualified name* poses a problem, so I now accept &quot;AbstractCollection&quot; as an alternative to &quot;java/util/AbstractCollection&quot;, whereas you seem to be seeing a conflict regarding *type parameters*, which in my understanding shouldn&apos;t play a role on either side. I&apos;ll just let you play with it and if it&apos;s still broken let you propose a fix - code is less ambiguous than English :)
+
+&gt; I will try to create a QD conversion asap.
+
+sounds great!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475320</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-02 13:19:25 -0500</bug_when>
+    <thetext>Notes from discussions during EclipseCon Europe, where in fact I gave a sneak preview of this feature:
+
+(1) Whatever textual format we end up using, it should be suitable for diff &amp; merge. Imagine a tool function that generates stub files (with no annotations) from class files. Now merging becomes relevant when, after a library change, a stub file is regenerated, whereas a local copy contains manually added annotations.
+
+(2) To avoid noise during comparison, members should always be alphabetically sorted.
+
+(3) It has been proposed to just enumerate annotations in the order of types in the signature, instead of inserting them *into* the signature.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475321</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-02 13:21:52 -0500</bug_when>
+    <thetext>Some more details:
+
+(In reply to Stephan Herrmann from comment #11)
+&gt; (1) Whatever textual format we end up using, it should be suitable for diff
+&gt; &amp; merge. Imagine a tool function that generates stub files (with no
+&gt; annotations) from class files. Now merging becomes relevant when, after a
+&gt; library change, a stub file is regenerated, whereas a local copy contains
+&gt; manually added annotations.
+
+I suggest to use the following general layout:
+
+Empty stub with no annotations;
+
+// ---
+name1
+  originalSignature1
+
+name2
+  originalSignature2
+// ---
+
+Now the user can start adding annotations by copying one of the original signatures, to become:
+
+// ---
+name1
+  originalSignature1
+
+name2
+  originalSignature2
+  annotatedSignature2
+// ---
+
+When regenerating the stub (after a library change), we can identify these situations:
+
+- originalSignature1 changed:
+  Change should be mergeable without conflict (depending on context)
+
+- originalSignature2 changed:
+  Conflict:
+  - incoming change in line &quot;originalSignature2&quot;
+  - local addition of annotatedSignature
+  Still both changes are on separate lines and can be easily recognized 
+  by the user. This is better than if we&apos;d also generate the second
+  signature into the stub file, because then local and incoming changes
+  would meet on the same line, making it hard to understand.
+
+
+OTOH, when merging annotated files from another source, added annotations will clearly be recognized as incoming addition of lines (or conflicts with existing annotations).
+
+Ergo: the second signature should only be added when annotations are added. In fact adding a verbatim copy of the signature will then indicate the conscious decision to leave a particular signature unannotated (e.g., when the signature consists of only type variables and no nullness overrides are necessary).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475349</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-02 13:40:02 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #11)
+&gt; (3) It has been proposed to just enumerate annotations in the order of types
+&gt; in the signature, instead of inserting them *into* the signature.
+
+Positional references is also what the KAnnotator format uses. While this is easy for declaration annotations (one slot per parameter) this will be confusing when using type annotations, because users would have to count all possible locations incl. type parameters (nested), type bounds and array dimensions, to make the connection from positional annotations to types in the signature. 
+If we&apos;d try to improve usability of a numeric approach, we&apos;d probably re-invent the path-oriented approach that is used in the byte code - but that approach is way too complex for our purpose.
+
+For illustration: which position does the type argument &apos;M&apos; of &apos;Supplier&apos; in the following method have?
+
+public static &lt;T, K, U, M extends Map&lt;K, U&gt;&gt;
+    Collector&lt;T, ?, M&gt; toMap(Function&lt;? super T, ? extends K&gt; keyMapper,
+                                Function&lt;? super T, ? extends U&gt; valueMapper,
+                                BinaryOperator&lt;U&gt; mergeFunction,
+                                Supplier&lt;M&gt; mapSupplier)
+
+My result is: 24.
+
+
+I think inserting annotations into the signature is much easier in this regard.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475351</commentid>
+    <comment_count>14</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-11-02 13:54:08 -0500</bug_when>
+    <thetext>If efficiency of parsing is the main goal I think you end up with the proposals so far. If clarity is a goal then I still think we have a perfect format that everyone is quite comfortable with: java declarations.
+While the signature proposal as done so far is at least readable it still requires arcane knowledge that normal programmers won&apos;t have. I truly hate the positional proposal; I see hardly any gain and for annotated types it is horror as you showed.
+I think the only argument against java style declarations is performance? If that is the case we might have a better way to choose if we find out how performance is influenced by having a declaration-style parser instead of the current one?
+
+With the kannotator reverse now &quot;working&quot; I can also generate a declaration style output file rather easily. That would give us real input for comparing performance.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475356</commentid>
+    <comment_count>15</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-02 14:14:47 -0500</bug_when>
+    <thetext>(In reply to Frits Jalvingh from comment #14)
+
+Yes, let&apos;s put the money where our mouth is: bug 440629 :)
+
+Question: when you say &quot;java style declarations&quot;, would that literally mean Java source syntax including parameter *names*? If these are not available from the byte code, would we then say arg0, arg1 ...?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475357</commentid>
+    <comment_count>16</comment_count>
+    <who name="Frits Jalvingh">jal</who>
+    <bug_when>2014-11-02 14:32:34 -0500</bug_when>
+    <thetext>&gt; Question....
+No, I would forego parameter names as they add nothing, really..</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2475358</commentid>
+    <comment_count>17</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-02 14:40:27 -0500</bug_when>
+    <thetext>(In reply to Frits Jalvingh from comment #16)
+&gt; &gt; Question....
+&gt; No, I would forego parameter names as they add nothing, really..
+
+In that case we&apos;d need a new parser, that&apos;s why I asked...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501519</commentid>
+    <comment_count>18</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-02 08:02:12 -0500</bug_when>
+    <thetext>To enable a fresh start in the fresh year, here&apos;s a summary of my proposal so far:
+
+Assumption: we have one annotation file per class, organizational issues of zip vs. directory etc. will be addressed in bug 440477.
+
+Considerations in comment 11 and comment 12 are basically valid, only positional references (comment 11 item (3)) have been ruled out.
+
+
+Example:
+//----
+class java/util/Map
+ &lt;K:V:&gt;
+
+get
+ (Ljava/lang/Object;)TV;
+ (Ljava/lang/Object;)T0V;
+put
+ (TK;TV;)TV;
+//----
+
+Lexer: 
+- newlines are significant, each line holds either a name or a signature
+- signatures are indented by exactly one blank
+  (alt: ... indented by any non-empty combination of blanks and tabs)
+- empty lines are ignored (white space to be tolerated here)
+- no other whitespace is allowed
+- should comments be supported? I vote &apos;no&apos;.
+- all qualified type names use &apos;/&apos; package separators and &apos;.&apos; type separators (as per JVMS).
+
+A grammar is given relative to the class file format (JVMS Sect. 4.7.9.1, see http://docs.oracle.com/javase/specs/jvms/se8/html/jvms-4.html#jvms-4.7.9.1).
+The grammar controls the overall structure of one ExternalAnnotations file and identifies those locations where a null annotation token can be inserted (Annot). 
+[] means option, {} repetition, | alternative, terminals are single-quoted (for lack of italics in bugzilla :) ).
+
+ExternalAnnotations:
+  FirstLine
+  [TypeParameterSection]
+  {MemberDeclaration}
+
+Firstline: 
+  &apos;class&apos; ClassName | &apos;interface&apos; ClassName
+
+TypeParameterSection:
+  Indent TypeParameters
+  [Indent AnnotatedTypeParameters]
+
+MemberDeclaration:
+  FieldDeclaration | MethodDeclaration
+
+FieldDeclaration:
+  SimpleName
+  Indent ReferenceTypeSignature
+  [Indent AnnotatedReferenceTypeSignature]
+
+MethodDeclaration:
+  SimpleName
+  Indent MethodSignatureWithoutThrows
+  [Indent AnnotatedMethodSignature]
+
+MethodSignatureWithoutThrows:
+  [TypeParameters] &apos;(&apos; {JavaTypeSignature} &apos;)&apos; Result 
+
+AnnotatedMethodSignature:
+  [AnnotatedTypeParameters] &apos;(&apos; {AnnotatedJavaTypeSignature} &apos;)&apos; AnnotatedResult
+
+AnnotatedJavaTypeSignature:
+   AnnotatedReferenceTypeSignature | BaseType 
+  
+AnnotatedReferenceTypeSignature:
+  AnnotatedClassTypeSignature | AnnotatedTypeVariableSignature | AnnotatedArrayTypeSignature
+
+AnnotatedClassTypeSignature:
+  &apos;L&apos; [Annot] [PackageSpecifier] AnnotatedSimpleClassTypeSignature {AnnotatedClassTypeSignatureSuffix} &apos;;&apos;
+
+AnnotatedTypeVariableSignature:
+  &apos;T&apos; [Annot] Identifier &apos;;&apos;
+
+AnnotatedArrayTypeSignature:
+  &apos;[&apos; [Annot] AnnotatedJavaTypeSignature
+
+AnnotatedTypeParameters:
+  &apos;&lt;&apos; [Annot] TypeParameter {[Annot]TypeParameter} &apos;&gt;&apos; 
+
+AnnotatedSimpleClassTypeSignature:
+  Identifier [AnnotatedTypeArguments]
+
+AnnotatedClassTypeSignatureSuffix:
+  &apos;.&apos; AnnotatedSimpleClassTypeSignature
+
+AnnotatedTypeArguments:
+  &apos;&lt;&apos; [Annot] AnnotatedTypeArgument {[Annot] AnnotatedTypeArgument} &apos;&gt;&apos;
+
+AnnotatedTypeArgument:
+  ([WildcardIndicator] AnnotatedReferenceTypeSignature) | &apos;*&apos;
+
+Annot:
+  &apos;0&apos; | &apos;1&apos;
+
+Non-terminals not found here can be found in JVMS Sect 4.7.9.1.
+
+Values &apos;0&apos; and &apos;1&apos; symbolically represent the configured nullable and nonnull annotations, i.e., the format is agnostic to what concrete annotations should be recognized by the compiler.
+
+Should more annotations be supported in the future, they can be easily represented by more digits, perhaps multi-digit numbers.
+
+Essentially, Annot is accepted after each of &apos;L&apos;, &apos;T&apos; and &apos;[&apos; plus before each TypeParameter or TypeArgument inside &apos;&lt;&apos; ... &apos;&gt;&apos;.
+
+
+I hold this format to be
+
+- well defined (minus some corner cases to be ironed out while implementing)
+
+- well suited for handling by tools (compiler, quick fix, diff/merge)
+
+- comprehensible to a trained human reader, if needed.
+
+
+I&apos;m aware of an alternative proposal to use signatures closer to Java source syntax (minus parameter names). I&apos;m open to compare both proposals on the basis of (1) a syntax, (2) a draft implementation and (3) performance measurements - if provided. I&apos;m willing to help but I&apos;m not driving the alternative proposal forward.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501581</commentid>
+    <comment_count>19</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-02 14:27:51 -0500</bug_when>
+    <thetext>I&apos;ve updated the feature branch sherrmann/ExternalAnnotations: merged with latest from master and added support for annotations on type parameters.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2504194</commentid>
+    <comment_count>20</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-10 19:18:54 -0500</bug_when>
+    <thetext>(In reply to Frits Jalvingh from bug 331651 comment #54)
+&gt; I wrote a bare-bones fast parser for java format signatures. An example
+&gt; (generated from that KAnnotator dataset) would be:
+&gt; 
+&gt; package java.util {
+&gt;  class SimpleTimeZone {
+&gt;   @Nonnull java.lang.Object clone();
+&gt;   boolean equals(@Nonnull java.lang.Object);
+&gt;   boolean inDaylightTime(@Nonnull java.util.Date);
+&gt;   @Nonnull java.lang.String toString();
+&gt;  }
+&gt; 
+&gt;  class List&lt;E&gt; {
+&gt;   void add(int,@Nonnull E);
+&gt;   boolean add(@Nonnull E);
+&gt;   boolean addAll(@Nonnull java.util.Collection&lt;? extends E&gt;);
+&gt;   boolean addAll(int,@Nonnull java.util.Collection&lt;? extends E&gt;);
+&gt;   boolean contains(@Nonnull java.lang.Object);
+&gt;   boolean containsAll(@Nonnull java.util.Collection&lt;?&gt;);
+&gt;   boolean equals(@Nonnull java.lang.Object);
+&gt;   int indexOf(@Nonnull java.lang.Object);
+&gt;   @Nonnull java.util.Iterator&lt;E&gt; iterator();
+&gt;   int lastIndexOf(@Nonnull java.lang.Object);
+&gt;   @Nonnull java.util.ListIterator&lt;E&gt; listIterator();
+&gt;   @Nonnull java.util.ListIterator&lt;E&gt; listIterator(int);
+&gt;   boolean remove(@Nonnull java.lang.Object);
+&gt;   boolean removeAll(@Nonnull java.util.Collection&lt;?&gt;);
+&gt;   E set(int,@Nonnull E);
+&gt;   @Nonnull java.util.List&lt;E&gt; subList(int,int);
+&gt;   @Nonnull java.lang.Object[] toArray();
+&gt;   @Nonnull T[] toArray(@Nonnull T[]);
+&gt;  }
+&gt; }
+&gt; Using the same KAnnotator dataset we played with earlier generates a single
+&gt; file of 3.3MB in this format for the entire JDK. The parser at least parses
+&gt; that file quite fast: in 50..60 milliseconds on my PC. I do not expect this
+&gt; to get much faster: the lexer and parser have already been coded for best
+&gt; performance.
+&gt; 
+&gt; Now of course this is just parsing: it runs through a hand-written
+&gt; recursive-descend parser which just checks syntax for now, but at least
+&gt; lexing, tokenizing and parsing does not seem too slow to use full prototype
+&gt; signatures.
+
+cool
+ 
+&gt; Next step would be to try to get the parser to generate signatures in the
+&gt; format you require inside the annotation walker. I have no idea how that
+&gt; will impact performance, and it will take some time because those signatures
+&gt; give me a bit of a headache still ;-)
+
+You don&apos;t *necessarily* have to generate signatures in a different format. I see these two tasks for hooking your parser into the compiler:
+
+1. match an existing IBinaryMethod to an entry in the external annotations (ClassFileReader.getAnnotationsForMethod() -&gt; ExternalAnnotationProvider.forMethod()).
+
+2. implement walking, like toMethodParameter() so that a subsequent call to getAnnotationsAtCursor() will answer the annotations of the selected element (like: the selected method parameter).
+
+Obviously, (1) is where using binary signatures throughout makes my life easier :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2509171</commentid>
+    <comment_count>21</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-22 14:10:08 -0500</bug_when>
+    <thetext>In the context of bug 457792 the topic of confidence came to the agenda, again.
+
+In that context I think it would be good to support some kind of meta data directly inside the .eea files.
+
+Example:
+
+//---
+class java.util.Map Source=quickfix
+
+get
+ (Ljava/lang/Object;)TV;
+ (Ljava/lang/Object;)T0V; ReviewedBy=guru@eclipse.org
+
+put
+ (TK;TV;)TV;
+ (TK;TV;)T1V;
+//---
+
+Now, a user may choose to trust annotations created via quickfix only if they have been reviewed by guru@eclipse.org. In this context, trust is not to be understood in terms of cryptographic authenticity, but in terms of quality assurance.
+
+Other annotations could be
+  Source=inference Tool=KAnnotator
+  Source=inference Tool=JastAddNonNullInferencer
+  Source=quickfix ContributionCount=113
+(s.o. may trust any annotation that has been contributed independently from 100 contributors).
+Etc.
+
+
+Considerations affecting the file format:
+
+To provide a parsable syntax, it would be sufficient to require:
+- meta data are specified on the same line as the annotated signature,
+  separated by one or more blanks.
+- meta data can be either one-word (usage as a flag) or name=value pairs.
+
+
+Meta data on the class header concerns all members in the file.
+
+
+A single signature can contain annotations from different sources, but it doesn&apos;t seem to make sense to also merge independent meta data (notably: multiple &quot;Source&quot; values). Hence there may be situations where we want to specify multiple annotated signatures for a single method. Notably when collecting annotations in a central repo, accounting for different sources is key. Using the textual format this can simply be done by adding multiple lines with annotated signatures for a method.
+
+When consuming such multi-source annotation files we could filter either when  downloading or on-the-fly when the compiler accesses the external annotations. While filter-on-download is preferable performance-wise, it may be difficult to integrate with any existing dependency management system. E.g., in maven we could provide artifacts with classfier &quot;eea&quot;, like org.apache.commons:commons-lang3-3.3.2-eea.jar. These could be pulled into the build via regular maven concepts, but we could not easily distinguish different filtered versions of that jar.
+
+This implies the compiler should be *able* to do the filtering on-the-fly. Still the IDE could cache a pre-filtered version of your .eea into a private location.
+
+Filtering would then mean:
+- delete any lines that don&apos;t match a project&apos;s rules of trust
+- if more than one line remains for any given method attempt to merge:
+  - if different lines annotate disjoint locations in the signature: merge
+  - if different lines have an identical annotation for the same location:OK
+  - if different lines have conflicting annotations for any location -&gt; ERROR
+
+
+Definition of meta data would be driven by the community approach, but a few properties should probably be defined up front. &quot;Source&quot;, &quot;Tool&quot; and &quot;ReviewedBy&quot; look like natural options to me. As possible values for &quot;Source&quot; I see &quot;inference&quot;, &quot;quickfix&quot;, &quot;javadoc&quot;, &quot;inspection&quot; ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2509202</commentid>
+    <comment_count>22</comment_count>
+    <who name="Chris Hubick">chris</who>
+    <bug_when>2015-01-22 15:34:48 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #21)
+&gt; In the context of bug 457792 the topic of confidence came to the agenda,
+&gt; again.
+&gt; 
+&gt; In that context I think it would be good to support some kind of meta data
+&gt; directly inside the .eea files.
+
+If it were *me*, I&apos;d consider the whole issue of confidence as out of scope.
+
+As an Eclipse user, I was expecting just to be given an option to attach an annotation jar file to any library I use in my project, just like I can attach a source or javadoc jar file, and it would be up to me to locate those annotations from a source I trust.
+
+I&apos;d expect to see an Eclipse wiki page providing links to developers providing annotations in github for various libraries they use, with those being forked and corrected by others, pull requests being sent, arguing in those pull request comments, and the community would sort out consensus that way, with the most popular repo&apos;s being starred to the top.
+
+
+p.s While I&apos;m here - I *strongly* agree with comment 14 in favouring the Java format signatures.  I&apos;m capable of writing those, as I imagine most devs are, and would likely contribute them for several libraries - but I have no clue how read or write those class-format style ones, and they appear rather distasteful to work with :(
+
+p.p.s. It would be cool if there were an easy tool to allow a project developer to suck in a set of these third party annotations and use them to automatically annotate their projects source.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2509205</commentid>
+    <comment_count>23</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-22 15:53:58 -0500</bug_when>
+    <thetext>(In reply to Chris Hubick from comment #22)
+&gt; (In reply to Stephan Herrmann from comment #21)
+&gt; &gt; In the context of bug 457792 the topic of confidence came to the agenda,
+&gt; &gt; again.
+&gt; &gt; 
+&gt; &gt; In that context I think it would be good to support some kind of meta data
+&gt; &gt; directly inside the .eea files.
+&gt; 
+&gt; If it were *me*, I&apos;d consider the whole issue of confidence as out of scope.
+
+I&apos;m almost certain you&apos;ll change your mind once your application crashed, because your removed a null check which was wrongly signalled as redundant based on a bogus annotation.
+
+Wrong annotations are worse than none.
+
+(And all the blame will be put on the compiler :) ).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2509214</commentid>
+    <comment_count>24</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-22 16:18:36 -0500</bug_when>
+    <thetext>(In reply to Chris Hubick from comment #22)
+&gt; I&apos;d expect to see an Eclipse wiki page providing links to developers
+&gt; providing annotations in github for various libraries they use, with those
+&gt; being forked and corrected by others, pull requests being sent, arguing in
+&gt; those pull request comments, and the community would sort out consensus that
+&gt; way, with the most popular repo&apos;s being starred to the top.
+
+I see people having different expectations here, ranging from: there will be plenty of maintainers for various library annotations that will sort everything out, over: lets put together one Eclipse-based project that will collect and review all annotations, up-to: provide tools for crowd-sourcing that will automatically collect and publish all available information from users working with this system.
+
+I suggest to continue this discussion in bug 457792, which arose from a brainstorming if crowd-sourcing could play a role, here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2509228</commentid>
+    <comment_count>25</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-22 17:00:59 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #24)
+&gt; I suggest to continue this discussion in bug 457792, which arose from a
+&gt; brainstorming if crowd-sourcing could play a role, here.
+
+Even better, discuss this in bug 449653 (sorry for confusion).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2510916</commentid>
+    <comment_count>26</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-27 13:18:33 -0500</bug_when>
+    <thetext>FYI: bug 331651 comment 56
+
+
+
+While the &quot;competition&quot; in this bug is still open, let me summarize, why indeed I consider my proposed format as suitable for the purpose:
+
+Work in bug 458186 and bug 458200 indicates that for many use cases users will never have to even see the external annotation file.
+
+Still, it is suitable for storing in version control (which a binary format would not be). Using the layout of 2-3 lines per member, merge conflicts should be reduced to a minimum, which means even during merge, users don&apos;t typically need to view the actual file content.
+
+For the implementation it is clearly the most natural format.
+
+It nicely abstracts from the concrete annotations used.
+
+After all: it isn&apos;t all that hard to learn that Ljava/lang/Object; is java.lang.Object :) 
+
+I consider editing external annotations a job for an expert of some kind. Blindly writing what you &quot;believe&quot; would be a nice annotated signature for a given library method could easily open the doors for severe bugs in the software of anybody consuming those annotations. For anybody who qualifies for this job, learning a slightly new syntax should not be a real barrier.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511999</commentid>
+    <comment_count>27</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-29 09:13:53 -0500</bug_when>
+    <thetext>I&apos;ve pushed the following updates to the feature branch:
+
+(1) Withdraw the distinction class/interface(/enum) in the file header. I don&apos;t see any use for that information and the quick fix implementation was struggling to actually retrieve it when it was needed -&gt; simplifies file format and tool implementation. For a minute I was considering to change &quot;class&quot; to &quot;type&quot; but then I realized that it is good to use a word that is a keyword in Java, to avoid any danger of ambiguity with a member name. So &quot;class&quot; is now said regardless (which in a way reflects the JVMS lingo).
+
+(2) Ignore any trailing data separated by white space to allow for future extensions wrt meta data.
+
+(3) Support annotations directly on a wildcard (I&apos;ve added the corresponding updated grammar rule (&quot;TypeArgument&quot;) to the wiki).
+
+
+On behalf of some quick assists I also worked on a renderer that prints the textual annotation encoding with a piece of DOM AST as its input. Based on this experience, some remarks for anybody implementing support for an alternative textual format:
+
+- Since the binary methods / fields we want to annotate use qualified names in their signatures, for direct signature matching all types must be resolved, i.e., &quot;Object&quot; doesn&apos;t suffice, it must always be &quot;java.lang.Object&quot; (or &quot;Ljava/lang/Object;&quot;).
+
+- More subtly: we need the information, whether a type name represents a class (interface/enum..), or a type variable, i.e., it doesn&apos;t suffice to use &quot;java.util.List&lt;X&gt;&quot;, we need to be explicit whether X is a class or a type variable.
+
+In a quick assist implementation, it is OK to rely on an extra step of resolving to obtain this information. When evaluating an annotation file on behalf of the compiler, this issue _could_ create a performance problem. There may be solutions to this, just saying that more smarts would need to be invested here to implement a fast matching strategy.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2512828</commentid>
+    <comment_count>28</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-31 18:29:23 -0500</bug_when>
+    <thetext>I&apos;ve pushed a few more implementation changes, notably support for manipulation of external annotation files, as to add / merge annotations into any position within a signature (declaration annotations as well as the full range of type annotations). This implementation is driven by work on bug 458200.
+
+(commit 58375c31936bb78a6ed6a3581130d4d4fbc10c07).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518197</commentid>
+    <comment_count>29</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-02-12 13:24:17 -0500</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/41769
+
+WARNING: this patchset contains 3382 new lines of code and may require a Contribution Questionnaire (CQ) if the author is not a committer on the project. Please see:https://wiki.eclipse.org/Project_Management_Infrastructure/Creating_A_Contribution_Questionnaire</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518238</commentid>
+    <comment_count>30</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-02-12 14:49:08 -0500</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/41772
+
+WARNING: this patchset contains 3384 new lines of code and may require a Contribution Questionnaire (CQ) if the author is not a committer on the project. Please see:https://wiki.eclipse.org/Project_Management_Infrastructure/Creating_A_Contribution_Questionnaire</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518241</commentid>
+    <comment_count>31</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-12 14:56:22 -0500</bug_when>
+    <thetext>(In reply to Eclipse Genie from comment #30)
+&gt; New Gerrit change created: https://git.eclipse.org/r/41772
+
+ups, forgot the change ID
+
+&gt; WARNING: this patchset contains 3384 new lines of code and may require a
+&gt; Contribution Questionnaire (CQ) if the author is not a committer on the
+&gt; project. 
+
+Don&apos;t worry, Genie :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518953</commentid>
+    <comment_count>32</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-02-14 14:13:25 -0500</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/41870
+
+WARNING: this patchset contains 3384 new lines of code and may require a Contribution Questionnaire (CQ) if the author is not a committer on the project. Please see:https://wiki.eclipse.org/Project_Management_Infrastructure/Creating_A_Contribution_Questionnaire</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518954</commentid>
+    <comment_count>33</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-02-14 15:51:40 -0500</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/41870 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=0b6f06d77f121375ae3494c8c329aad2cfc0a1a4
+
+WARNING: this patchset contains 3384 new lines of code and may require a Contribution Questionnaire (CQ) if the author is not a committer on the project. Please see:https://wiki.eclipse.org/Project_Management_Infrastructure/Creating_A_Contribution_Questionnaire</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518956</commentid>
+    <comment_count>34</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-14 15:57:23 -0500</bug_when>
+    <thetext>Released for 4.5 M6 together with bug 440477.
+
+Further improvement will be tracked via other/new children of bug 331651</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2533668</commentid>
+    <comment_count>35</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-03-18 10:27:15 -0400</bug_when>
+    <thetext>Verified for 4.5 M6 with build I20150317-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>320195</bug_id>
+          
+          <creation_ts>2010-07-18 12:26:00 -0400</creation_ts>
+          <short_desc>Eclipse hangs when processing annotation</short_desc>
+          <delta_ts>2011-09-14 11:30:07 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>APT</component>
+          <version>3.7</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows Vista</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>3.6.1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Sekhar Ravinutala">sekhar</reporter>
+          <assigned_to name="Walter Harley">eclipse</assigned_to>
+          <cc>eclipse</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>Olivier_Thomann</cc>
+    
+    <cc>remy.suen</cc>
+    
+    <cc>satyam.kandula</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="33693"
+          type_id="1"
+          status="+"
+          setter="Olivier_Thomann"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>1780010</commentid>
+    <comment_count>0</comment_count>
+    <who name="Sekhar Ravinutala">sekhar</who>
+    <bug_when>2010-07-18 12:26:35 -0400</bug_when>
+    <thetext>Build Identifier: 20100218-1602
+
+Eclipse is hanging if process() does not loop through annotations. E.g.,
+
+This works OK:
+public boolean process(...) {
+  for (TypeElement annotation : annotations) {
+    // Do something
+  }
+
+  return true;
+}
+
+But, this one without looping through annotations hangs:
+public boolean process(...) {
+  // Do something
+
+  return true;
+}
+
+Reproducible: Always
+
+Steps to Reproduce:
+1. Create process() with a simple trace, with return true
+2. Try to build
+3. Eclipse starts to build and goes on forever, with CPU high - looks like an infinite loop</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1780028</commentid>
+    <comment_count>1</comment_count>
+    <who name="Walter Harley">eclipse</who>
+    <bug_when>2010-07-18 16:46:49 -0400</bug_when>
+    <thetext>Can you clarify the &quot;do something&quot;?  E.g., does it work if you literally just return true from the process() method?
+
+Does your processor also hang if you run it from javac?
+
+Could you take a thread dump during the hang (as described in http://wiki.eclipse.org/How_to_report_a_deadlock) and attach it here?  Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1780038</commentid>
+    <comment_count>2</comment_count>
+    <who name="Sekhar Ravinutala">sekhar</who>
+    <bug_when>2010-07-18 18:02:56 -0400</bug_when>
+    <thetext>No hang for just return true, but looks like the problem happens when there&apos;s an exception (even if caught). When running within the loop, I guess there&apos;s no exception, so no problem. The below code will hang, I&apos;ve verified - please try:
+
+@SupportedSourceVersion(SourceVersion.RELEASE_6)
+@SupportedAnnotationTypes({&quot;com.allurefx.test.FooAnnotation&quot;})
+public class FooAnnotationProcessor extends AbstractProcessor {
+	@Override
+	public boolean process(final Set&lt;? extends TypeElement&gt; annotations, final RoundEnvironment roundEnv) {
+		try {
+			final Writer writer = processingEnv.getFiler().createSourceFile(&quot;Whatever&quot;).openWriter();
+			writer.append(&quot;class Whatever{}&quot;);
+			writer.close();
+		} catch (IOException e) {
+			processingEnv.getMessager().printMessage(Kind.ERROR, e.toString());
+		}
+		
+		return true;
+	}
+}
+
+Unfortunately, I&apos;m able to get jvisualvm to dump (the button is grayed out), but the above should give you an idea of what&apos;s going on.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1780060</commentid>
+    <comment_count>3</comment_count>
+    <who name="Walter Harley">eclipse</who>
+    <bug_when>2010-07-18 21:59:09 -0400</bug_when>
+    <thetext>Ok, I see what&apos;s going on.
+
+You&apos;re asking it to generate a source file in each round of processing, which triggers another round of processing, and so on.
+
+Per the spec, it _should_ throw a FilerException in the second round, because it is not legal to ask for the same file to be generated twice.  However, this is not yet implemented in the Eclipse processing implementation (see the TODO in IdeFilerImpl).
+
+I&apos;ll work on implementing that exception.  As a workaround, you can do what you would need to do anyway if the exception was correctly implemented; that is, don&apos;t generate the same file twice during processing.  (Typically this is not a problem, but it happens in this example because your processor is not paying attention to the annotations it&apos;s processing.)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1785040</commentid>
+    <comment_count>4</comment_count>
+      <attachid>174699</attachid>
+    <who name="Walter Harley">eclipse</who>
+    <bug_when>2010-07-20 02:11:28 -0400</bug_when>
+    <thetext>Created attachment 174699
+Proposed patch
+
+Proposed patch for both 3.6.x and HEAD.  We&apos;ll also need to bump the manifest versions.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1785042</commentid>
+    <comment_count>5</comment_count>
+    <who name="Walter Harley">eclipse</who>
+    <bug_when>2010-07-20 02:11:57 -0400</bug_when>
+    <thetext>Olivier, does this patch look okay to you?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1785371</commentid>
+    <comment_count>6</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2010-07-20 11:05:56 -0400</bug_when>
+    <thetext>Patch looks good.
+Satyam, please take a look as well.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1785984</commentid>
+    <comment_count>7</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2010-07-21 07:11:17 -0400</bug_when>
+    <thetext>(In reply to comment #6)
+Yes, Patch looks good.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1786149</commentid>
+    <comment_count>8</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2010-07-21 10:12:00 -0400</bug_when>
+    <thetext>+1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1788509</commentid>
+    <comment_count>9</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2010-07-26 10:48:48 -0400</bug_when>
+    <thetext>Walter, please release this patch asap so it can be tested with the upcoming M-build.
+Would also be nice to get a regression test for this.
+Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1788644</commentid>
+    <comment_count>10</comment_count>
+    <who name="Walter Harley">eclipse</who>
+    <bug_when>2010-07-26 12:56:02 -0400</bug_when>
+    <thetext>I&apos;ll release it this evening (Pacific time).  Will work on a regression test separately, in the interest of time.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1788968</commentid>
+    <comment_count>11</comment_count>
+    <who name="Walter Harley">eclipse</who>
+    <bug_when>2010-07-27 02:01:26 -0400</bug_when>
+    <thetext>Released to 3.6.1 and to HEAD.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1805718</commentid>
+    <comment_count>12</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2010-08-27 06:04:38 -0400</bug_when>
+    <thetext>Verified for 3.6.1 RC2 using build M20100825-0800.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>1993471</commentid>
+    <comment_count>13</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2011-09-14 11:30:07 -0400</bug_when>
+    <thetext>Verified for 3.8M2</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>174699</attachid>
+            <date>2010-07-20 02:11:00 -0400</date>
+            <delta_ts>2010-07-20 02:11:28 -0400</delta_ts>
+            <desc>Proposed patch</desc>
+            <filename>bug320195-patch.txt</filename>
+            <type>text/plain</type>
+            <size>3021</size>
+            <attacher name="Walter Harley">eclipse</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMA0KI1Agb3JnLmVjbGlwc2UuamR0LmFwdC5w
+bHVnZ2FibGUuY29yZQ0KSW5kZXg6IHNyYy9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvYXB0L3Bs
+dWdnYWJsZS9jb3JlL2ZpbGVyL0lkZUZpbGVySW1wbC5qYXZhDQo9PT09PT09PT09PT09PT09PT09
+PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09DQpSQ1MgZmls
+ZTogL2N2c3Jvb3QvZWNsaXBzZS9vcmcuZWNsaXBzZS5qZHQuYXB0LnBsdWdnYWJsZS5jb3JlL3Ny
+Yy9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvYXB0L3BsdWdnYWJsZS9jb3JlL2ZpbGVyL0lkZUZp
+bGVySW1wbC5qYXZhLHYNCnJldHJpZXZpbmcgcmV2aXNpb24gMS42DQpkaWZmIC11IC1yMS42IElk
+ZUZpbGVySW1wbC5qYXZhDQotLS0gc3JjL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9hcHQvcGx1
+Z2dhYmxlL2NvcmUvZmlsZXIvSWRlRmlsZXJJbXBsLmphdmEJMTggQXVnIDIwMDkgMDY6MjY6NTgg
+LTAwMDAJMS42DQorKysgc3JjL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9hcHQvcGx1Z2dhYmxl
+L2NvcmUvZmlsZXIvSWRlRmlsZXJJbXBsLmphdmEJMjAgSnVsIDIwMTAgMDY6MDc6MTUgLTAwMDAN
+CkBAIC0xLDUgKzEsNSBAQA0KIC8qKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqDQotICogQ29weXJpZ2h0
+IChjKSAyMDA3IC0gMjAwOSBCRUEgU3lzdGVtcywgSW5jLiBhbmQgb3RoZXJzDQorICogQ29weXJp
+Z2h0IChjKSAyMDA3IC0gMjAxMCBCRUEgU3lzdGVtcywgSW5jLiBhbmQgb3RoZXJzDQogICogQWxs
+IHJpZ2h0cyByZXNlcnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVy
+aWFscw0KICAqIGFyZSBtYWRlIGF2YWlsYWJsZSB1bmRlciB0aGUgdGVybXMgb2YgdGhlIEVjbGlw
+c2UgUHVibGljIExpY2Vuc2UgdjEuMA0KICAqIHdoaWNoIGFjY29tcGFuaWVzIHRoaXMgZGlzdHJp
+YnV0aW9uLCBhbmQgaXMgYXZhaWxhYmxlIGF0DQpAQCAtMTksNiArMTksNyBAQA0KIGltcG9ydCBq
+YXZhLnV0aWwuU2V0Ow0KIA0KIGltcG9ydCBqYXZheC5hbm5vdGF0aW9uLnByb2Nlc3NpbmcuRmls
+ZXI7DQoraW1wb3J0IGphdmF4LmFubm90YXRpb24ucHJvY2Vzc2luZy5GaWxlckV4Y2VwdGlvbjsN
+CiBpbXBvcnQgamF2YXgubGFuZy5tb2RlbC5lbGVtZW50LkVsZW1lbnQ7DQogaW1wb3J0IGphdmF4
+LnRvb2xzLkZpbGVPYmplY3Q7DQogaW1wb3J0IGphdmF4LnRvb2xzLkphdmFGaWxlT2JqZWN0Ow0K
+QEAgLTMxLDYgKzMyLDcgQEANCiBpbXBvcnQgb3JnLmVjbGlwc2UuY29yZS5ydW50aW1lLkNvcmVF
+eGNlcHRpb247DQogaW1wb3J0IG9yZy5lY2xpcHNlLmNvcmUucnVudGltZS5JUGF0aDsNCiBpbXBv
+cnQgb3JnLmVjbGlwc2UuY29yZS5ydW50aW1lLklTdGF0dXM7DQoraW1wb3J0IG9yZy5lY2xpcHNl
+LmpkdC5hcHQuY29yZS5pbnRlcm5hbC5BcHRDb21waWxhdGlvblBhcnRpY2lwYW50Ow0KIGltcG9y
+dCBvcmcuZWNsaXBzZS5qZHQuYXB0LmNvcmUuaW50ZXJuYWwuZ2VuZXJhdGVkZmlsZS5HZW5lcmF0
+ZWRTb3VyY2VGb2xkZXJNYW5hZ2VyOw0KIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5KYXZh
+TW9kZWxFeGNlcHRpb247DQogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5hcHQucGx1
+Z2dhYmxlLmNvcmUuQXB0NlBsdWdpbjsNCkBAIC05MCw4ICs5MiwxMCBAQA0KIAkJCXRocm93IG5l
+dyBJbGxlZ2FsQXJndW1lbnRFeGNlcHRpb24oIlJlbGF0aXZlIG5hbWUgaXMgemVybyBsZW5ndGgi
+KTsNCiAJCX0NCiAJCUlGaWxlIGZpbGUgPSBnZXRGaWxlRnJvbU91dHB1dExvY2F0aW9uKGxvY2F0
+aW9uLCBwa2csIHJlbGF0aXZlTmFtZSk7DQorCQlpZiAoQXB0Q29tcGlsYXRpb25QYXJ0aWNpcGFu
+dC5nZXRJbnN0YW5jZSgpLmdldEphdmE2R2VuZXJhdGVkRmlsZXMoKS5jb250YWlucyhmaWxlKSkg
+ew0KKwkJCXRocm93IG5ldyBGaWxlckV4Y2VwdGlvbigiU291cmNlIGZpbGUgYWxyZWFkeSBjcmVh
+dGVkOiAiICsgZmlsZS5nZXRGdWxsUGF0aCgpKTsgLy8kTk9OLU5MUy0xJA0KKwkJfQ0KIAkJDQot
+CQkvL1RPRE86IGNoZWNrIHdoZXRoZXIgZmlsZSBoYXMgYWxyZWFkeSBiZWVuIGdlbmVyYXRlZCBp
+biB0aGlzIHJ1bg0KIAkJU2V0PElGaWxlPiBwYXJlbnRGaWxlczsNCiAJCWlmIChvcmlnaW5hdGlu
+Z0VsZW1lbnRzICE9IG51bGwgJiYgb3JpZ2luYXRpbmdFbGVtZW50cy5sZW5ndGggPiAwKSB7DQog
+CQkJcGFyZW50RmlsZXMgPSBuZXcgSGFzaFNldDxJRmlsZT4ob3JpZ2luYXRpbmdFbGVtZW50cy5s
+ZW5ndGgpOw0KQEAgLTEyMCw3ICsxMjQsMTEgQEANCiAJCWlmIChudWxsID09IG5hbWUpIHsNCiAJ
+CQl0aHJvdyBuZXcgSWxsZWdhbEFyZ3VtZW50RXhjZXB0aW9uKCJOYW1lIGlzIG51bGwiKTsNCiAJ
+CX0NCi0JCS8vVE9ETzogY2hlY2sgd2hldGhlciBmaWxlIGhhcyBhbHJlYWR5IGJlZW4gZ2VuZXJh
+dGVkIGluIHRoaXMgcnVuDQorCQlJRmlsZSBmaWxlID0gX2Vudi5nZXRBcHRQcm9qZWN0KCkuZ2V0
+R2VuZXJhdGVkRmlsZU1hbmFnZXIoKS5nZXRJRmlsZUZvclR5cGVOYW1lKG5hbWUudG9TdHJpbmco
+KSk7DQorCQlpZiAoQXB0Q29tcGlsYXRpb25QYXJ0aWNpcGFudC5nZXRJbnN0YW5jZSgpLmdldEph
+dmE2R2VuZXJhdGVkRmlsZXMoKS5jb250YWlucyhmaWxlKSkgew0KKwkJCXRocm93IG5ldyBGaWxl
+ckV4Y2VwdGlvbigiU291cmNlIGZpbGUgYWxyZWFkeSBjcmVhdGVkOiAiICsgZmlsZS5nZXRGdWxs
+UGF0aCgpKTsgLy8kTk9OLU5MUy0xJA0KKwkJfQ0KKwkJDQogCQlTZXQ8SUZpbGU+IHBhcmVudEZp
+bGVzID0gQ29sbGVjdGlvbnMuZW1wdHlTZXQoKTsNCiAJCWlmIChvcmlnaW5hdGluZ0VsZW1lbnRz
+ICE9IG51bGwgJiYgb3JpZ2luYXRpbmdFbGVtZW50cy5sZW5ndGggPiAwKSB7DQogCQkJcGFyZW50
+RmlsZXMgPSBuZXcgSGFzaFNldDxJRmlsZT4ob3JpZ2luYXRpbmdFbGVtZW50cy5sZW5ndGgpOw0K
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

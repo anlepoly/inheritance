@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>440759</bug_id>
+          
+          <creation_ts>2014-07-30 08:19:00 -0400</creation_ts>
+          <short_desc>[1.8][null] @NonNullByDefault should never affect wildcards and uses of a type variable</short_desc>
+          <delta_ts>2015-02-01 17:28:59 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M1</target_milestone>
+          
+          <blocked>438458</blocked>
+    
+    <blocked>440630</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Holger Klene">h.klene</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>manpalat</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2433572</commentid>
+    <comment_count>0</comment_count>
+    <who name="Holger Klene">h.klene</who>
+    <bug_when>2014-07-30 08:19:09 -0400</bug_when>
+    <thetext>Consider the following code:
+
+@NonNullByDefault(value={
+    DefaultLocation.ARRAY_CONTENTS,
+    DefaultLocation.FIELD,
+    DefaultLocation.PARAMETER,
+    DefaultLocation.RETURN_TYPE,
+    DefaultLocation.TYPE_ARGUMENT,
+    DefaultLocation.TYPE_BOUND,
+    // DefaultLocation.TYPE_PARAMETER, // A
+})
+public class BigClass&lt;/* B */ T&gt; implements LegacyInterface&lt;T&gt; {
+    // C
+
+    @Override
+    @NonNullByDefault(value={
+        DefaultLocation.ARRAY_CONTENTS,
+        DefaultLocation.FIELD,
+        // DefaultLocation.PARAMETER, // D
+        // DefaultLocation.RETURN_TYPE, // E
+        DefaultLocation.TYPE_ARGUMENT,
+        DefaultLocation.TYPE_BOUND,
+        DefaultLocation.TYPE_PARAMETER,
+    })
+    public T inheritedMethod(T t) {
+        return t;
+    }
+
+    // hundreds of lines of code
+
+    public class Inner&lt;F&gt; {
+    }
+}
+
+I&apos;d love to gain more control over specifically canceling the DefaultLocation.TYPE_PARAMETER to surgically create free type variables (neither @NonNull nor @Nullable) for interoperability with legacy code / interfaces, e.g. Comparable, Comparator, Iterable, ... Free type variables are the recommended intermediate solution given at:
+http://help.eclipse.org/luna/topic/org.eclipse.jdt.doc.user/tasks/task-using_null_type_annotations.htm#typeVariables
+
+Possible approaches to discuss:
+
+a) As demonstrated in the code, it is currently possible to provide @NonNullByDefault with a positive list of locations to apply. This is due to the fact, that an empty list as @NonNullByDefault({}) should represent a convenient way to disable all defaults imported from a bigger context (e.g. the package-info.java) The problem is, this does not account for eventually new DefaultLocations, which might be added in the future. So you never know, whether the list is complete, if you don&apos;t explicitly give even the commented lines A, D &amp; E
+
+b) A negative selection like @NonNullByDefault(skip={DefaultLocation.TYPE_PARAMETER}) could override the value. Question is, how to interpret @NonNullByDefault({})?
+
+c) Add some &quot;scope control&quot; at line C to somehow undo the effect of the surrounding @NonNullByDefault. Not sure, if this would be possible to achieve with an annotation, as there is no element, it applies to. It just should apply to everything after it until the closing curly brace }. Can you annotate an opening curly brace { ?
+
+d) Introduce a new marker annotation @NullFree at B, that selectively cancels any @NonNullByDefault that might apply otherwise.
+
+Thinking about it, my favorite is d)
+
+PS: Inspired by bug 440630 comment 1 issue 1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2433881</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-30 17:55:44 -0400</bug_when>
+    <thetext>*** Bug 440766 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2433902</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-30 19:43:07 -0400</bug_when>
+    <thetext>(In reply to Holger Klene from comment #0)
+&gt; I&apos;d love to gain more control over specifically canceling the
+&gt; DefaultLocation.TYPE_PARAMETER to surgically create free type variables
+&gt; (neither @NonNull nor @Nullable) for interoperability with legacy code /
+&gt; interfaces, e.g. Comparable, Comparator, Iterable, ... Free type variables
+&gt; are the recommended intermediate solution given at:
+&gt; http://help.eclipse.org/luna/topic/org.eclipse.jdt.doc.user/tasks/task-
+&gt; using_null_type_annotations.htm#typeVariables
+
+to avoid misunderstandings: did you see s.t. in the help that implies a connection from free type variables to legacy code? This is not intended.
+Type parameters are intentionally excluded from argument-less @NonNullByDefault, because this makes for more generic/reusable code.
+
+
+The real problem here is that the implementation violates this sentence from the javadoc of DefaultLocation:
+
+  &quot;Wildcards and the use of type variables are always excluded from NonNullByDefault.&quot;
+
+In nested locations this is observed, but for the top-level type of a method parameter or return this rule is not implemented (wildcards cannot occur here, but type variables can).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2433908</commentid>
+    <comment_count>3</comment_count>
+    <who name="Holger Klene">h.klene</who>
+    <bug_when>2014-07-30 22:06:42 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #2)
+&gt; to avoid misunderstandings: did you see s.t. in the help that implies a
+&gt; connection from free type variables to legacy code? This is not intended.
+&gt; Type parameters are intentionally excluded from argument-less
+&gt; @NonNullByDefault, because this makes for more generic/reusable code.
+
+No, not exactly. Hmmm, my train of thought went about this way:
+
+&quot;Starting with Java 8, null annotations can be used in a new and more powerful way&quot;
+http://help.eclipse.org/luna/index.jsp?topic=%2Forg.eclipse.jdt.doc.user%2Ftasks%2Ftask-using_null_type_annotations.htm
+JSR308 -&gt; Now all types *can* be annotated, this solves the limitations of the previous Java5 declaration annotations!
+
+DefaultLocation -&gt; word for word: every possible DefaultLocation takes part in the *Default* as in @NonNullBy*Default*
+
+NonNullByDefault -&gt; Taken word for word, I thought *every* possible type automatically gets an implicit @NonNull if not explicitly declared as @Nullable
+
+The result is a black&amp;white-world, where every type which is neither @Nullable nor @NonNull is evil legacy code and has to be eliminated.
+
+But I did not fully grasp the benefit of free type variables, where the programmer explicitly declares: This T can be either, I cannot tell jet.
+
+Now, that you pointed it out, I got confused by this contradiction:
+
+public class SomeClass&lt;@Nullable T&gt; {
+    void foo(@NonNull T param) {
+        param.toString();
+    }
+}
+
+First I declare T to be @Nullable and then I use it for param and suddenly it&apos;s @NonNull though I declared it otherwise only a line above. This to me reads like JavaScript, where a variable can change its type as in:
+
+var number=123;
+number = &quot;opsy not a number&quot;;
+number += 5;
+
+This contradiction is, what I aimed at with bug 440766
+
+
+
+In contrast the focus of this bug 440759 here was intended to handle canceling certain default locations. My fault was to assume, that the DefaultLocation.TYPE_PARAMETER (A) was part of the @NonNullByDefault. As it is not, the given example is not as helpful, as I thought.
+
+Still the second @NonNullByDefault has to cancel DefaultLocation.PARAMETER and DefaultLocation.RETURN_TYPE (D and E) which would best be achieved by b)
+
+
+
+&gt; The real problem here is that the implementation violates this sentence from
+&gt; the javadoc of DefaultLocation:
+&gt; 
+&gt;   &quot;Wildcards and the use of type variables are always excluded from
+&gt; NonNullByDefault.&quot;
+&gt; 
+&gt; In nested locations this is observed, but for the top-level type of a method
+&gt; parameter or return this rule is not implemented (wildcards cannot occur
+&gt; here, but type variables can).
+
+Hmm reading the JavaDoc I have a lot more problems with examples like DefaultLocation.TYPE_PARAMETER:
+
+
+Example
+ @NonNullByDefault(TYPE_PARAMETER)
+ class X {
+     &lt;T&gt; T identity(T t) { return t; }
+ }
+Here &lt;T&gt; will be interpreted as &lt;@NonNull T&gt;.
+
+
+There are three T in the example, but only the first is affected, while the other two occurrences are free. In fact, I can happily write:
+
+    &lt;@NonNull V&gt; @Nullable V identity(@Nullable V t) {
+        return t;
+    }
+
+What for do I need the @NonNull V anyway?
+
+
+PS: I&apos;m sorry to spam you with all these bugs. I hope you got some sleep at last? I should now got to bed as well ... *yawn*</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434011</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-31 04:22:50 -0400</bug_when>
+    <thetext>(In reply to Holger Klene from comment #3)
+&gt; Now, that you pointed it out, I got confused by this contradiction:
+&gt; 
+&gt; public class SomeClass&lt;@Nullable T&gt; {
+&gt;     void foo(@NonNull T param) {
+&gt;         param.toString();
+&gt;     }
+&gt; }
+&gt; 
+&gt; First I declare T to be @Nullable and then I use it for param and suddenly
+&gt; it&apos;s @NonNull though I declared it otherwise only a line above. 
+
+Maybe here&apos;s the core of the confusion: this is *not* saying T is nullable at one point in time and nonnull at another.
+
+What the snippet says it:
+- T imposes a @Nullable constraint on actual type arguments, 
+  so this is illegal:
+     new SomeClass&lt;@NonNull String&gt;()
+- Inside SomeClass the bare type &apos;T&apos; is known to be nullable
+- The annotation on the *type variable use* in foo does not create a new
+  constraint on the existing type T, but it denotes another type which is
+  the @NonNull variant of whatever type T represents
+
+Constraints on a type parameter can only be imposed on the *type parameter declaration*.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434911</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-08-02 11:57:39 -0400</bug_when>
+    <thetext>Released for 4.5 M1 via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=dc04cc3af6415e31629b43b683998ef4771a1c6c</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2435639</commentid>
+    <comment_count>6</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-08-05 07:50:27 -0400</bug_when>
+    <thetext>Verified for Eclipse Mars 4.5 M1 Build id: I20140804-2000</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2512954</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-01 17:28:59 -0500</bug_when>
+    <thetext>*** Bug 440775 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

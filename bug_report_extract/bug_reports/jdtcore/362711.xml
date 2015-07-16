@@ -1,0 +1,490 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>362711</bug_id>
+          
+          <creation_ts>2011-11-02 14:33:00 -0400</creation_ts>
+          <short_desc>possibly incorrect JDT POST_CHANGE event fired when a file is replaced</short_desc>
+          <delta_ts>2012-01-23 10:25:16 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.7.1</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows XP</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>3.8 M5</target_milestone>
+          
+          <blocked>312664</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Karen Butzke">karenfbutzke</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>satyam.kandula</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2020329</commentid>
+    <comment_count>0</comment_count>
+    <who name="Karen Butzke">karenfbutzke</who>
+    <bug_when>2011-11-02 14:33:15 -0400</bug_when>
+    <thetext>I am not completely sure what to expect in this case, but I will give an example and what I have gleaned in debugging this problem.
+
+I have 2 java projects.
+Project A has 1 class:
+public class Foo {
+    private int id;
+    private String name;
+}
+
+Project B has 1 class:
+public class Foo {
+    private int id;
+}
+
+Make sure the Project B Foo java editor is not open.  Copy Foo.java from
+Project A to Project B overwriting it. The java model event that is fired has a delta that shows the Foo.java compilation unit was added:
+
+[B[*]: {CHILDREN}
+	src[*]: {CHILDREN}
+		model[*]: {CHILDREN}
+			Foo.java[+]: {}, Java Model[*]: {CHILDREN}
+
+In debug I can see that in org.eclipse.jdt.internal.core.DeltaProcessor.mergeDeltas(), the following delta is removed:
+	B[*]: {CHILDREN}
+		src[*]: {CHILDREN}
+			model[*]: {CHILDREN}
+				Foo.java[*]: {CONTENT | PRIMARY RESOURCE}]
+
+
+The &quot;added&quot; delta is not enough information for what has happened in this case. I either need a &quot;removed&quot; event and an &quot;add&quot; event, or a change event would really be better, since that&apos;s what has actually happened.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2020369</commentid>
+    <comment_count>1</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-11-02 15:15:24 -0400</bug_when>
+    <thetext>Hi Karen, can you please mention the jdt/core plugin version or the build id you&apos;re using? Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2020394</commentid>
+    <comment_count>2</comment_count>
+    <who name="Karen Butzke">karenfbutzke</who>
+    <bug_when>2011-11-02 16:08:55 -0400</bug_when>
+    <thetext>I&apos;m using 3.7.1</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2020628</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2011-11-03 05:40:16 -0400</bug_when>
+    <thetext>The problem here is the CopyResourceElementsOperation, regardless of existing resources, adds the delta (Foo.java[+]). And later on the DeltaProcessor realizes that the resource Foo has changed. But at the same time the DeltaProcessor has no idea that the Foo was not really ADDED but just CHANGED.
+
+I guess we have to add the right delta during the copy operation or somehow let the DeltaProcessor know that the ADDED delta was indeed an &apos;overwrite&apos;.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2021107</commentid>
+    <comment_count>4</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2011-11-04 01:14:53 -0400</bug_when>
+    <thetext>Looks like there are quite a few existing tests that are expecting the ADDED delta for the overwrite scenario. Don&apos;t know if the tests can be altered as they appear to be deliberate. Will investigate other options that will allow us to keep the ADDED delta along with either REMOVED or CHANGED.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2021137</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2011-11-04 02:19:08 -0400</bug_when>
+    <thetext>There are about 6 failing tests in CopyMoveResourcesTests and 2 in RenameTests, all failing more or less for the same reason - they are expecting that a new element was added. The problem is, even when we record a REMOVED delta followed by a ADDED, the resultant delta would be CHANGED, which makes sense. 
+
+The existing tests don&apos;t make sense to me either. But it probably means some existing clients are depending on this behavior, albeit buggy. Perhaps JDT/UI can tell us what we want to do here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2021163</commentid>
+    <comment_count>6</comment_count>
+      <attachid>206448</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2011-11-04 03:57:29 -0400</bug_when>
+    <thetext>Created attachment 206448
+Proposed patch
+
+Patch + regression test.
+Should we ever decide that the existing tests need to be fixed, we can use this patch. Of course, it doesn&apos;t yet contain fixes for those failing tests.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2022008</commentid>
+    <comment_count>7</comment_count>
+    <who name="Karen Butzke">karenfbutzke</who>
+    <bug_when>2011-11-07 08:14:21 -0500</bug_when>
+    <thetext>This first works great for my use case, thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2022266</commentid>
+    <comment_count>8</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2011-11-07 13:59:48 -0500</bug_when>
+    <thetext>The request and the analysis sound reasonable to me. I didn&apos;t look at the failing core tests, but the patch makes sense and I didn&apos;t get any failures in the UI tests with it.
+
+Good to go from my side.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2029209</commentid>
+    <comment_count>9</comment_count>
+      <attachid>207292</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2011-11-21 05:27:33 -0500</bug_when>
+    <thetext>Created attachment 207292
+Patch with updated tests
+
+This patch is different from the previous: Instead of registering a remove and add delta, I identify the overwrite scenario and only register a content change delta. This addresses reported bug.
+
+Also I modified a bunch of existing test case I mentioned earlier.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2033671</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-11-30 00:17:35 -0500</bug_when>
+    <thetext>Since Jay had to go on unavoidable unplanned time off for several days,
+this is not ready: retargetting to 3.8 M5.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2042794</commentid>
+    <comment_count>11</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2011-12-20 02:28:00 -0500</bug_when>
+    <thetext>Released the fix and tests:
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=2e99c72cc03690dcb30e61cdafeb829a4f1ada2f</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2054391</commentid>
+    <comment_count>12</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-01-23 09:27:40 -0500</bug_when>
+    <thetext>Verified for 3.8M5 using build I20120122-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>206448</attachid>
+            <date>2011-11-04 03:57:00 -0400</date>
+            <delta_ts>2012-01-23 10:25:16 -0500</delta_ts>
+            <desc>Proposed patch</desc>
+            <filename>bug362711.patch</filename>
+            <type>text/plain</type>
+            <size>2463</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9tb2RlbC9KYXZhRWxlbWVudERlbHRhVGVzdHMuamF2YSBiL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90
+ZXN0cy9tb2RlbC9KYXZhRWxlbWVudERlbHRhVGVzdHMuamF2YQppbmRleCAyZGRjZDc1Li5lMTk3
+OTYwIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5tb2RlbC9zcmMvb3Jn
+L2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvbW9kZWwvSmF2YUVsZW1lbnREZWx0YVRlc3RzLmphdmEK
+KysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL21vZGVsL0phdmFFbGVtZW50RGVsdGFUZXN0cy5qYXZhCkBAIC0zNCw3ICsz
+NCw3IEBACiAvLyBBbGwgc3BlY2lmaWVkIHRlc3RzIHdoaWNoIGRvIG5vdCBiZWxvbmcgdG8gdGhl
+IGNsYXNzIGFyZSBza2lwcGVkLi4uCiBzdGF0aWMgewogLy8JVEVTVFNfUFJFRklYID0gICJ0ZXN0
+QnVnMTAwNzcyX1Byb2plY3RTY29wZSI7Ci0vLwlURVNUU19OQU1FUyA9IG5ldyBTdHJpbmdbXSB7
+ICJ0ZXN0QWRkSW52YWxpZFN1YmZvbGRlciIgfTsKKy8vCVRFU1RTX05BTUVTID0gbmV3IFN0cmlu
+Z1tdIHsgInRlc3RCdWczNjI3MTEiIH07CiAvLwlURVNUU19OVU1CRVJTID0gbmV3IGludFtdIHsg
+MTAwNzcyIH07CiAvLwlURVNUU19SQU5HRSA9IG5ldyBpbnRbXSB7IDgzMzA0LCAtMSB9OwogfQpA
+QCAtMzA1Myw1ICszMDUzLDMzIEBACiAJCWRlbGV0ZVByb2plY3QoIlAiKTsKIAl9CiB9CisvKioK
+KyAqIEBzZWUgImh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy9idWdzL3Nob3dfYnVnLmNnaT9pZD0z
+NjI3MTEiCisgKi8KK3B1YmxpYyB2b2lkIHRlc3RCdWczNjI3MTEoKSB0aHJvd3MgRXhjZXB0aW9u
+IHsKKwl0cnkgeworCQljcmVhdGVKYXZhUHJvamVjdCgiUCIsIG5ldyBTdHJpbmdbXSB7ICJzcmMi
+IH0sICJiaW4iKTsKKwkJY3JlYXRlSmF2YVByb2plY3QoIlEiLCBuZXcgU3RyaW5nW10geyAic3Jj
+IiB9LCAiYmluIik7CisKKwkJY3JlYXRlRmlsZSgiL1Avc3JjL0Zvby5qYXZhIiwgInB1YmxpYyBj
+bGFzcyBGb28ge1xuIgorCQkJCSsgInByaXZhdGUgaW50IGlkO1xuIiArICJ9Iik7CisJCWNyZWF0
+ZUZpbGUoIi9RL3NyYy9Gb28uamF2YSIsICJwdWJsaWMgY2xhc3MgRm9vIHtcbiIgKyAifSIpOwor
+CisJCXN0YXJ0RGVsdGFzKCk7CisJCUlDb21waWxhdGlvblVuaXQgY3UgPSBnZXRDb21waWxhdGlv
+blVuaXQoIlAvc3JjL0Zvby5qYXZhIik7IAorCQlJUGFja2FnZUZyYWdtZW50IGRlc3QgPSBnZXRQ
+YWNrYWdlRnJhZ21lbnQoIlEiLCAic3JjIiwgIiIpOworCQljdS5jb3B5KGRlc3QsIG51bGwsIG51
+bGwsIHRydWUsIG51bGwpOworCQlhc3NlcnREZWx0YXMoIlVuZXhwZWN0ZWQgZGVsdGEiLCAKKwkJ
+CQkJCSJRWypdOiB7Q0hJTERSRU59XG4iICsgCisJCQkJCQkiCXNyY1sqXToge0NISUxEUkVOfVxu
+IiArIAorCQkJCQkJIgkJPGRlZmF1bHQ+WypdOiB7Q0hJTERSRU59XG4iICsgCisJCQkJCQkiCQkJ
+Rm9vLmphdmFbKl06IHtDT05URU5UIHwgUFJJTUFSWSBSRVNPVVJDRX0iKTsKKwkJCisJfSBmaW5h
+bGx5IHsKKwkJc3RvcERlbHRhcygpOworCQlkZWxldGVQcm9qZWN0KCJQIik7CisJCWRlbGV0ZVBy
+b2plY3QoIlEiKTsKKwl9Cit9CiB9CiAKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+L21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NvcHlSZXNvdXJjZUVsZW1lbnRz
+T3BlcmF0aW9uLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvY29yZS9Db3B5UmVzb3VyY2VFbGVtZW50c09wZXJhdGlvbi5qYXZhCmluZGV4
+IDI5MTM3OGMuLjYwZTg0OGQgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVs
+L29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NvcHlSZXNvdXJjZUVsZW1lbnRzT3BlcmF0
+aW9uLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0
+L2ludGVybmFsL2NvcmUvQ29weVJlc291cmNlRWxlbWVudHNPcGVyYXRpb24uamF2YQpAQCAtMzE3
+LDYgKzMxNyw3IEBACiAJCQkJCQlpZiAodGhpcy5mb3JjZSkgewogCQkJCQkJCS8vIHdlIGNhbiBy
+ZW1vdmUgaXQKIAkJCQkJCQlkZWxldGVSZXNvdXJjZShkZXN0RmlsZSwgSVJlc291cmNlLktFRVBf
+SElTVE9SWSk7CisJCQkJCQkJZ2V0RGVsdGFGb3IoZGVzdC5nZXRKYXZhUHJvamVjdCgpKS5yZW1v
+dmVkKGRlc3RDVSk7CiAJCQkJCQkJZGVzdENVLmNsb3NlKCk7IC8vIGVuc3VyZSB0aGUgaW4tbWVt
+b3J5IGJ1ZmZlciBmb3IgdGhlIGRlc3QgQ1UgaXMgY2xvc2VkCiAJCQkJCQl9IGVsc2UgewogCQkJ
+CQkJCS8vIGFib3J0
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>207292</attachid>
+            <date>2011-11-21 05:27:00 -0500</date>
+            <delta_ts>2011-11-21 05:27:33 -0500</delta_ts>
+            <desc>Patch with updated tests</desc>
+            <filename>bug362711.patch</filename>
+            <type>text/plain</type>
+            <size>12818</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9tb2RlbC9Db3B5TW92ZUVsZW1lbnRzVGVzdHMuamF2YSBiL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90
+ZXN0cy9tb2RlbC9Db3B5TW92ZUVsZW1lbnRzVGVzdHMuamF2YQppbmRleCBlZWM5N2FjLi44ZWNi
+MGI5IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5tb2RlbC9zcmMvb3Jn
+L2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvbW9kZWwvQ29weU1vdmVFbGVtZW50c1Rlc3RzLmphdmEK
+KysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL21vZGVsL0NvcHlNb3ZlRWxlbWVudHNUZXN0cy5qYXZhCkBAIC0yNDUyLDcg
+KzI0NTIsNyBAQAogCXRyeSB7CiAJCVRlc3RQcm9ncmVzc01vbml0b3IgbW9uaXRvciA9IFRlc3RQ
+cm9ncmVzc01vbml0b3IuZ2V0SW5zdGFuY2UoKTsKIAkJbW9uaXRvci5zZXRDYW5jZWxsZWRDb3Vu
+dGVyKDEpOwotCQltb3ZlUG9zaXRpdmUodHlwZVNvdXJjZS5nZXRNZXRob2RzKCksIG5ldyBJSmF2
+YUVsZW1lbnRbXSB7dHlwZURlc3R9LCBudWxsLCBudWxsLCBmYWxzZSwgbW9uaXRvcik7CisJCW1v
+dmVQb3NpdGl2ZSh0eXBlU291cmNlLmdldE1ldGhvZHMoKSwgbmV3IElKYXZhRWxlbWVudFtdIHt0
+eXBlRGVzdH0sIG51bGwsIG51bGwsIGZhbHNlLCB0cnVlLCBtb25pdG9yKTsKIAl9IGNhdGNoIChP
+cGVyYXRpb25DYW5jZWxlZEV4Y2VwdGlvbiBlKSB7CiAJCWlzQ2FuY2VsZWQgPSB0cnVlOwogCX0K
+QEAgLTI0ODgsNyArMjQ4OCw3IEBACiAJCXRyeSB7CiAJCQlUZXN0UHJvZ3Jlc3NNb25pdG9yIG1v
+bml0b3IgPSBUZXN0UHJvZ3Jlc3NNb25pdG9yLmdldEluc3RhbmNlKCk7CiAJCQltb25pdG9yLnNl
+dENhbmNlbGxlZENvdW50ZXIoMSk7Ci0JCQltb3ZlUG9zaXRpdmUodHlwZVNvdXJjZS5nZXRNZXRo
+b2RzKCksIG5ldyBJSmF2YUVsZW1lbnRbXSB7dHlwZURlc3R9LCBudWxsLCBudWxsLCBmYWxzZSwg
+bW9uaXRvcik7CisJCQltb3ZlUG9zaXRpdmUodHlwZVNvdXJjZS5nZXRNZXRob2RzKCksIG5ldyBJ
+SmF2YUVsZW1lbnRbXSB7dHlwZURlc3R9LCBudWxsLCBudWxsLCBmYWxzZSwgdHJ1ZSwgbW9uaXRv
+cik7CiAJCX0gY2F0Y2ggKE9wZXJhdGlvbkNhbmNlbGVkRXhjZXB0aW9uIGUpIHsKIAkJCWlzQ2Fu
+Y2VsZWQgPSB0cnVlOwogCQl9CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0
+cy5tb2RlbC9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvbW9kZWwvQ29weU1vdmVSZXNv
+dXJjZXNUZXN0cy5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21vZGVsL0NvcHlNb3ZlUmVzb3VyY2VzVGVzdHMuamF2
+YQppbmRleCAzZDRkMWVjLi4yYjY4ZmQwIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS50ZXN0cy5tb2RlbC9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvbW9kZWwvQ29weU1v
+dmVSZXNvdXJjZXNUZXN0cy5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1v
+ZGVsL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9tb2RlbC9Db3B5TW92ZVJlc291cmNl
+c1Rlc3RzLmphdmEKQEAgLTgwLDcgKzgwLDEzIEBACiAJCX0KIAkJSUphdmFFbGVtZW50RGVsdGEg
+ZGVzdERlbHRhID0gdGhpcy5kZWx0YUxpc3RlbmVyLmdldERlbHRhRm9yKGNvbnRhaW5lciwgdHJ1
+ZSk7CiAJCWFzc2VydFRydWUoIkRlc3RpbmF0aW9uIGNvbnRhaW5lciBub3QgY2hhbmdlZCIsIGRl
+c3REZWx0YSAhPSBudWxsICYmIGRlc3REZWx0YS5nZXRLaW5kKCkgPT0gSUphdmFFbGVtZW50RGVs
+dGEuQ0hBTkdFRCk7Ci0JCUlKYXZhRWxlbWVudERlbHRhW10gZGVsdGFzID0gZGVzdERlbHRhLmdl
+dEFkZGVkQ2hpbGRyZW4oKTsKKwkJSUphdmFFbGVtZW50RGVsdGFbXSBkZWx0YXMgPSBudWxsOwor
+CQlpZiAoZm9yY2UpIHsKKwkJCWRlbHRhcyA9IGRlc3REZWx0YS5nZXRDaGFuZ2VkQ2hpbGRyZW4o
+KTsKKwkJfQorCQllbHNlIHsKKwkJCWRlbHRhcyA9IGRlc3REZWx0YS5nZXRBZGRlZENoaWxkcmVu
+KCk7CisJCX0KIAkJLy8gRklYTUU6IG5vdCBzdHJvbmcgZW5vdWdoCiAJCWJvb2xlYW4gZm91bmQg
+PSBmYWxzZTsKIAkJZm9yIChpbnQgaSA9IDA7IGkgPCBkZWx0YXMubGVuZ3RoOyBpKyspIHsKQEAg
+LTgwOSwyNSArODE1LDM4IEBACiAgKiBleGlzdGluZyBDVS4KICAqLwogcHVibGljIHZvaWQgdGVz
+dE1vdmVDVTAzKCkgdGhyb3dzIENvcmVFeGNlcHRpb24gewotCXRoaXMuY3JlYXRlRm9sZGVyKCIv
+UC9zcmMvcDEiKTsKLQl0aGlzLmNyZWF0ZUZpbGUoCi0JCSIvUC9zcmMvcDEvWC5qYXZhIiwKLQkJ
+InBhY2thZ2UgcDE7XG4iICsKLQkJInB1YmxpYyBjbGFzcyBYIHtcbiIgKwotCQkifSIKLQkpOwot
+CUlDb21waWxhdGlvblVuaXQgY3VTb3VyY2UgPSBnZXRDb21waWxhdGlvblVuaXQoIi9QL3NyYy9w
+MS9YLmphdmEiKTsKKwl0cnkgeworCQl0aGlzLmNyZWF0ZUZvbGRlcigiL1Avc3JjL3AxIik7CisJ
+CXRoaXMuY3JlYXRlRmlsZSgKKwkJCSIvUC9zcmMvcDEvWC5qYXZhIiwKKwkJCSJwYWNrYWdlIHAx
+O1xuIiArCisJCQkicHVibGljIGNsYXNzIFgge1xuIiArCisJCQkifSIKKwkJKTsKKwkJSUNvbXBp
+bGF0aW9uVW5pdCBjdVNvdXJjZSA9IGdldENvbXBpbGF0aW9uVW5pdCgiL1Avc3JjL3AxL1guamF2
+YSIpOwogCi0JdGhpcy5jcmVhdGVGb2xkZXIoIi9QL3NyYy9wMiIpOwotCXRoaXMuY3JlYXRlRmls
+ZSgKLQkJIi9QL3NyYy9wMi9YLmphdmEiLAotCQkicGFja2FnZSBwMjtcbiIgKwotCQkicHVibGlj
+IGNsYXNzIFgge1xuIiArCi0JCSJ9IgotCSk7Ci0JSVBhY2thZ2VGcmFnbWVudCBwa2dEZXN0ID0g
+Z2V0UGFja2FnZSgiL1Avc3JjL3AyIik7Ci0KLQltb3ZlUG9zaXRpdmUoY3VTb3VyY2UsIHBrZ0Rl
+c3QsIG51bGwsIG51bGwsIHRydWUpOworCQl0aGlzLmNyZWF0ZUZvbGRlcigiL1Avc3JjL3AyIik7
+CisJCXRoaXMuY3JlYXRlRmlsZSgKKwkJCSIvUC9zcmMvcDIvWC5qYXZhIiwKKwkJCSJwYWNrYWdl
+IHAyO1xuIiArCisJCQkicHVibGljIGNsYXNzIFgge1xuIiArCisJCQkifSIKKwkJKTsKKwkJSVBh
+Y2thZ2VGcmFnbWVudCBwa2dEZXN0ID0gZ2V0UGFja2FnZSgiL1Avc3JjL3AyIik7CisJCXN0YXJ0
+RGVsdGFzKCk7CisJCW1vdmVQb3NpdGl2ZShuZXcgSUphdmFFbGVtZW50W10ge2N1U291cmNlfSwg
+bmV3IElKYXZhRWxlbWVudFtdIHtwa2dEZXN0fSwgbnVsbCwgbnVsbCwgdHJ1ZSwgZmFsc2UsIG51
+bGwpOworCQkJYXNzZXJ0RGVsdGFzKAorCQkJCQkiSW5jb3JyZWN0IGRlbHRhIiwKKwkJCQkJIlBb
+Kl06IHtDSElMRFJFTn1cbiIKKwkJCQkJCQkrICIJc3JjWypdOiB7Q0hJTERSRU59XG4iCisJCQkJ
+CQkJKyAiCQlwMVsqXToge0NISUxEUkVOfVxuIgorCQkJCQkJCSsgIgkJCVguamF2YVstXToge01P
+VkVEX1RPKFguamF2YSBbaW4gcDIgW2luIHNyYyBbaW4gUF1dXSl9XG4iCisJCQkJCQkJKyAiCQlw
+MlsqXToge0NISUxEUkVOfVxuIgorCQkJCQkJCSsgIgkJCVguamF2YVsqXToge0NPTlRFTlQgfCBQ
+UklNQVJZIFJFU09VUkNFfSIpOworCX0KKwlmaW5hbGx5IHsKKwkJc3RvcERlbHRhcygpOworCX0K
+IH0KIC8qKgogICogRW5zdXJlcyB0aGF0IGEgQ1UgY2FuIGJlIG1vdmVkIHRvIGEgZGlmZmVyZW50
+IHBhY2thZ2UsCkBAIC04NTMsMjUgKzg3MiwzOSBAQAogICogYmUgcmVuYW1lZCwgb3ZlcndyaXRp
+bmcgYW4gZXhpc3RpbmcgcmVzb3VyY2UuCiAgKi8KIHB1YmxpYyB2b2lkIHRlc3RNb3ZlQ1UwNSgp
+IHRocm93cyBDb3JlRXhjZXB0aW9uIHsKLQl0aGlzLmNyZWF0ZUZvbGRlcigiL1Avc3JjL3AxIik7
+Ci0JdGhpcy5jcmVhdGVGaWxlKAotCQkiL1Avc3JjL3AxL1guamF2YSIsCi0JCSJwYWNrYWdlIHAx
+O1xuIiArCi0JCSJwdWJsaWMgY2xhc3MgWCB7XG4iICsKLQkJIn0iCi0JKTsKLQlJQ29tcGlsYXRp
+b25Vbml0IGN1U291cmNlID0gZ2V0Q29tcGlsYXRpb25Vbml0KCIvUC9zcmMvcDEvWC5qYXZhIik7
+CisJdHJ5IHsKKwkJdGhpcy5jcmVhdGVGb2xkZXIoIi9QL3NyYy9wMSIpOworCQl0aGlzLmNyZWF0
+ZUZpbGUoCisJCQkiL1Avc3JjL3AxL1guamF2YSIsCisJCQkicGFja2FnZSBwMTtcbiIgKworCQkJ
+InB1YmxpYyBjbGFzcyBYIHtcbiIgKworCQkJIn0iCisJCSk7CisJCUlDb21waWxhdGlvblVuaXQg
+Y3VTb3VyY2UgPSBnZXRDb21waWxhdGlvblVuaXQoIi9QL3NyYy9wMS9YLmphdmEiKTsKIAotCXRo
+aXMuY3JlYXRlRm9sZGVyKCIvUC9zcmMvcDIiKTsKLQl0aGlzLmNyZWF0ZUZpbGUoCi0JCSIvUC9z
+cmMvcDIvWS5qYXZhIiwKLQkJInBhY2thZ2UgcDI7XG4iICsKLQkJInB1YmxpYyBjbGFzcyBZIHtc
+biIgKwotCQkifSIKLQkpOwotCUlQYWNrYWdlRnJhZ21lbnQgcGtnRGVzdCA9IGdldFBhY2thZ2Uo
+Ii9QL3NyYy9wMiIpOwotCi0JbW92ZVBvc2l0aXZlKGN1U291cmNlLCBwa2dEZXN0LCBudWxsLCAi
+WS5qYXZhIiwgdHJ1ZSk7CisJCXRoaXMuY3JlYXRlRm9sZGVyKCIvUC9zcmMvcDIiKTsKKwkJdGhp
+cy5jcmVhdGVGaWxlKAorCQkJIi9QL3NyYy9wMi9ZLmphdmEiLAorCQkJInBhY2thZ2UgcDI7XG4i
+ICsKKwkJCSJwdWJsaWMgY2xhc3MgWSB7XG4iICsKKwkJCSJ9IgorCQkpOworCQlJUGFja2FnZUZy
+YWdtZW50IHBrZ0Rlc3QgPSBnZXRQYWNrYWdlKCIvUC9zcmMvcDIiKTsKKwkJc3RhcnREZWx0YXMo
+KTsKKwkJbW92ZVBvc2l0aXZlKG5ldyBJSmF2YUVsZW1lbnRbXSB7Y3VTb3VyY2V9LCBuZXcgSUph
+dmFFbGVtZW50W10ge3BrZ0Rlc3R9LCBudWxsLCBuZXcgU3RyaW5nW117IlkuamF2YSJ9LCB0cnVl
+LCBmYWxzZSwgbnVsbCk7CisJCWFzc2VydERlbHRhcygKKwkJCQkJIkluY29ycmVjdCBkZWx0YSIs
+CisJCQkJCSJQWypdOiB7Q0hJTERSRU59XG4iCisJCQkJCQkJKyAiCXNyY1sqXToge0NISUxEUkVO
+fVxuIgorCQkJCQkJCSsgIgkJcDFbKl06IHtDSElMRFJFTn1cbiIKKwkJCQkJCQkrICIJCQlYLmph
+dmFbLV06IHtNT1ZFRF9UTyhZLmphdmEgW2luIHAyIFtpbiBzcmMgW2luIFBdXV0pfVxuIgorCQkJ
+CQkJCSsgIgkJcDJbKl06IHtDSElMRFJFTn1cbiIKKwkJCQkJCQkrICIJCQlZLmphdmFbKl06IHtD
+SElMRFJFTiB8IEZJTkUgR1JBSU5FRCB8IFBSSU1BUlkgUkVTT1VSQ0V9XG4iCisJCQkJCQkJKyAi
+CQkJCVlbK106IHtNT1ZFRF9GUk9NKFggW2luIFguamF2YSBbaW4gcDEgW2luIHNyYyBbaW4gUF1d
+XV0pfSIpOworCX0KKwlmaW5hbGx5IHsKKwkJc3RvcERlbHRhcygpOworCX0KIH0KIC8qKgogICog
+RW5zdXJlcyB0aGF0IGEgQ1UgY2Fubm90IGJlIG1vdmVkIHRvIGEgZGlmZmVyZW50IHBhY2thZ2Us
+IHJlcGxhY2luZyBhbgpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9k
+ZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21vZGVsL0NvcHlNb3ZlVGVzdHMuamF2
+YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNsaXBzZS9qZHQv
+Y29yZS90ZXN0cy9tb2RlbC9Db3B5TW92ZVRlc3RzLmphdmEKaW5kZXggYjEwNjZhZS4uYzAzZTM5
+MyAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9l
+Y2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21vZGVsL0NvcHlNb3ZlVGVzdHMuamF2YQorKysgYi9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5tb2RlbC9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVz
+dHMvbW9kZWwvQ29weU1vdmVUZXN0cy5qYXZhCkBAIC0yNTMsMTIgKzI1MywxNSBAQAogcHVibGlj
+IHZvaWQgbW92ZVBvc2l0aXZlKElKYXZhRWxlbWVudFtdIGVsZW1lbnRzLCBJSmF2YUVsZW1lbnRb
+XSBkZXN0aW5hdGlvbnMsIElKYXZhRWxlbWVudFtdIHNpYmxpbmdzLCBTdHJpbmdbXSBuYW1lcywg
+Ym9vbGVhbiBmb3JjZSkgdGhyb3dzIEphdmFNb2RlbEV4Y2VwdGlvbiB7CiAJbW92ZVBvc2l0aXZl
+KGVsZW1lbnRzLCBkZXN0aW5hdGlvbnMsIHNpYmxpbmdzLCBuYW1lcywgZm9yY2UsIG51bGwpOwog
+fQorcHVibGljIHZvaWQgbW92ZVBvc2l0aXZlKElKYXZhRWxlbWVudFtdIGVsZW1lbnRzLCBJSmF2
+YUVsZW1lbnRbXSBkZXN0aW5hdGlvbnMsIElKYXZhRWxlbWVudFtdIHNpYmxpbmdzLCBTdHJpbmdb
+XSBuYW1lcywgYm9vbGVhbiBmb3JjZSwgSVByb2dyZXNzTW9uaXRvciBtb25pdG9yKSB0aHJvd3Mg
+SmF2YU1vZGVsRXhjZXB0aW9uIHsKKwltb3ZlUG9zaXRpdmUoZWxlbWVudHMsIGRlc3RpbmF0aW9u
+cywgc2libGluZ3MsIG5hbWVzLCBmb3JjZSwgdHJ1ZSwgbnVsbCk7Cit9CiAvKioKICAqIE1vdmVz
+IHRoZSBlbGVtZW50cyB0byB0aGUgY29udGFpbmVycyB3aXRoIG9wdGlvbmFsIHJlbmFtaW5nCiAg
+KiBhbmQgZm9yY2luZy4gVGhlIG9wZXJhdGlvbiBzaG91bGQgc3VjY2VlZCwgc28gYW55IGV4Y2Vw
+dGlvbnMKICAqIGVuY291bnRlcmVkIGFyZSB0aHJvd24uCiAgKi8KLXB1YmxpYyB2b2lkIG1vdmVQ
+b3NpdGl2ZShJSmF2YUVsZW1lbnRbXSBlbGVtZW50cywgSUphdmFFbGVtZW50W10gZGVzdGluYXRp
+b25zLCBJSmF2YUVsZW1lbnRbXSBzaWJsaW5ncywgU3RyaW5nW10gbmFtZXMsIGJvb2xlYW4gZm9y
+Y2UsIElQcm9ncmVzc01vbml0b3IgbW9uaXRvcikgdGhyb3dzIEphdmFNb2RlbEV4Y2VwdGlvbiB7
+CitwdWJsaWMgdm9pZCBtb3ZlUG9zaXRpdmUoSUphdmFFbGVtZW50W10gZWxlbWVudHMsIElKYXZh
+RWxlbWVudFtdIGRlc3RpbmF0aW9ucywgSUphdmFFbGVtZW50W10gc2libGluZ3MsIFN0cmluZ1td
+IG5hbWVzLCBib29sZWFuIGZvcmNlLCBib29sZWFuIGNoZWNrRGVsdGEsIElQcm9ncmVzc01vbml0
+b3IgbW9uaXRvcikgdGhyb3dzIEphdmFNb2RlbEV4Y2VwdGlvbiB7CiAJLy8gaWYgZm9yY2luZywg
+ZW5zdXJlIHRoYXQgYSBuYW1lIGNvbGxpc2lvbiBleGlzdHMKIAlpbnQgaTsKIAlpZiAoZm9yY2Up
+IHsKQEAgLTI3NSw3ICsyNzgsNyBAQAogCX0KIAogCXRyeSB7Ci0JCXN0YXJ0RGVsdGFzKCk7CisJ
+CWlmKGNoZWNrRGVsdGEpCXN0YXJ0RGVsdGFzKCk7CiAKIAkJLy8gbW92ZQogCQlnZXRKYXZhTW9k
+ZWwoKS5tb3ZlKGVsZW1lbnRzLCBkZXN0aW5hdGlvbnMsIHNpYmxpbmdzLCBuYW1lcywgZm9yY2Us
+IG1vbml0b3IpOwpAQCAtMzQxLDI0ICszNDQsMjYgQEAKIAkJCQkJfQogCQkJCX0KIAkJCX0KLQkJ
+CUlKYXZhRWxlbWVudERlbHRhIGRlc3REZWx0YSA9IG51bGw7Ci0JCQlpZiAoaXNNYWluVHlwZShl
+bGVtZW50LCBkZXN0aW5hdGlvbnNbaV0pICYmIG5hbWVzICE9IG51bGwgJiYgbmFtZXNbaV0gIT0g
+bnVsbCkgeyAvL21vdmVkL3JlbmFtZWQgbWFpbiB0eXBlIHRvIHNhbWUgY3UKLQkJCQlkZXN0RGVs
+dGEgPSB0aGlzLmRlbHRhTGlzdGVuZXIuZ2V0RGVsdGFGb3IobW92ZWQuZ2V0UGFyZW50KCkpOwot
+CQkJCWFzc2VydFRydWUoIlJlbmFtZWQgY29tcGlsYXRpb24gdW5pdCBhcyByZXN1bHQgb2YgbWFp
+biB0eXBlIG5vdCBhZGRlZCIsIGRlc3REZWx0YSAhPSBudWxsICYmIGRlc3REZWx0YS5nZXRLaW5k
+KCkgPT0gSUphdmFFbGVtZW50RGVsdGEuQURERUQpOwotCQkJCWFzc2VydFRydWUoImZsYWcgc2hv
+dWxkIGJlIEZfTU9WRURfRlJPTSIsIChkZXN0RGVsdGEuZ2V0RmxhZ3MoKSAmIElKYXZhRWxlbWVu
+dERlbHRhLkZfTU9WRURfRlJPTSkgPiAwKTsKLQkJCQlhc3NlcnRUcnVlKCJtb3ZlZCBmcm9tIGhh
+bmRsZSBzaG91bGQgYmUgb3JpZ2luYWwiLCBkZXN0RGVsdGEuZ2V0TW92ZWRGcm9tRWxlbWVudCgp
+LmVxdWFscyhlbGVtZW50LmdldFBhcmVudCgpKSk7Ci0JCQl9IGVsc2UgewotCQkJCWRlc3REZWx0
+YSA9IHRoaXMuZGVsdGFMaXN0ZW5lci5nZXREZWx0YUZvcihkZXN0aW5hdGlvbnNbaV0sIHRydWUp
+OwotCQkJCWFzc2VydFRydWUoIkRlc3RpbmF0aW9uIGNvbnRhaW5lciBub3QgY2hhbmdlZCIsIGRl
+c3REZWx0YSAhPSBudWxsICYmIGRlc3REZWx0YS5nZXRLaW5kKCkgPT0gSUphdmFFbGVtZW50RGVs
+dGEuQ0hBTkdFRCk7Ci0JCQkJSUphdmFFbGVtZW50RGVsdGFbXSBkZWx0YXMgPSBkZXN0RGVsdGEu
+Z2V0QWRkZWRDaGlsZHJlbigpOwotCQkJCWFzc2VydFRydWUoIkFkZGVkIGNoaWxkcmVuIG5vdCBj
+b3JyZWN0IGZvciBlbGVtZW50IGNvcHkiLCBkZWx0YXNbaV0uZ2V0RWxlbWVudCgpLmVxdWFscyht
+b3ZlZCkpOwotCQkJCWFzc2VydFRydWUoInNob3VsZCBiZSBLX0FEREVEIiwgZGVsdGFzW2ldLmdl
+dEtpbmQoKSA9PSBJSmF2YUVsZW1lbnREZWx0YS5BRERFRCk7Ci0JCQkJSUphdmFFbGVtZW50RGVs
+dGEgc291cmNlRGVsdGE9IHRoaXMuZGVsdGFMaXN0ZW5lci5nZXREZWx0YUZvcihlbGVtZW50LCBm
+YWxzZSk7Ci0JCQkJYXNzZXJ0VHJ1ZSgic2hvdWxkIGJlIEtfUkVNT1ZFRCIsIHNvdXJjZURlbHRh
+LmdldEtpbmQoKSA9PSBJSmF2YUVsZW1lbnREZWx0YS5SRU1PVkVEKTsKKwkJCWlmKGNoZWNrRGVs
+dGEpIHsKKwkJCQlJSmF2YUVsZW1lbnREZWx0YSBkZXN0RGVsdGEgPSBudWxsOworCQkJCWlmIChp
+c01haW5UeXBlKGVsZW1lbnQsIGRlc3RpbmF0aW9uc1tpXSkgJiYgbmFtZXMgIT0gbnVsbCAmJiBu
+YW1lc1tpXSAhPSBudWxsKSB7IC8vbW92ZWQvcmVuYW1lZCBtYWluIHR5cGUgdG8gc2FtZSBjdQor
+CQkJCQlkZXN0RGVsdGEgPSB0aGlzLmRlbHRhTGlzdGVuZXIuZ2V0RGVsdGFGb3IobW92ZWQuZ2V0
+UGFyZW50KCkpOworCQkJCQlhc3NlcnRUcnVlKCJSZW5hbWVkIGNvbXBpbGF0aW9uIHVuaXQgYXMg
+cmVzdWx0IG9mIG1haW4gdHlwZSBub3QgYWRkZWQiLCBkZXN0RGVsdGEgIT0gbnVsbCAmJiBkZXN0
+RGVsdGEuZ2V0S2luZCgpID09IElKYXZhRWxlbWVudERlbHRhLkFEREVEKTsKKwkJCQkJYXNzZXJ0
+VHJ1ZSgiZmxhZyBzaG91bGQgYmUgRl9NT1ZFRF9GUk9NIiwgKGRlc3REZWx0YS5nZXRGbGFncygp
+ICYgSUphdmFFbGVtZW50RGVsdGEuRl9NT1ZFRF9GUk9NKSA+IDApOworCQkJCQlhc3NlcnRUcnVl
+KCJtb3ZlZCBmcm9tIGhhbmRsZSBzaG91bGQgYmUgb3JpZ2luYWwiLCBkZXN0RGVsdGEuZ2V0TW92
+ZWRGcm9tRWxlbWVudCgpLmVxdWFscyhlbGVtZW50LmdldFBhcmVudCgpKSk7CisJCQkJfSBlbHNl
+IHsKKwkJCQkJZGVzdERlbHRhID0gdGhpcy5kZWx0YUxpc3RlbmVyLmdldERlbHRhRm9yKGRlc3Rp
+bmF0aW9uc1tpXSwgdHJ1ZSk7CisJCQkJCWFzc2VydFRydWUoIkRlc3RpbmF0aW9uIGNvbnRhaW5l
+ciBub3QgY2hhbmdlZCIsIGRlc3REZWx0YSAhPSBudWxsICYmIGRlc3REZWx0YS5nZXRLaW5kKCkg
+PT0gSUphdmFFbGVtZW50RGVsdGEuQ0hBTkdFRCk7CisJCQkJCUlKYXZhRWxlbWVudERlbHRhW10g
+ZGVsdGFzID0gZGVzdERlbHRhLmdldEFkZGVkQ2hpbGRyZW4oKTsKKwkJCQkJYXNzZXJ0VHJ1ZSgi
+QWRkZWQgY2hpbGRyZW4gbm90IGNvcnJlY3QgZm9yIGVsZW1lbnQgY29weSIsIGRlbHRhc1tpXS5n
+ZXRFbGVtZW50KCkuZXF1YWxzKG1vdmVkKSk7CisJCQkJCWFzc2VydFRydWUoInNob3VsZCBiZSBL
+X0FEREVEIiwgZGVsdGFzW2ldLmdldEtpbmQoKSA9PSBJSmF2YUVsZW1lbnREZWx0YS5BRERFRCk7
+CisJCQkJCUlKYXZhRWxlbWVudERlbHRhIHNvdXJjZURlbHRhPSB0aGlzLmRlbHRhTGlzdGVuZXIu
+Z2V0RGVsdGFGb3IoZWxlbWVudCwgZmFsc2UpOworCQkJCQlhc3NlcnRUcnVlKCJzaG91bGQgYmUg
+S19SRU1PVkVEIiwgc291cmNlRGVsdGEuZ2V0S2luZCgpID09IElKYXZhRWxlbWVudERlbHRhLlJF
+TU9WRUQpOworCQkJCX0KIAkJCX0KIAkJfQogCX0gZmluYWxseSB7Ci0JCXN0b3BEZWx0YXMoKTsK
+KwkJaWYoY2hlY2tEZWx0YSkJc3RvcERlbHRhcygpOwogCX0KIH0KIH0KZGlmZiAtLWdpdCBhL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90
+ZXN0cy9tb2RlbC9SZW5hbWVUZXN0cy5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMu
+bW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21vZGVsL1JlbmFtZVRlc3RzLmph
+dmEKaW5kZXggZjA4ZWQ3YS4uOTJiODBmYSAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNv
+cmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21vZGVsL1JlbmFt
+ZVRlc3RzLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL21vZGVsL1JlbmFtZVRlc3RzLmphdmEKQEAgLTExNSw5
+ICsxMTUsOSBAQAogCQkJYXNzZXJ0VHJ1ZSgibW92ZWQgZnJvbSBoYW5kbGUgc2hvdWxkIGJlIG9y
+aWdpbmFsIiwgZGVzdERlbHRhLmdldE1vdmVkRnJvbUVsZW1lbnQoKS5lcXVhbHMoZS5nZXRQYXJl
+bnQoKSkpOwogCQl9IGVsc2UgewogCQkJYXNzZXJ0VHJ1ZSgiRGVzdGluYXRpb24gY29udGFpbmVy
+IG5vdCBjaGFuZ2VkIiwgZGVzdERlbHRhICE9IG51bGwgJiYgZGVsdGFDaGlsZHJlbkNoYW5nZWQo
+ZGVzdERlbHRhKSk7Ci0JCQlJSmF2YUVsZW1lbnREZWx0YVtdIGRlbHRhcyA9IGRlc3REZWx0YS5n
+ZXRBZGRlZENoaWxkcmVuKCk7CisJCQlJSmF2YUVsZW1lbnREZWx0YVtdIGRlbHRhcyA9IGZvcmNl
+ID8gZGVzdERlbHRhLmdldENoYW5nZWRDaGlsZHJlbigpIDogZGVzdERlbHRhLmdldEFkZGVkQ2hp
+bGRyZW4oKTsKIAkJCWFzc2VydFRydWUoIkFkZGVkIGNoaWxkcmVuIG5vdCBjb3JyZWN0IGZvciBl
+bGVtZW50IHJlbmFtZSIsIGRlbHRhcy5sZW5ndGggPiBpICYmIGRlbHRhc1tpXS5nZXRFbGVtZW50
+KCkuZXF1YWxzKHJlbmFtZWQpKTsKLQkJCWFzc2VydFRydWUoImtpbmQgc2hvdWxkIGJlIEtfQURE
+RUQiLCBkZWx0YXNbaV0uZ2V0S2luZCgpID09IElKYXZhRWxlbWVudERlbHRhLkFEREVEKTsKKwkJ
+CWFzc2VydFRydWUoImtpbmQgc2hvdWxkIGJlIEtfQURERUQiLCBkZWx0YXNbaV0uZ2V0S2luZCgp
+ID09IChmb3JjZT8gSUphdmFFbGVtZW50RGVsdGEuQ0hBTkdFRCA6IElKYXZhRWxlbWVudERlbHRh
+LkFEREVEKSk7CiAJCQlkZWx0YXMgPSBkZXN0RGVsdGEuZ2V0UmVtb3ZlZENoaWxkcmVuKCk7CiAJ
+CQlhc3NlcnRUcnVlKCJSZW1vdmVkIGNoaWxkcmVuIG5vdCBjb3JyZWN0IGZvciBlbGVtZW50IHJl
+bmFtZSIsIGRlbHRhcy5sZW5ndGggPiBpICYmIGRlbHRhc1tpXS5nZXRFbGVtZW50KCkuZXF1YWxz
+KGUpKTsKIAkJCWFzc2VydFRydWUoImtpbmQgc2hvdWxkIGJlIEtfUkVNT1ZFRCIsIGRlbHRhc1tp
+XS5nZXRLaW5kKCkgPT0gSUphdmFFbGVtZW50RGVsdGEuUkVNT1ZFRCk7CkBAIC0zNjQsMTEgKzM2
+NCwxMiBAQAogCiAJYXNzZXJ0RGVsdGFzKAogCQkiVW5leHBlY3RlZCBkZWx0YXMiLAotCQkiUFsq
+XToge0NISUxEUkVOfVxuIiArCi0JCSIJc3JjWypdOiB7Q0hJTERSRU59XG4iICsKLQkJIgkJPGRl
+ZmF1bHQ+WypdOiB7Q0hJTERSRU59XG4iICsKLQkJIgkJCVguamF2YVstXToge01PVkVEX1RPKFku
+amF2YSBbaW4gPGRlZmF1bHQ+IFtpbiBzcmMgW2luIFBdXV0pfVxuIiArCi0JCSIJCQlZLmphdmFb
+K106IHtNT1ZFRF9GUk9NKFguamF2YSBbaW4gPGRlZmF1bHQ+IFtpbiBzcmMgW2luIFBdXV0pfSIK
+KwkJIlBbKl06IHtDSElMRFJFTn1cbiIgKyAKKwkJCQkiCXNyY1sqXToge0NISUxEUkVOfVxuIiAr
+IAorCQkJCSIJCTxkZWZhdWx0PlsqXToge0NISUxEUkVOfVxuIiArIAorCQkJCSIJCQlYLmphdmFb
+LV06IHtNT1ZFRF9UTyhZLmphdmEgW2luIDxkZWZhdWx0PiBbaW4gc3JjIFtpbiBQXV1dKX1cbiIg
+KyAKKwkJCQkiCQkJWS5qYXZhWypdOiB7Q0hJTERSRU4gfCBGSU5FIEdSQUlORUQgfCBQUklNQVJZ
+IFJFU09VUkNFfVxuIiArIAorCQkJCSIJCQkJWVsrXToge01PVkVEX0ZST00oWCBbaW4gWC5qYXZh
+IFtpbiA8ZGVmYXVsdD4gW2luIHNyYyBbaW4gUF1dXV0pfSIKIAkpOwogfQogLyoKZGlmZiAtLWdp
+dCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9j
+b3JlL0NvcHlSZXNvdXJjZUVsZW1lbnRzT3BlcmF0aW9uLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29yZS9Db3B5UmVzb3VyY2VFbGVt
+ZW50c09wZXJhdGlvbi5qYXZhCmluZGV4IDI5MTM3OGMuLjc5YTIzOTUgMTAwNjQ0Ci0tLSBhL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0Nv
+cHlSZXNvdXJjZUVsZW1lbnRzT3BlcmF0aW9uLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNv
+cmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvQ29weVJlc291cmNlRWxlbWVu
+dHNPcGVyYXRpb24uamF2YQpAQCAtMzU3LDcgKzM1NywxMiBAQAogCQkJfQogCiAJCQkvLyByZWdp
+c3RlciB0aGUgY29ycmVjdCBjaGFuZ2UgZGVsdGFzCi0JCQlwcmVwYXJlRGVsdGFzKHNvdXJjZSwg
+ZGVzdENVLCBpc01vdmUoKSk7CisJCQlib29sZWFuIG92ZXJXcml0ZSA9IHRoaXMuZm9yY2UgJiYg
+ZGVzdEZpbGUuZXhpc3RzKCk7CisJCQlpZiAob3ZlcldyaXRlKQorCQkJCWdldERlbHRhRm9yKGRl
+c3QuZ2V0SmF2YVByb2plY3QoKSkuY2hhbmdlZChkZXN0Q1UsIElKYXZhRWxlbWVudERlbHRhLkZf
+Q09OVEVOVCk7CisJCQllbHNlCisJCQkJcHJlcGFyZURlbHRhcyhzb3VyY2UsIGRlc3RDVSwgaXNN
+b3ZlKCkpOworCQkJCiAJCQlpZiAobmV3Q1VOYW1lICE9IG51bGwpIHsKIAkJCQkvL3RoZSBtYWlu
+IHR5cGUgaGFzIGJlZW4gcmVuYW1lZAogCQkJCVN0cmluZyBvbGROYW1lID0gVXRpbC5nZXROYW1l
+V2l0aG91dEphdmFMaWtlRXh0ZW5zaW9uKHNvdXJjZS5nZXRFbGVtZW50TmFtZSgpKTs=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

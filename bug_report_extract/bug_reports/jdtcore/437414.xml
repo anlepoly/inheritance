@@ -1,0 +1,428 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>437414</bug_id>
+          
+          <creation_ts>2014-06-13 14:43:00 -0400</creation_ts>
+          <short_desc>Annotation processing is broken when build is batched</short_desc>
+          <delta_ts>2015-01-28 04:55:37 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>APT</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>4.5 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Harry Terkelsen">het</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>marc-andre.laperle</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="63886"
+          type_id="1"
+          status="?"
+          setter="jarthana"
+          requestee="shankhba"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2416873</commentid>
+    <comment_count>0</comment_count>
+      <attachid>244239</attachid>
+    <who name="Harry Terkelsen">het</who>
+    <bug_when>2014-06-13 14:43:16 -0400</bug_when>
+    <thetext>Created attachment 244239
+test case exposing the bug
+
+In a batched build, annotation processing may not run on all compilation units. Please take a look at the attached test case that exposes the problem.
+
+In the test case there are 2 classes, Foo and Bar that have references to each other. The batch size is set to 1. Suppose that Foo is in the first batch. Foo has a reference to Bar, so both Foo and Bar are compiled in the first batch, but only Foo was actually passed to the compiler, so only Foo has annotation processing run on it. Then in the second batch, we detect that Bar was compiled in the first batch, so we are done with compiling. The problem is that then Bar never has annotation processing run on it.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2462585</commentid>
+    <comment_count>1</comment_count>
+    <who name="Harry Terkelsen">het</who>
+    <bug_when>2014-10-09 17:18:34 -0400</bug_when>
+    <thetext>Gentle ping. The provided test case is reproducible and I have dozens of users running into this problem.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2462647</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-10-09 23:49:05 -0400</bug_when>
+    <thetext>This looks like same as bug 407841. Can you confirm if the fix works for you? This was fixed for Luna.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2463078</commentid>
+    <comment_count>3</comment_count>
+    <who name="Harry Terkelsen">het</who>
+    <bug_when>2014-10-10 14:11:00 -0400</bug_when>
+    <thetext>I just re-ran the test case and it still fails. I can confirm that I have the patch from bug 407841 in my workspace.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2463148</commentid>
+    <comment_count>4</comment_count>
+    <who name="Harry Terkelsen">het</who>
+    <bug_when>2014-10-10 16:47:58 -0400</bug_when>
+    <thetext>I think the problem is that when processAnnotations() is called in the compiler, it checks for units that have already been processed. But if units from the next batch are processed after processAnnotations() is called, which happens later in the compiler&apos;s compile() method with the ProcessTaskManager, then the units from the next batch that are brought in are ignored by processAnnotations(). This seems to be what is happening in the provided test case, at least.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2467142</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-10-17 05:19:32 -0400</bug_when>
+    <thetext>(In reply to Harry Terkelsen from comment #4)
+&gt; I think the problem is that when processAnnotations() is called in the
+&gt; compiler, it checks for units that have already been processed. But if units
+&gt; from the next batch are processed after processAnnotations() is called,
+&gt; which happens later in the compiler&apos;s compile() method with the
+&gt; ProcessTaskManager, then the units from the next batch that are brought in
+&gt; are ignored by processAnnotations(). This seems to be what is happening in
+&gt; the provided test case, at least.
+
+Hmm.. that sounds like the same scenario that I fixed. If you look at the patch, the fix was to get the units that were compiled after processAnnotations() was called and include them in the next batch of processAnnotations() call. Anyway, I will take a look at your attached project and see what&apos;s going on. 
+
+Will put in M3 to keep it on my radar.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2473793</commentid>
+    <comment_count>6</comment_count>
+    <who name="Harry Terkelsen">het</who>
+    <bug_when>2014-10-29 20:59:36 -0400</bug_when>
+    <thetext>I think this is an edge case where there are classes marked to be processed in the next processAnnotations() call but the next batch never happens because all files have been processed implicitly</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2491655</commentid>
+    <comment_count>7</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-12-02 10:05:14 -0500</bug_when>
+    <thetext>(In reply to Harry Terkelsen from comment #6)
+&gt; I think this is an edge case where there are classes marked to be processed
+&gt; in the next processAnnotations() call but the next batch never happens
+&gt; because all files have been processed implicitly
+
+I see the problem. Thanks for the test case.
+
+I think the fix should be along the lines of the alternate solution I talked about in bug 407841, comment #12. But I recall this being tricky. Will see what I can do. Meanwhile, if anyone has the time, patches are welcome.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494238</commentid>
+    <comment_count>8</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-12-08 22:51:01 -0500</bug_when>
+    <thetext>I have a draft patch. I will work on this post M4.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494250</commentid>
+    <comment_count>9</comment_count>
+      <attachid>249260</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-12-08 23:20:51 -0500</bug_when>
+    <thetext>Created attachment 249260
+Draft patch under test
+
+Patch I was talking about. Still some rough edges, needs to be closely reviewed as it touches the compilation process. As said, will take it up for M5.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2497356</commentid>
+    <comment_count>10</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-12-15 23:51:14 -0500</bug_when>
+    <thetext>I made some changes to the fix and pushed to gerrit:
+
+https://git.eclipse.org/r/#/c/38310/
+
+And hooked the new test into the JDT framework, it&apos;s here:
+
+https://git.eclipse.org/r/#/c/38311/
+
+Shankha, can you please review, thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500102</commentid>
+    <comment_count>11</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-12-23 01:21:33 -0500</bug_when>
+    <thetext>In the interest of getting this tested sooner than later, I have release the fix and test through respective commits:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=2812d86d568ba2c20ada48601e951ea64c90a8dd
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=29f4739da22539e75a2d7ec3c39641dd2a5bf473
+
+Shankha, review this when you find time.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500326</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-23 12:05:00 -0500</bug_when>
+    <thetext>This patch causes annotation processing after STB.scope has been nulled (from CUD.cleanUp()). This is dangerous - and causes NPE when combined with Bug 436486. I&apos;ll try to add protection in the other bug, but I&apos;m afraid, that NPE could surface in *many* places accessing STB.scope!
+
+The dangerous call is in Compiler.process() line 543.
+
+Would it make sense to let processAnnotations temporarily restore the STB.scope link?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500340</commentid>
+    <comment_count>13</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-23 13:06:02 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #12)
+&gt; This patch causes annotation processing after STB.scope has been nulled
+&gt; (from CUD.cleanUp()). This is dangerous - and causes NPE when combined with
+&gt; Bug 436486. I&apos;ll try to add protection in the other bug, ...
+
+Being tested via https://git.eclipse.org/r/#/c/38731/
+I&apos;ll release if successful, but I&apos;d like to revert that change if the situation can be avoided from this bug ...
+
+I&apos;m aware that STB.scope can be null on a few control flows from DOM into the compiler. But the change in this bug seems to open much wider doors.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500348</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-23 13:41:04 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #13)
+&gt; (In reply to Stephan Herrmann from comment #12)
+&gt; &gt; This patch causes annotation processing after STB.scope has been nulled
+&gt; &gt; (from CUD.cleanUp()). This is dangerous - and causes NPE when combined with
+&gt; &gt; Bug 436486. I&apos;ll try to add protection in the other bug, ...
+&gt; 
+&gt; Being tested via https://git.eclipse.org/r/#/c/38731/
+&gt; I&apos;ll release if successful, but I&apos;d like to revert that change if the
+&gt; situation can be avoided from this bug ...
+
+temporarily released via commit dbdde44f24ace4ee47bccce2cfe484eeeb8013f3
+
+Re-opening this bug so we don&apos;t forget to settle this conflict :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500408</commentid>
+    <comment_count>15</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-12-23 21:40:54 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #14)
+&gt; temporarily released via commit dbdde44f24ace4ee47bccce2cfe484eeeb8013f3
+
+Thanks for the fix, Stephan. My bad, I should have run the tests after rebasing. Will take a closer look at the fix again.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2500517</commentid>
+    <comment_count>16</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-24 09:57:15 -0500</bug_when>
+    <thetext>(In reply to Jay On Vacation till Jan 5 2015 from comment #15)
+&gt; (In reply to Stephan Herrmann from comment #14)
+&gt; &gt; temporarily released via commit dbdde44f24ace4ee47bccce2cfe484eeeb8013f3
+&gt; 
+&gt; Thanks for the fix, Stephan. My bad, I should have run the tests after
+&gt; rebasing.
+
+Objection: that mistake was mine :) (since your commit was released first).
+
+OTOH, what are the odds for two consecutive changes interacting with each other in this way? I think that&apos;s a risk we can live with.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2501854</commentid>
+    <comment_count>17</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-05 03:35:06 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #16)
+&gt; OTOH, what are the odds for two consecutive changes interacting with each
+&gt; other in this way? I think that&apos;s a risk we can live with.
+
+Yep, this is not something that we can overcome. In the past many times I run into non fast-forward commit issues because some commit has come while the tests were running. I just rebase, push and move on :)
+
+BTW, I am testing a fix for the regression. I will revert commit dbdde44f24ace4ee47bccce2cfe484eeeb8013f3 and add my fix.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2502619</commentid>
+    <comment_count>18</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-07 00:11:53 -0500</bug_when>
+    <thetext>Reverted the stop-gap fix with this:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=4b2447f980b1f004d5d76b9cf416fd4398082a5b
+
+And fixed with this:
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=9ab1542db1d40bdde11e7c06d8c1a2b268c6c336</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511226</commentid>
+    <comment_count>19</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2015-01-28 04:55:37 -0500</bug_when>
+    <thetext>Verified for 4.5 M5 using I20150127-0900 build</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="0"
+              isprivate="0"
+          >
+            <attachid>244239</attachid>
+            <date>2014-06-13 14:43:00 -0400</date>
+            <delta_ts>2014-06-13 14:43:16 -0400</delta_ts>
+            <desc>test case exposing the bug</desc>
+            <filename>BatchedBuilderTests.java</filename>
+            <type>text/x-java</type>
+            <size>1797</size>
+            <attacher name="Harry Terkelsen">het</attacher>
+            
+              <data encoding="base64">cGFja2FnZSBvcmcuZWNsaXBzZS5qZHQuYXB0LnBsdWdnYWJsZS50ZXN0czsKCmltcG9ydCBqdW5p
+dC5mcmFtZXdvcmsuVGVzdDsKaW1wb3J0IGp1bml0LmZyYW1ld29yay5UZXN0U3VpdGU7CgppbXBv
+cnQgb3JnLmVjbGlwc2UuY29yZS5yZXNvdXJjZXMuSVByb2plY3Q7CmltcG9ydCBvcmcuZWNsaXBz
+ZS5jb3JlLnJ1bnRpbWUuSVBhdGg7CmltcG9ydCBvcmcuZWNsaXBzZS5qZHQuYXB0LmNvcmUudXRp
+bC5BcHRDb25maWc7CmltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5JSmF2YVByb2plY3Q7Cmlt
+cG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29yZS5KYXZhTW9kZWxNYW5hZ2VyOwoKLyoq
+CiAqIHRlc3RzIGNvdmVyaW5nIHRoZSBJREUncyBhYmlsaXR5IHRvIHByb2Nlc3MgdGhlIGNvcnJl
+Y3Qgc2V0IG9mIGZpbGVzIHdoZW4KICogdGhlIGJ1aWxkIGlzIGJhdGNoZWQuCiAqLwpwdWJsaWMg
+Y2xhc3MgQmF0Y2hlZEJ1aWxkZXJUZXN0cyBleHRlbmRzIFRlc3RCYXNlIHsKCXB1YmxpYyBCYXRj
+aGVkQnVpbGRlclRlc3RzKFN0cmluZyBuYW1lKSB7CgkJc3VwZXIobmFtZSk7CgkJLy8gRm9yY2Ug
+dGhlIGJ1aWxkIHRvIGJlIGJhdGNoZWQKCQlTeXN0ZW0uc2V0UHJvcGVydHkoSmF2YU1vZGVsTWFu
+YWdlci5NQVhfQ09NUElMRURfVU5JVFNfQVRfT05DRSwgIjEiKTsKCX0KCQoJcHVibGljIHN0YXRp
+YyBUZXN0IHN1aXRlKCkgewoJCXJldHVybiBuZXcgVGVzdFN1aXRlKEJhdGNoZWRCdWlsZGVyVGVz
+dHMuY2xhc3MpOwoJfQoJCglwdWJsaWMgdm9pZCB0ZXN0QmF0Y2hlZEJ1aWxkKCkgdGhyb3dzIFRo
+cm93YWJsZSB7CgkJUHJvY2Vzc29yVGVzdFN0YXR1cy5yZXNldCgpOwoJCUlKYXZhUHJvamVjdCBq
+cHJvaiA9IGNyZWF0ZUphdmFQcm9qZWN0KF9wcm9qZWN0TmFtZSk7CgkJZGlzYWJsZUphdmE1RmFj
+dG9yaWVzKGpwcm9qKTsKCQlJUHJvamVjdCBwcm9qID0ganByb2ouZ2V0UHJvamVjdCgpOwoJCUlQ
+YXRoIHByb2pQYXRoID0gcHJvai5nZXRGdWxsUGF0aCgpOwoJCUlQYXRoIHJvb3QgPSBwcm9qUGF0
+aC5hcHBlbmQoInNyYyIpOwoJCQoJCWVudi5hZGRDbGFzcyhyb290LCAidGVzdCIsICJGb28iLAoJ
+CQkJInBhY2thZ2UgdGVzdDtcbiIgKwoJCQkJImltcG9ydCBvcmcuZWNsaXBzZS5qZHQuYXB0LnBs
+dWdnYWJsZS50ZXN0cy5hbm5vdGF0aW9ucy5HZW5DbGFzczY7XG4iICsKCQkgICAgICAgICJAR2Vu
+Q2xhc3M2KG5hbWUgPSBcIkZvb0dlblwiLCBwa2cgPSBcInRlc3RcIilcbiIgKwoJCQkgICAgInB1
+YmxpYyBjbGFzcyBGb28ge1xuIiArCgkJICAgICAgICAiICAgIHB1YmxpYyBCYXIgYmFyO1xuIiAr
+CgkJCSAgICAifSIpOwoJCWVudi5hZGRDbGFzcyhyb290LCAidGVzdCIsICJCYXIiLAoJCQkJInBh
+Y2thZ2UgdGVzdDtcbiIgKwoJCQkJImltcG9ydCBvcmcuZWNsaXBzZS5qZHQuYXB0LnBsdWdnYWJs
+ZS50ZXN0cy5hbm5vdGF0aW9ucy5HZW5DbGFzczY7XG4iICsKCQkgICAgICAgICJAR2VuQ2xhc3M2
+KG5hbWUgPSBcIkJhckdlblwiLCBwa2cgPSBcInRlc3RcIilcbiIgKwoJCQkgICAgInB1YmxpYyBj
+bGFzcyBCYXIge1xuIiArCgkJICAgICAgICAiICAgIHB1YmxpYyBGb28gZm9vO1xuIiArCgkJCSAg
+ICAifSIpOwoJCUFwdENvbmZpZy5zZXRFbmFibGVkKGpwcm9qLCB0cnVlKTsKCQkKCQlmdWxsQnVp
+bGQoKTsKCQlleHBlY3RpbmdOb1Byb2JsZW1zKCk7CgkJZXhwZWN0aW5nVW5pcXVlQ29tcGlsZWRD
+bGFzc2VzKAoJCQkJbmV3IFN0cmluZ1tdIHsidGVzdC5Gb28iLCAidGVzdC5CYXIiLCAidGVzdC5G
+b29HZW4iLCAidGVzdC5CYXJHZW4ifSk7Cgl9Cn0K
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>249260</attachid>
+            <date>2014-12-08 23:20:00 -0500</date>
+            <delta_ts>2014-12-08 23:20:51 -0500</delta_ts>
+            <desc>Draft patch under test</desc>
+            <filename>Fix-for-bug-437414.patch</filename>
+            <type>text/plain</type>
+            <size>4747</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9Db21waWxlci5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUv
+Y29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL0NvbXBpbGVyLmphdmEK
+aW5kZXggMjY1MWM4My4uNGU2NjVhOCAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUv
+Y29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL0NvbXBpbGVyLmphdmEK
+KysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVy
+bmFsL2NvbXBpbGVyL0NvbXBpbGVyLmphdmEKQEAgLTQxOSw2ICs0MTksNCBAQAogCXB1YmxpYyB2
+b2lkIGNvbXBpbGUoSUNvbXBpbGF0aW9uVW5pdFtdIHNvdXJjZVVuaXRzKSB7CiAJCXRoaXMuc3Rh
+dHMuc3RhcnRUaW1lID0gU3lzdGVtLmN1cnJlbnRUaW1lTWlsbGlzKCk7Ci0JCUNvbXBpbGF0aW9u
+VW5pdERlY2xhcmF0aW9uIHVuaXQgPSBudWxsOwotCQlQcm9jZXNzVGFza01hbmFnZXIgcHJvY2Vz
+c2luZ1Rhc2sgPSBudWxsOwogCQl0cnkgewogCQkJLy8gYnVpbGQgYW5kIHJlY29yZCBwYXJzZWQg
+dW5pdHMKQEAgLTQ1Myw5ICs0NTEsMjkgQEAKIAkJCQl9CiAJCQl9CisJCQlwcm9jZXNzQ29tcGls
+ZWRVbml0cygwKTsKKwkJfSBjYXRjaCAoQWJvcnRDb21waWxhdGlvbiBlKSB7CisJCQl0aGlzLmhh
+bmRsZUludGVybmFsRXhjZXB0aW9uKGUsIG51bGwpOworCQl9CisJCWlmICh0aGlzLm9wdGlvbnMu
+dmVyYm9zZSkgeworCQkJaWYgKHRoaXMudG90YWxVbml0cyA+IDEpIHsKKwkJCQl0aGlzLm91dC5w
+cmludGxuKAorCQkJCQlNZXNzYWdlcy5iaW5kKE1lc3NhZ2VzLmNvbXBpbGF0aW9uX3VuaXRzLCBT
+dHJpbmcudmFsdWVPZih0aGlzLnRvdGFsVW5pdHMpKSk7CisJCQl9IGVsc2UgeworCQkJCXRoaXMu
+b3V0LnByaW50bG4oCisJCQkJCU1lc3NhZ2VzLmJpbmQoTWVzc2FnZXMuY29tcGlsYXRpb25fdW5p
+dCwgU3RyaW5nLnZhbHVlT2YodGhpcy50b3RhbFVuaXRzKSkpOworCQkJfQorCQl9CisJfQogCisJ
+cHJvdGVjdGVkIHZvaWQgcHJvY2Vzc0NvbXBpbGVkVW5pdHMoaW50IHN0YXJ0aW5nSW5kZXgpIHRo
+cm93cyBqYXZhLmxhbmcuRXJyb3IgeworCQlDb21waWxhdGlvblVuaXREZWNsYXJhdGlvbiB1bml0
+ID0gbnVsbDsKKwkJUHJvY2Vzc1Rhc2tNYW5hZ2VyIHByb2Nlc3NpbmdUYXNrID0gbnVsbDsKKwkJ
+dHJ5IHsKIAkJCWlmICh0aGlzLnVzZVNpbmdsZVRocmVhZCkgewogCQkJCS8vIHByb2Nlc3MgYWxs
+IHVuaXRzIChzb21lIG1vcmUgY291bGQgYmUgaW5qZWN0ZWQgaW4gdGhlIGxvb3AgYnkgdGhlIGxv
+b2t1cCBlbnZpcm9ubWVudCkKLQkJCQlmb3IgKGludCBpID0gMDsgaSA8IHRoaXMudG90YWxVbml0
+czsgaSsrKSB7CisJCQkJZm9yIChpbnQgaSA9IHN0YXJ0aW5nSW5kZXg7IGkgPCB0aGlzLnRvdGFs
+VW5pdHM7IGkrKykgewogCQkJCQl1bml0ID0gdGhpcy51bml0c1RvUHJvY2Vzc1tpXTsKKwkJCQkJ
+aWYgKHVuaXQuY29tcGlsYXRpb25SZXN1bHQgIT0gbnVsbCAmJiB1bml0LmNvbXBpbGF0aW9uUmVz
+dWx0Lmhhc0JlZW5BY2NlcHRlZCkKKwkJCQkJCWNvbnRpbnVlOwogCQkJCQlyZXBvcnRQcm9ncmVz
+cyhNZXNzYWdlcy5iaW5kKE1lc3NhZ2VzLmNvbXBpbGF0aW9uX3Byb2Nlc3NpbmcsIG5ldyBTdHJp
+bmcodW5pdC5nZXRGaWxlTmFtZSgpKSkpOwogCQkJCQl0cnkgewpAQCAtNDczLDUgKzQ5MSw3IEBA
+CiAJCQkJCQl1bml0LmNsZWFuVXAoKTsKIAkJCQkJfQotCQkJCQl0aGlzLnVuaXRzVG9Qcm9jZXNz
+W2ldID0gbnVsbDsgLy8gcmVsZWFzZSByZWZlcmVuY2UgdG8gcHJvY2Vzc2VkIHVuaXQgZGVjbGFy
+YXRpb24KKwkJCQkJaWYgKHRoaXMuYW5ub3RhdGlvblByb2Nlc3Nvck1hbmFnZXIgPT0gbnVsbCkg
+eworCQkJCQkJdGhpcy51bml0c1RvUHJvY2Vzc1tpXSA9IG51bGw7IC8vIHJlbGVhc2UgcmVmZXJl
+bmNlIHRvIHByb2Nlc3NlZCB1bml0IGRlY2xhcmF0aW9uCisJCQkJCX0KIAogCQkJCQlyZXBvcnRX
+b3JrZWQoMSwgaSk7CkBAIC00OTAsNSArNTEwLDUgQEAKIAkJCQl9CiAJCQl9IGVsc2UgewotCQkJ
+CXByb2Nlc3NpbmdUYXNrID0gbmV3IFByb2Nlc3NUYXNrTWFuYWdlcih0aGlzKTsKKwkJCQlwcm9j
+ZXNzaW5nVGFzayA9IG5ldyBQcm9jZXNzVGFza01hbmFnZXIodGhpcywgc3RhcnRpbmdJbmRleCk7
+CiAJCQkJaW50IGFjY2VwdGVkQ291bnQgPSAwOwogCQkJCS8vIHByb2Nlc3MgYWxsIHVuaXRzIChz
+b21lIG1vcmUgY291bGQgYmUgaW5qZWN0ZWQgaW4gdGhlIGxvb3AgYnkgdGhlIGxvb2t1cCBlbnZp
+cm9ubWVudCkKQEAgLTUxOSw0ICs1MzksOSBAQAogCQkJCX0KIAkJCX0KKwkJCWlmICh0aGlzLmFu
+bm90YXRpb25Qcm9jZXNzb3JNYW5hZ2VyICE9IG51bGwgJiYgdGhpcy50b3RhbFVuaXRzID4gdGhp
+cy5hbm5vdGF0aW9uUHJvY2Vzc29yU3RhcnRJbmRleCkgeworCQkJCWludCBiYWNrdXAgPSB0aGlz
+LmFubm90YXRpb25Qcm9jZXNzb3JTdGFydEluZGV4OworCQkJCXByb2Nlc3NBbm5vdGF0aW9ucygp
+OworCQkJCXByb2Nlc3NDb21waWxlZFVuaXRzKGJhY2t1cCk7CisJCQl9CiAJCX0gY2F0Y2ggKEFi
+b3J0Q29tcGlsYXRpb24gZSkgewogCQkJdGhpcy5oYW5kbGVJbnRlcm5hbEV4Y2VwdGlvbihlLCB1
+bml0KTsKQEAgLTUzNiwxMyArNTYxLDQgQEAKIAkJCXRoaXMuc3RhdHMuZW5kVGltZSA9IFN5c3Rl
+bS5jdXJyZW50VGltZU1pbGxpcygpOwogCQl9Ci0JCWlmICh0aGlzLm9wdGlvbnMudmVyYm9zZSkg
+ewotCQkJaWYgKHRoaXMudG90YWxVbml0cyA+IDEpIHsKLQkJCQl0aGlzLm91dC5wcmludGxuKAot
+CQkJCQlNZXNzYWdlcy5iaW5kKE1lc3NhZ2VzLmNvbXBpbGF0aW9uX3VuaXRzLCBTdHJpbmcudmFs
+dWVPZih0aGlzLnRvdGFsVW5pdHMpKSk7Ci0JCQl9IGVsc2UgewotCQkJCXRoaXMub3V0LnByaW50
+bG4oCi0JCQkJCU1lc3NhZ2VzLmJpbmQoTWVzc2FnZXMuY29tcGlsYXRpb25fdW5pdCwgU3RyaW5n
+LnZhbHVlT2YodGhpcy50b3RhbFVuaXRzKSkpOwotCQkJfQotCQl9CiAJfQogCkBAIC01NTAsNSAr
+NTY2LDcgQEAKIAkJaWYgKG5leHQgPCB0aGlzLnRvdGFsVW5pdHMpIHsKIAkJCUNvbXBpbGF0aW9u
+VW5pdERlY2xhcmF0aW9uIHVuaXQgPSB0aGlzLnVuaXRzVG9Qcm9jZXNzW25leHRdOwotCQkJdGhp
+cy51bml0c1RvUHJvY2Vzc1tuZXh0XSA9IG51bGw7IC8vIHJlbGVhc2UgcmVmZXJlbmNlIHRvIHBy
+b2Nlc3NlZCB1bml0IGRlY2xhcmF0aW9uCisJCQlpZiAodGhpcy5hbm5vdGF0aW9uUHJvY2Vzc29y
+TWFuYWdlciA9PSBudWxsIHx8IG5leHQgPCB0aGlzLmFubm90YXRpb25Qcm9jZXNzb3JTdGFydElu
+ZGV4KSB7CisJCQkJdGhpcy51bml0c1RvUHJvY2Vzc1tuZXh0XSA9IG51bGw7IC8vIHJlbGVhc2Ug
+cmVmZXJlbmNlIHRvIHByb2Nlc3NlZCB1bml0IGRlY2xhcmF0aW9uCisJCQl9CiAJCQlyZXR1cm4g
+dW5pdDsKIAkJfQpAQCAtODI2LDYgKzg0NCw2IEBACiAJCQkJU3lzdGVtLmFycmF5Y29weSh0aGlz
+LnVuaXRzVG9Qcm9jZXNzLCB0b3AsIGFkZGVkVW5pdHMsIDAsIGxlbmd0aCk7CiAJCQkJdGhpcy5h
+bm5vdGF0aW9uUHJvY2Vzc29yTWFuYWdlci5wcm9jZXNzQW5ub3RhdGlvbnMoYWRkZWRVbml0cywg
+YmluYXJ5VHlwZUJpbmRpbmdzVGVtcCwgZmFsc2UpOwotCQkJCXRoaXMuYW5ub3RhdGlvblByb2Nl
+c3NvclN0YXJ0SW5kZXggPSB0b3A7CiAJCQl9CisJCQl0aGlzLmFubm90YXRpb25Qcm9jZXNzb3JT
+dGFydEluZGV4ID0gdG9wOwogCQkJSUNvbXBpbGF0aW9uVW5pdFtdIG5ld1VuaXRzID0gdGhpcy5h
+bm5vdGF0aW9uUHJvY2Vzc29yTWFuYWdlci5nZXROZXdVbml0cygpOwogCQkJbmV3VW5pdFNpemUg
+PSBuZXdVbml0cy5sZW5ndGg7CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21w
+aWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvUHJvY2Vzc1Rhc2tNYW5hZ2Vy
+LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50
+ZXJuYWwvY29tcGlsZXIvUHJvY2Vzc1Rhc2tNYW5hZ2VyLmphdmEKaW5kZXggYWQwNDZjMC4uZmE3
+Y2EzZCAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlw
+c2UvamR0L2ludGVybmFsL2NvbXBpbGVyL1Byb2Nlc3NUYXNrTWFuYWdlci5qYXZhCisrKyBiL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21w
+aWxlci9Qcm9jZXNzVGFza01hbmFnZXIuamF2YQpAQCAtMjksNyArMjksNyBAQAogCXB1YmxpYyBz
+dGF0aWMgZmluYWwgaW50IFBST0NFU1NFRF9RVUVVRV9TSVpFID0gMTI7CiAKLXB1YmxpYyBQcm9j
+ZXNzVGFza01hbmFnZXIoQ29tcGlsZXIgY29tcGlsZXIpIHsKK3B1YmxpYyBQcm9jZXNzVGFza01h
+bmFnZXIoQ29tcGlsZXIgY29tcGlsZXIsIGludCBzdGFydGluZ0luZGV4KSB7CiAJdGhpcy5jb21w
+aWxlciA9IGNvbXBpbGVyOwotCXRoaXMudW5pdEluZGV4ID0gMDsKKwl0aGlzLnVuaXRJbmRleCA9
+IHN0YXJ0aW5nSW5kZXg7CiAKIAl0aGlzLmN1cnJlbnRJbmRleCA9IDA7CkBAIC0xMjMsNCArMTIz
+LDYgQEAKIAkJCQl9CiAJCQkJaW5kZXggPSB0aGlzLnVuaXRJbmRleCsrOworCQkJCWlmICh0aGlz
+LnVuaXRUb1Byb2Nlc3MuY29tcGlsYXRpb25SZXN1bHQuaGFzQmVlbkFjY2VwdGVkKQorCQkJCQlj
+b250aW51ZTsKIAkJCX0KIA==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

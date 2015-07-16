@@ -1,0 +1,396 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>368646</bug_id>
+          
+          <creation_ts>2012-01-16 03:35:00 -0500</creation_ts>
+          <short_desc>[rename] rejects LocalVariable with initializer</short_desc>
+          <delta_ts>2012-03-13 10:39:22 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>3.8 M6</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Andreas Thies">andreas.thies</reporter>
+          <assigned_to name="Ayushman Jain">amj87.iitr</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>deepakazad</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>Olivier_Thomann</cc>
+    
+    <cc>satyam.kandula</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2050714</commentid>
+    <comment_count>0</comment_count>
+    <who name="Andreas Thies">andreas.thies</who>
+    <bug_when>2012-01-16 03:35:46 -0500</bug_when>
+    <thetext>Build Identifier: 20110218-0911
+
+When invoking a rename refactoring programmatically with a proper IJavaElement as a parameter, the refactoring reports a fatal error &quot;A local variable declaration or reference must be selected to activate this refactoring&quot; in case of local variables with initializer.
+
+Reproducible: Always
+
+Steps to Reproduce:
+Build an AST from the snippet
+
+public class A {
+  public void m(String strX) {
+    String strB = strX;
+  }
+}
+
+and find the VariableDeclarationFragment &apos;strB = strX&apos;. Resolve the according IJavaElement (LocalVariable) by
+
+IVariableBinding binding = fragment.resolveBinding();
+IJavaElement element = binding.getJavaElement();
+
+and pass it to a rename refactoring
+
+RefactoringContribution contribution = RefactoringCore.getRefactoringContribution(IJavaRefactorings.RENAME_LOCAL_VARIABLE);
+RenameJavaElementDescriptor descriptor = (RenameJavaElementDescriptor) contribution.createDescriptor();
+descriptor.setJavaElement(element);
+descriptor.setNewName(name);
+descriptor.setUpdateReferences(true);
+RenameSupport.create(descriptor).openDialog(getShell());
+
+This will result in the fatal error stated above which is inappropriate since a proper IJavaElement was passed.
+
+
+This bug should be easy to fix: The debugger reveals that it is caused by the method
+
+RenameLocalVariableProcessor#initAST()
+
+where 
+
+ASTNode name= NodeFinder.perform(fCompilationUnitNode, sourceRange);
+
+returns the VariableDeclarationFragment &apos;strB=strX&apos; for the case above. The next statemet
+
+if (name.getParent() instanceof VariableDeclaration)
+  fTempDeclarationNode= (VariableDeclaration) name.getParent();
+
+expects &apos;name&apos; to be SimpleName (as a child of VariableDeclaration). This assumption is correct for a local variable without initializer only.
+
+There should also be a check whether &apos;name&apos; is a VariableDeclarationFragment.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2050720</commentid>
+    <comment_count>1</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-01-16 03:49:41 -0500</bug_when>
+    <thetext>Moving to JDT/UI</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2050859</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-16 07:01:08 -0500</bug_when>
+    <thetext>(In reply to comment #0)
+&gt; ASTNode name= NodeFinder.perform(fCompilationUnitNode, sourceRange);
+
+I couldn&apos;s see how you determined sourceRange
+ 
+&gt; returns the VariableDeclarationFragment &apos;strB=strX&apos; for the case above. The
+&gt; next statemet
+
+This could be the culprit, with a proper sourceRange I&apos;d expect the
+NodeFinder to just return the SimpleName &apos;strB&apos; and all should go well
+from there on.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2050876</commentid>
+    <comment_count>3</comment_count>
+    <who name="Andreas Thies">andreas.thies</who>
+    <bug_when>2012-01-16 07:39:57 -0500</bug_when>
+    <thetext>(In reply to comment #2)
+&gt; &gt; ASTNode name= NodeFinder.perform(fCompilationUnitNode, sourceRange);
+&gt; 
+&gt; I couldn&apos;s see how you determined sourceRange
+
+This line is quoted from the method initAST() in org.eclipse.jdt.internal.corext.refactoring.rename.RenameLocalVariableProcessor.
+The source range is determined the line before:
+
+ISourceRange sourceRange= fLocalVariable.getNameRange();
+
+&gt; &gt; returns the VariableDeclarationFragment &apos;strB=strX&apos; for the case above. The
+&gt; &gt; next statemet
+&gt; 
+&gt; This could be the culprit, with a proper sourceRange I&apos;d expect the
+&gt; NodeFinder to just return the SimpleName &apos;strB&apos; and all should go well
+&gt; from there on.
+
+For the LocalVariable 
+
+java/lang/String strB [in m(String) [in A [in [Working copy] A.java [in p [in src [in Test]]]]]]
+
+from the example above the expression
+
+fLocalVariable.getNameRange() 
+
+computes [offset=72, length=11] which means that the returned source range includes the declaration and the initializer. Hence, the NodeFinder will not return a simple name if there is an initializer.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2050906</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-01-16 08:37:18 -0500</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; (In reply to comment #2)
+&gt; &gt; &gt; ASTNode name= NodeFinder.perform(fCompilationUnitNode, sourceRange);
+&gt; &gt; 
+&gt; &gt; I couldn&apos;s see how you determined sourceRange
+&gt; 
+&gt; This line is quoted from the method initAST() in
+
+Sorry, I missed that part. Thanks for clarifying.
+
+&gt; For the LocalVariable 
+&gt; 
+&gt; java/lang/String strB [in m(String) [in A [in [Working copy] A.java [in p [in
+&gt; src [in Test]]]]]]
+&gt; 
+&gt; from the example above the expression
+&gt; 
+&gt; fLocalVariable.getNameRange() 
+&gt; 
+&gt; computes [offset=72, length=11] which means that the returned source range
+&gt; includes the declaration and the initializer. Hence, the NodeFinder will not
+&gt; return a simple name if there is an initializer.
+
+That looks bogus to me. Not sure who would be to blame. The nameRange should
+only include the name, and from what I can see in the sources this range 
+should be derived from LocalVariableDeclaration.sourceEnd (internal AST),
+which should not include the initialization. Hm.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2051037</commentid>
+    <comment_count>5</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-01-16 11:15:28 -0500</bug_when>
+    <thetext>This is a bug in IBinding#getJavaElement().
+
+When I use the JavaElement View [1] to create an ILocalVariable using codeSelect, then the nameRange is correct (see the Properties view). But when I use the ASTView, expand the variable binding, and then double-click the ILocalVariable (last child of the binding), the name range is too long.
+
+After performing &quot;Show In &gt; JavaElement View&quot;, he other properties of the ILocalVariable look OK (except for the wrong range in the handle identifier).
+
+
+[1] http://www.eclipse.org/jdt/ui/update-site</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2053074</commentid>
+    <comment_count>6</comment_count>
+      <attachid>209768</attachid>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2012-01-19 13:20:19 -0500</bug_when>
+    <thetext>Created attachment 209768
+Proposed fix + regression test</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2053075</commentid>
+    <comment_count>7</comment_count>
+    <who name="Olivier Thomann">Olivier_Thomann</who>
+    <bug_when>2012-01-19 13:20:46 -0500</bug_when>
+    <thetext>Running all tests.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2053205</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-01-19 16:49:00 -0500</bug_when>
+    <thetext>Ayush, please take this forward for M6. TIA.
+
+Thanks a lot Olivier.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2075187</commentid>
+    <comment_count>9</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-05 07:47:06 -0500</bug_when>
+    <thetext>Deepak, can you please run the UI tests with the patch? I&apos;ll release if everything&apos;s green, patch looks good. Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2075219</commentid>
+    <comment_count>10</comment_count>
+    <who name="Deepak Azad">deepakazad</who>
+    <bug_when>2012-03-05 08:31:59 -0500</bug_when>
+    <thetext>(In reply to comment #9)
+&gt; Deepak, can you please run the UI tests with the patch? 
+
+I can, but this model does not scale and nor the ensuing to-and-fro is very efficient. Is there anything that prevents JDT/Core team from running JDT/UI tests? (I think there are enough secondary machines in the team)
+
+The steps for running JDT/UI tests are mentioned here - http://wiki.eclipse.org/JDT_UI/How_to_Contribute#Unit_Testing. If the steps are not clear, please let me know I will update them.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2076385</commentid>
+    <comment_count>11</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-07 03:51:57 -0500</bug_when>
+    <thetext>UI tests were green
+
+Released in master via commit c5887d07050c9433ef244b9fc8d660e0afd1c02c</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2079547</commentid>
+    <comment_count>12</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-03-13 10:39:22 -0400</bug_when>
+    <thetext>Verified for 3.8M6 using build I20120312-1300</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>209768</attachid>
+            <date>2012-01-19 13:20:00 -0500</date>
+            <delta_ts>2012-01-19 13:20:19 -0500</delta_ts>
+            <desc>Proposed fix + regression test</desc>
+            <filename>patch_368646.txt</filename>
+            <type>text/plain</type>
+            <size>6019</size>
+            <attacher name="Olivier Thomann">Olivier_Thomann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9kb20vQVNUTW9kZWxCcmlkZ2VUZXN0cy5qYXZhIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L2RvbS9BU1RNb2RlbEJyaWRnZVRlc3RzLmphdmEKaW5kZXggY2NmMGMxMi4uNmFlOTI5NSAxMDA2
+NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNl
+L2pkdC9jb3JlL3Rlc3RzL2RvbS9BU1RNb2RlbEJyaWRnZVRlc3RzLmphdmEKKysrIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L2RvbS9BU1RNb2RlbEJyaWRnZVRlc3RzLmphdmEKQEAgLTEsNSArMSw1IEBACiAvKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKgotICogQ29weXJpZ2h0IChjKSAyMDA0LCAyMDEwIElCTSBDb3Jwb3JhdGlv
+biBhbmQgb3RoZXJzLgorICogQ29weXJpZ2h0IChjKSAyMDA0LCAyMDEyIElCTSBDb3Jwb3JhdGlv
+biBhbmQgb3RoZXJzLgogICogQWxsIHJpZ2h0cyByZXNlcnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0
+aGUgYWNjb21wYW55aW5nIG1hdGVyaWFscwogICogYXJlIG1hZGUgYXZhaWxhYmxlIHVuZGVyIHRo
+ZSB0ZXJtcyBvZiB0aGUgRWNsaXBzZSBQdWJsaWMgTGljZW5zZSB2MS4wCiAgKiB3aGljaCBhY2Nv
+bXBhbmllcyB0aGlzIGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2YWlsYWJsZSBhdApAQCAtMjIsNiAr
+MjIsNyBAQCBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuc2VhcmNoLklKYXZhU2VhcmNoQ29u
+c3RhbnRzOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLnNlYXJjaC5JSmF2YVNlYXJjaFNj
+b3BlOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLnNlYXJjaC5TZWFyY2hFbmdpbmU7CiBp
+bXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwuQWJzdHJhY3RKYXZhU2VhcmNo
+VGVzdHM7CitpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMudXRpbC5VdGlsOwogCiBp
+bXBvcnQganVuaXQuZnJhbWV3b3JrLlRlc3Q7CiAKQEAgLTMyLDYgKzMzLDEzIEBAIHB1YmxpYyBj
+bGFzcyBBU1RNb2RlbEJyaWRnZVRlc3RzIGV4dGVuZHMgQWJzdHJhY3RBU1RUZXN0cyB7CiAKIAlJ
+Q29tcGlsYXRpb25Vbml0IHdvcmtpbmdDb3B5OwogCisJcHJvdGVjdGVkIHZvaWQgY2hlY2tTb3Vy
+Y2VSYW5nZShpbnQgc3RhcnQsIGludCBsZW5ndGgsIFN0cmluZyBleHBlY3RlZENvbnRlbnRzLCBT
+dHJpbmcgc291cmNlKSB7CisJCWFzc2VydFRydWUoImxlbmd0aCA9PSAwIiwgbGVuZ3RoICE9IDAp
+OyAvLyROT04tTkxTLTEkIC8vJE5PTi1OTFMtMiQKKwkJYXNzZXJ0VHJ1ZSgic3RhcnQgPT0gLTEi
+LCBzdGFydCAhPSAtMSk7IC8vJE5PTi1OTFMtMSQKKwkJU3RyaW5nIGFjdHVhbENvbnRlbnRzU3Ry
+aW5nID0gc291cmNlLnN1YnN0cmluZyhzdGFydCwgc3RhcnQgKyBsZW5ndGgpOworCQlhc3NlcnRT
+b3VyY2VFcXVhbHMoIlVuZXhwZWN0ZWQgc291cmNlIiwgVXRpbC5jb252ZXJ0VG9JbmRlcGVuZGFu
+dExpbmVEZWxpbWl0ZXIoZXhwZWN0ZWRDb250ZW50cyksIFV0aWwuY29udmVydFRvSW5kZXBlbmRh
+bnRMaW5lRGVsaW1pdGVyKGFjdHVhbENvbnRlbnRzU3RyaW5nKSk7CisJfQorCiAJcHVibGljIEFT
+VE1vZGVsQnJpZGdlVGVzdHMoU3RyaW5nIG5hbWUpIHsKIAkJc3VwZXIobmFtZSk7CiAJfQpAQCAt
+NDQsNyArNTIsNyBAQCBwdWJsaWMgY2xhc3MgQVNUTW9kZWxCcmlkZ2VUZXN0cyBleHRlbmRzIEFi
+c3RyYWN0QVNUVGVzdHMgewogCS8vIEFsbCBzcGVjaWZpZWQgdGVzdHMgd2hpY2ggZG8gbm90IGJl
+bG9uZyB0byB0aGUgY2xhc3MgYXJlIHNraXBwZWQuLi4KIAlzdGF0aWMgewogLy8JCVRFU1RTX1BS
+RUZJWCA9ICAidGVzdEJ1Zzg2MzgwIjsKLS8vCQlURVNUU19OQU1FUyA9IG5ldyBTdHJpbmdbXSB7
+ICJ0ZXN0QW5ub3RhdGlvbjkiIH07CisvLwkJVEVTVFNfTkFNRVMgPSBuZXcgU3RyaW5nW10geyAi
+dGVzdExvY2FsVmFyaWFibGU3IiB9OwogLy8JCVRFU1RTX05VTUJFUlMgPSBuZXcgaW50W10geyA4
+MzIzMCB9OwogLy8JCVRFU1RTX1JBTkdFID0gbmV3IGludFtdIHsgODMzMDQsIC0xIH07CiAJCX0K
+QEAgLTE2NTMsNiArMTY2MSw0MCBAQCBwdWJsaWMgY2xhc3MgQVNUTW9kZWxCcmlkZ2VUZXN0cyBl
+eHRlbmRzIEFic3RyYWN0QVNUVGVzdHMgewogCX0KIAogCS8qCisJICogaHR0cHM6Ly9idWdzLmVj
+bGlwc2Uub3JnL2J1Z3Mvc2hvd19idWcuY2dpP2lkPTM2ODY0NgorCSAqLworCXB1YmxpYyB2b2lk
+IHRlc3RMb2NhbFZhcmlhYmxlNygpIHRocm93cyBKYXZhTW9kZWxFeGNlcHRpb24geworCQlmaW5h
+bCBTdHJpbmcgc291cmNlID0gInB1YmxpYyBjbGFzcyBYIHtcbiIgKyAKKwkJCQkiCXB1YmxpYyB2
+b2lkIG0oU3RyaW5nIHN0clgpIHtcbiIgKyAKKwkJCQkiCQlTdHJpbmcgc3RyQiA9IHN0clg7XG4i
+ICsgCisJCQkJIgl9XG4iICsgCisJCQkJIn0iOworCQlBU1ROb2RlIG5vZGUgPSBidWlsZEFTVChz
+b3VyY2UpOworCQlmaW5hbCBib29sZWFuW10gY2hlY2tlZCA9IG5ldyBib29sZWFuWzFdOworCQlu
+b2RlLmFjY2VwdChuZXcgQVNUVmlzaXRvcigpIHsKKwkJCXB1YmxpYyBib29sZWFuIHZpc2l0KFZh
+cmlhYmxlRGVjbGFyYXRpb25GcmFnbWVudCBmcmFnbWVudCkgeworCQkJCWZpbmFsIElWYXJpYWJs
+ZUJpbmRpbmcgYmluZGluZyA9IGZyYWdtZW50LnJlc29sdmVCaW5kaW5nKCk7CisJCQkJZmluYWwg
+SUphdmFFbGVtZW50IGphdmFFbGVtZW50ID0gYmluZGluZy5nZXRKYXZhRWxlbWVudCgpOworCQkJ
+CWFzc2VydE5vdE51bGwoIk5vIGphdmEgZWxlbWVudCIsIGphdmFFbGVtZW50KTsKKwkJCQlmaW5h
+bCBpbnQgdHlwZSA9IGphdmFFbGVtZW50LmdldEVsZW1lbnRUeXBlKCk7CisJCQkJYXNzZXJ0RXF1
+YWxzKCJXcm9uZyB0eXBlIiwgSUphdmFFbGVtZW50LkxPQ0FMX1ZBUklBQkxFLCB0eXBlKTsKKwkJ
+CQlJTG9jYWxWYXJpYWJsZSB2YXJpYWJsZSA9IChJTG9jYWxWYXJpYWJsZSkgamF2YUVsZW1lbnQ7
+CisJCQkJSVNvdXJjZVJhbmdlIHJhbmdlID0gdmFyaWFibGUuZ2V0TmFtZVJhbmdlKCk7CisJCQkJ
+Y2hlY2tTb3VyY2VSYW5nZShyYW5nZS5nZXRPZmZzZXQoKSwgcmFuZ2UuZ2V0TGVuZ3RoKCksICJz
+dHJCIiwgc291cmNlKTsKKwkJCQl0cnkgeworCQkJCQlyYW5nZSA9IHZhcmlhYmxlLmdldFNvdXJj
+ZVJhbmdlKCk7CisJCQkJCWNoZWNrU291cmNlUmFuZ2UocmFuZ2UuZ2V0T2Zmc2V0KCksIHJhbmdl
+LmdldExlbmd0aCgpLCAiU3RyaW5nIHN0ckIgPSBzdHJYOyIsIHNvdXJjZSk7CisJCQkJfSBjYXRj
+aChKYXZhTW9kZWxFeGNlcHRpb24gZSkgeworCQkJCQlhc3NlcnRUcnVlKCJmYWlsZWQgdG8gcmV0
+cmlldmUgdGhlIHNvdXJjZSByYW5nZSIsIGZhbHNlKTsKKwkJCQl9CisJCQkJY2hlY2tlZFswXSA9
+IHRydWU7CisJCQkJcmV0dXJuIHRydWU7CisJCQl9CisJCX0pOworCQlhc3NlcnRUcnVlKCJOb3Qg
+Y2hlY2tlZCIsIGNoZWNrZWRbMF0pOworCX0KKworCS8qCiAJICogRW5zdXJlcyB0aGF0IHRoZSBJ
+SmF2YUVsZW1lbnQgb2YgYW4gSUJpbmRpbmcgcmVwcmVzZW50aW5nIGEgbWVtYmVyIHR5cGUgaXMg
+Y29ycmVjdC4KIAkgKi8KIAlwdWJsaWMgdm9pZCB0ZXN0TWVtYmVyVHlwZSgpIHRocm93cyBKYXZh
+TW9kZWxFeGNlcHRpb24gewpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvZG9tL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL2RvbS9WYXJpYWJsZUJpbmRpbmcuamF2YSBiL29yZy5lY2xpcHNl
+LmpkdC5jb3JlL2RvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vVmFyaWFibGVCaW5kaW5nLmph
+dmEKaW5kZXggNTJjMzM4Yi4uYzg3NzkwMCAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNv
+cmUvZG9tL29yZy9lY2xpcHNlL2pkdC9jb3JlL2RvbS9WYXJpYWJsZUJpbmRpbmcuamF2YQorKysg
+Yi9vcmcuZWNsaXBzZS5qZHQuY29yZS9kb20vb3JnL2VjbGlwc2UvamR0L2NvcmUvZG9tL1Zhcmlh
+YmxlQmluZGluZy5qYXZhCkBAIC0xLDUgKzEsNSBAQAogLyoqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioK
+LSAqIENvcHlyaWdodCAoYykgMjAwMCwgMjAxMCBJQk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy4K
+KyAqIENvcHlyaWdodCAoYykgMjAwMCwgMjAxMiBJQk0gQ29ycG9yYXRpb24gYW5kIG90aGVycy4K
+ICAqIEFsbCByaWdodHMgcmVzZXJ2ZWQuIFRoaXMgcHJvZ3JhbSBhbmQgdGhlIGFjY29tcGFueWlu
+ZyBtYXRlcmlhbHMKICAqIGFyZSBtYWRlIGF2YWlsYWJsZSB1bmRlciB0aGUgdGVybXMgb2YgdGhl
+IEVjbGlwc2UgUHVibGljIExpY2Vuc2UgdjEuMAogICogd2hpY2ggYWNjb21wYW5pZXMgdGhpcyBk
+aXN0cmlidXRpb24sIGFuZCBpcyBhdmFpbGFibGUgYXQKQEAgLTI0MSw4ICsyNDEsOSBAQCBjbGFz
+cyBWYXJpYWJsZUJpbmRpbmcgaW1wbGVtZW50cyBJVmFyaWFibGVCaW5kaW5nIHsKIAkJaWYgKCFk
+ZWZhdWx0QmluZGluZ1Jlc29sdmVyLmZyb21KYXZhUHJvamVjdCkgcmV0dXJuIG51bGw7CiAJCVZh
+cmlhYmxlRGVjbGFyYXRpb24gbG9jYWxWYXIgPSAoVmFyaWFibGVEZWNsYXJhdGlvbikgZGVmYXVs
+dEJpbmRpbmdSZXNvbHZlci5iaW5kaW5nc1RvQXN0Tm9kZXMuZ2V0KHRoaXMpOwogCQlpZiAobG9j
+YWxWYXIgPT0gbnVsbCkgcmV0dXJuIG51bGw7Ci0JCWludCBuYW1lU3RhcnQ7Ci0JCWludCBuYW1l
+TGVuZ3RoOworCQlTaW1wbGVOYW1lIGxvY2FsTmFtZSA9IGxvY2FsVmFyLmdldE5hbWUoKTsKKwkJ
+aW50IG5hbWVTdGFydCA9IGxvY2FsTmFtZS5nZXRTdGFydFBvc2l0aW9uKCk7CisJCWludCBuYW1l
+TGVuZ3RoID0gbG9jYWxOYW1lLmdldExlbmd0aCgpOwogCQlpbnQgc291cmNlU3RhcnQ7CiAJCWlu
+dCBzb3VyY2VMZW5ndGg7CiAJCWludCBtb2RpZmllcnMgPSAwOwpAQCAtMjUwLDEzICsyNTEsOCBA
+QCBjbGFzcyBWYXJpYWJsZUJpbmRpbmcgaW1wbGVtZW50cyBJVmFyaWFibGVCaW5kaW5nIHsKIAkJ
+CXNvdXJjZVN0YXJ0ID0gbG9jYWxWYXIuZ2V0U3RhcnRQb3NpdGlvbigpOwogCQkJc291cmNlTGVu
+Z3RoID0gbG9jYWxWYXIuZ2V0TGVuZ3RoKCk7CiAJCQlmaW5hbCBTaW5nbGVWYXJpYWJsZURlY2xh
+cmF0aW9uIHNpbmdsZVZhcmlhYmxlRGVjbGFyYXRpb24gPSAoU2luZ2xlVmFyaWFibGVEZWNsYXJh
+dGlvbikgbG9jYWxWYXI7Ci0JCQlTaW1wbGVOYW1lIHNpbXBsZU5hbWUgPSBzaW5nbGVWYXJpYWJs
+ZURlY2xhcmF0aW9uLmdldE5hbWUoKTsKLQkJCW5hbWVTdGFydCA9IHNpbXBsZU5hbWUuZ2V0U3Rh
+cnRQb3NpdGlvbigpOwotCQkJbmFtZUxlbmd0aCA9IHNpbXBsZU5hbWUuZ2V0TGVuZ3RoKCk7CiAJ
+CQltb2RpZmllcnMgPSBzaW5nbGVWYXJpYWJsZURlY2xhcmF0aW9uLmdldE1vZGlmaWVycygpOwog
+CQl9IGVsc2UgewotCQkJbmFtZVN0YXJ0ID0gIGxvY2FsVmFyLmdldFN0YXJ0UG9zaXRpb24oKTsK
+LQkJCW5hbWVMZW5ndGggPSBsb2NhbFZhci5nZXRMZW5ndGgoKTsKIAkJCUFTVE5vZGUgbm9kZSA9
+IGxvY2FsVmFyLmdldFBhcmVudCgpOwogCQkJc291cmNlU3RhcnQgPSBub2RlLmdldFN0YXJ0UG9z
+aXRpb24oKTsKIAkJCXNvdXJjZUxlbmd0aCA9IG5vZGUuZ2V0TGVuZ3RoKCk7CkBAIC0zMDIsNyAr
+Mjk4LDcgQEAgY2xhc3MgVmFyaWFibGVCaW5kaW5nIGltcGxlbWVudHMgSVZhcmlhYmxlQmluZGlu
+ZyB7CiAJCWlmIChwYXJlbnQgPT0gbnVsbCkgcmV0dXJuIG51bGw7CiAJCXJldHVybiBuZXcgTG9j
+YWxWYXJpYWJsZSgKIAkJCQlwYXJlbnQsCi0JCQkJbG9jYWxWYXIuZ2V0TmFtZSgpLmdldElkZW50
+aWZpZXIoKSwKKwkJCQlsb2NhbE5hbWUuZ2V0SWRlbnRpZmllcigpLAogCQkJCXNvdXJjZVN0YXJ0
+LAogCQkJCXNvdXJjZUVuZCwKIAkJCQluYW1lU3RhcnQsCg==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

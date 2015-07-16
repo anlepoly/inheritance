@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>450490</bug_id>
+          
+          <creation_ts>2014-11-07 06:25:00 -0500</creation_ts>
+          <short_desc>Thread safety of OpenableElementInfo</short_desc>
+          <delta_ts>2015-03-18 04:40:52 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/36126</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M6</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Vladimir Piskarev">pisv</reporter>
+          <assigned_to name="Vladimir Piskarev">pisv</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="63745"
+          type_id="1"
+          status="+"
+          setter="jarthana"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2478694</commentid>
+    <comment_count>0</comment_count>
+    <who name="Vladimir Piskarev">pisv</who>
+    <bug_when>2014-11-07 06:25:50 -0500</bug_when>
+    <thetext>Here&apos;s another finding from Handly (see bug 441430). It may apply to JDT too.
+
+It is entirely possible for getChildren() to be called in one thread while addChild/removeChild is being executed in another, in which case the getChildren might be &quot;spying&quot; on the optimized execution of addChild/removeChild and it is possible for it to return a &apos;surprising&apos; value due to reordering.
+
+Since it is known that only one thread can change the children field, but many other threads are allowed to read it at any time, declaring this field as volatile can be sufficient to attain the desired thread safety guarantees.
+
+Will push the proposed patch to Gerrit soon.
+
+Best Regards,
+Vladimir</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2478708</commentid>
+    <comment_count>1</comment_count>
+    <who name="Vladimir Piskarev">pisv</who>
+    <bug_when>2014-11-07 06:47:18 -0500</bug_when>
+    <thetext>Pushed to Gerrit: https://git.eclipse.org/r/#/c/36126/
+
+Please review.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2516289</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-09 23:29:43 -0500</bug_when>
+    <thetext>Thanks for the patch, Vladimir! Sorry it took me a while to get to this.
+
+I was just wondering if there is a chance of two threads actually calling addChild or removeChild. I was just looking at the call to DeltaProcessor#updateJavaModel in the finally block of JavaModelManager#run(). Let me know if I am missing something.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2516374</commentid>
+    <comment_count>3</comment_count>
+    <who name="Vladimir Piskarev">pisv</who>
+    <bug_when>2015-02-10 04:22:15 -0500</bug_when>
+    <thetext>Hi Jay,
+
+Thanks for looking into it.
+
+Here&apos;s my current understanding of the matter (please correct me if I&apos;m mistaken):
+
+* Calls to addChild/removeChild are effectively synchronized at a higher level
+(either by the workspace lock held during resource change notification
+or by the scheduling rule of JavaModelOperation)
+
+* However, there is no gurantee that getChildren cannot be called
+simultaneously with addChild/removeChild (it is perfectly legal to call
+getChildren at any time), so it may return a &apos;surprising&apos; (e.g. not completely
+initialized) result on certain processor architectures due to reordering.
+
+* This implies that declaring the children field as volatile is necessary
+and sufficient to ensure thread safety of OpenableElementInfo provided
+you are running on J2SE-1.5 or later.
+
+(as far as I can see)
+
+Regards,
+Vladimir</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2517648</commentid>
+    <comment_count>4</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-12 01:37:43 -0500</bug_when>
+    <thetext>(In reply to Jay Arthanareeswaran from comment #2)
+&gt; Thanks for the patch, Vladimir! Sorry it took me a while to get to this.
+&gt; 
+&gt; I was just wondering if there is a chance of two threads actually calling
+&gt; addChild or removeChild. I was just looking at the call to
+&gt; DeltaProcessor#updateJavaModel in the finally block of
+&gt; JavaModelManager#run(). Let me know if I am missing something.
+
+I couldn&apos;t force this path. In the closest I could get, the deltas are flushed and this never gets executed.
+
+The patch looks good to me.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518482</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-02-13 05:32:42 -0500</bug_when>
+    <thetext>Pushed in master:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=a9567e58ade978b67e4f2db4ee5fe35bc3c0d3fe
+
+Thanks Vladimir!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2533423</commentid>
+    <comment_count>6</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2015-03-18 04:40:52 -0400</bug_when>
+    <thetext>Verified for Eclipse Mars 4.5 M6 Build id: I20150317-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>438469</bug_id>
+          
+          <creation_ts>2014-06-28 19:35:00 -0400</creation_ts>
+          <short_desc>[null] How-to use null type annotations with generic methods from interfaces in some library you only have as binary JAR?</short_desc>
+          <delta_ts>2014-08-05 23:48:17 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>DUPLICATE</resolution>
+          <dup_id>438467</dup_id>
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M1</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Michael Vorburger">mike</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>manpalat</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2421879</commentid>
+    <comment_count>0</comment_count>
+    <who name="Michael Vorburger">mike</who>
+    <bug_when>2014-06-28 19:35:12 -0400</bug_when>
+    <thetext>// Imagine this is in some library you only have as binary JAR (cannot modify src)
+interface ITest {
+	&lt;T&gt; T foo(T arg); // or arg Class&lt;T&gt; or TypeToken&lt;T&gt; + return TypeAdapter&lt;T&gt;, etc.
+}
+
+// This however is your code (src), in a project with null type annotations 
+class Test implements ITest {
+	@Override
+	public &lt;T&gt; T foo(T arg) {
+		return null;
+	}
+}
+
+leads to &quot;Null type mismatch (type annotations): &apos;null&apos; is not compatible to the free type variable &apos;T&apos;&quot;.  In this case you cannot use @Nullable in Test&apos;s foo(), because that would lead to &quot;The method @Nullable T foo(T) from Test cannot implement the corresponding method from ITest due to incompatible nullness constraints&quot;... assuming one cannot change ITest, how do you solve this? 
+
+I have read http://help.eclipse.org/luna/index.jsp?topic=%2Forg.eclipse.jdt.doc.user%2Ftasks%2Ftask-using_null_type_annotations.htm and (roughly..) understand what&apos;s going on here technically. The point of the issue is to raise that, unless there is a trick that I&apos;m missing, it&apos;s effectively not (yet, pending bug 331651 ?) possible to enable use of null type annotations in projects with code that overrides generic methods from interfaces in some library you only have as binary JAR?
+
+If my understanding is correct, this problem is particular to generic methods, because in the following slightly different example, note that here the interface not the method is generic-ified, you&apos;re OK:
+
+// This is in some library you only have as binary JAR
+public interface ITest2&lt;T&gt; {
+	/* NOT &lt;T&gt; */ T foo(T arg); // or arg Class&lt;T&gt; or TypeToken&lt;T&gt; + return TypeAdapter&lt;T&gt;, etc.
+}
+
+// This works - no worries:
+public class Test2&lt;@Nullable T&gt; implements ITest2&lt;T&gt; {
+	@Override
+	public T foo(T arg) {
+		return null;
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2424708</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-05 08:54:50 -0400</bug_when>
+    <thetext>From a quick glance I see a chance that bug 438458 can help, hence marking as a bug dependency</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2430052</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-22 04:29:16 -0400</bug_when>
+    <thetext>After playing with this all I can say is: your analysis is correct, this is a problem specific to generic methods that return a value of the parameter type.
+
+By declaring 
+
+   &lt;T&gt; T foo(T arg);
+
+this API promises: for whatever type you choose for T, foo will return a value of that type. T is not constrained in any way, so this includes the option to choose a @NonNull type for T.
+
+Clients may expect things like this to work:
+
+   void test(ITest i) {
+      @NonNull String s = i.foo(&quot;OK&quot;);
+   }
+
+Any implementation that returns null is not compatible to that contract.
+
+In the case of a generic interface, the implementor can modify the contract by constraining the type parameter. Such a means does not exist for generic methods.
+
+Sorry to say: all we can do is to address bug 331651, so you can mark in ITest that null return is legal. Otherwise the contract must be fulfilled by avoiding null returns.
+
+
+BTW: I&apos;d like to encourage you to reverse your thinking about null: in Java null is always legal and we are trying to restrict this by whatever means. Going forward I believe you&apos;re better off by considering null as generally illegal - UNLESS you have specific license by way of an explicit @Nullable annotation. In that light not being allowed to return null is the rule, not a bug.
+
+
+Still one tiny change that I&apos;m planning to make: ensure that @SuppressWarnings(&quot;null&quot;) can be used to suppress this problem. You&apos;d need to either:
+- enable &quot;[x] Suppress optional errors with &apos;@SuppressWarnings&apos;&quot;, or
+- downgrade &quot;Violation of null specification&quot; to warning (not recommended)
+
+In either case, use with caution! :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2430388</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-22 12:03:44 -0400</bug_when>
+    <thetext>As of http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=61133b8c5e6da454f7cea747a5c83744e4b067c9 the problem in this bug can now be suppressed using @SuppressWarnings(&quot;null&quot;).
+
+That&apos;s all we can do here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2434052</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-07-31 04:53:40 -0400</bug_when>
+    <thetext>Changing bug dependency to duplication, because no additional change was made for this bug.
+
+*** This bug has been marked as a duplicate of bug 438467 ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2436029</commentid>
+    <comment_count>5</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-08-05 23:48:17 -0400</bug_when>
+    <thetext>Verified duplicate in Eclipse Mars 4.5 M1 Build id: I20140804-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

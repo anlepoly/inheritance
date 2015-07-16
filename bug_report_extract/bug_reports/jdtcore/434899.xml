@@ -1,0 +1,360 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>434899</bug_id>
+          
+          <creation_ts>2014-05-14 16:25:00 -0400</creation_ts>
+          <short_desc>[1.8][null] Java 1.8 null annotations still cause &apos;Contradictory null annotations&apos; error</short_desc>
+          <delta_ts>2014-05-26 05:42:47 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 RC2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Tom van den Berge">tom.vandenberge</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="62437"
+          type_id="1"
+          status="+"
+          setter="jarthana"
+    />
+    <flag name="review"
+          id="62452"
+          type_id="1"
+          status="+"
+          setter="manpalat"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2401895</commentid>
+    <comment_count>0</comment_count>
+    <who name="Tom van den Berge">tom.vandenberge</who>
+    <bug_when>2014-05-14 16:25:05 -0400</bug_when>
+    <thetext>I&apos;m using 4.4M7, and null annotations. After https://bugs.eclipse.org/bugs/show_bug.cgi?id=432223 has been fixed, I&apos;m still getting compiler errors on a slightly different use case:
+
+public class Assert {
+	public static void caller() {
+		assertNotNull(&quot;not null&quot;);	// Compiler error
+		assertNotNull(null);		// Compiler error
+	}
+	private static @NonNull &lt;T&gt; T assertNotNull(@Nullable T object) {
+		return object;
+	}
+}
+
+The two assertNotNull invocations both give the error 
+
+Contradictory null annotations: method was inferred as &apos;@NonNull @Nullable Object assertNotNull(@Nullable Object)&apos;, but only one of &apos;@NonNull&apos; and &apos;@Nullable&apos; can be effective at any location</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2401964</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-14 19:00:24 -0400</bug_when>
+    <thetext>At a cursory look I can see that the problem disappears as soon as you assign the result of assertNonNull() to a variable.
+
+The point is: by ignoring the return, all that is left to analyse by the inference is the &apos;@Nullable T&apos; parameter. With this input and no other participant vetoing we infer &apos;T&apos; to be @Nullable. Hence applying @NonNull to this type seems to create a contradiction.
+
+Two possible solutions:
+
+(1) Even if the return does not produce any constraints for inference, we still may want to feed the @NonNull hint into inference to prevent the @Nullable hint from winning: with contradictory *hints* we refrain from inferring any nullness of &apos;T&apos; itself -&gt; no real contradiction created.
+
+(2) Just ignore the inferred contradiction on a return type if the return is unused.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2402482</commentid>
+    <comment_count>2</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-05-15 14:29:05 -0400</bug_when>
+    <thetext>Perhaps there should only be a single annotation (internally): a repeatable @Nullable(boolean). Then each level of indirection types could check against the outermost annotation only and @Nullable(true) @Nullable(false) T and @Nullable(false) @Nullable(true) T would be a valid types. The former would mean &quot;a T that could be made null but wasn&apos;t null&quot; and the latter mean &quot;a T that can&apos;t be made null but could have already been null&quot;.
+
+Motivation: this should be possible:
+
+public class Snippet {
+	static &lt;T&gt; T validate(@Nullable T value, T defaultValue) {
+		return value != null ? value : defaultValue;
+	}
+	static String test1(@Nullable String t1, @NonNull String t2) {
+		@Nullable String s1 = validate(t1, null);
+		@Nullable String s2 = validate(t2, null);
+		@NonNull String s3 = validate(t1, &quot;N/A&quot;);
+		@NonNull String s4 = validate(t2, &quot;N/A&quot;);
+		return &quot;[&quot; + s1 + &quot; &quot; + s2 + &quot; &quot; + s3 + &quot; &quot; + s4 + &quot;]&quot;;
+	}
+	static String test2(@Nullable String t1, @NonNull String t2) {
+		@Nullable String s1 = validate(t1, t1);
+		@Nullable String s2 = validate(t2, t1);
+		@NonNull String s3 = validate(t1, t2);
+		@NonNull String s4 = validate(t2, t2);
+		return &quot;[&quot; + s1 + &quot; &quot; + s2 + &quot; &quot; + s3 + &quot; &quot; + s4 + &quot;]&quot;;
+	}
+	public static void main(String[] args) {
+		System.out.println(&quot;test 1 &quot; + test1(&quot;s_1&quot;, &quot;s_2&quot;));
+		System.out.println(&quot;test 2 &quot; + test2(&quot;s_1&quot;, &quot;s_2&quot;));
+		System.out.println(&quot;test 1 &quot; + test1(null, &quot;s_2&quot;));
+		System.out.println(&quot;test 2 &quot; + test2(null, &quot;s_2&quot;));
+	}
+}
+
+I&apos;ll note that the latest Checker Framework doesn&apos;t get this example right either :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2402528</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-15 15:50:21 -0400</bug_when>
+    <thetext>The main focus of null type annotations is being explicit about nullness.
+
+Using a few hints here and there to infer null type annotations during type inference is a special bonus brought to you by JDT.
+
+I&apos;m aware that this bonus feature isn&apos;t yet perfect. The thing that needs fixing ASAP is: preventing compile failure due to this inference.
+
+Situations where null type annotation inference is shyer than necessary are not a high priority (yet).
+
+BTW: In terms of self-explaining code I&apos;d actually recommend to split your method validate into two, because it&apos;s not trivial to see, what exactly it&apos;s guarantees should be.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2402562</commentid>
+    <comment_count>4</comment_count>
+    <who name="Timo Kinnunen">timo.kinnunen</who>
+    <bug_when>2014-05-15 18:00:36 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+&gt; BTW: In terms of self-explaining code I&apos;d actually recommend to split your
+&gt; method validate into two, because it&apos;s not trivial to see, what exactly it&apos;s
+&gt; guarantees should be.
+
+Oh come on :) It&apos;s about the simplest method possible and what it does in terms of types is easy to explain as well: it peels away one layer of @Nullable. But OK, how about this:
+
+	public static &lt;T&gt; T validate(@Nullable T value, T defaultValue) { return internalValidate(value, defaultValue); }
+	static &lt;T&gt; T internalValidate(@Nullable T value, T defaultValue) { return value != null ? value : defaultValue; }
+
+Now there&apos;s a warning about a free type variable T. Or how about this addition, which I think should create an arbitrary length @Nullable @Nullable @Nullable [...] T:
+
+	static &lt;T&gt; T validateN(@Nullable T value, T defaultValue, int levels) { return validate(levels &gt; 0 ? validateN(value, null, levels - 1) : value, defaultValue); }
+
+It very much feels like @Nullable @Nullable @NonNull T should be a valid intermediate type or at least there should be a conversion between @Nullable T and @Nullable @NonNull T to make the types fit when needed.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2402563</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-15 18:10:28 -0400</bug_when>
+    <thetext>(In reply to Timo Kinnunen from comment #4)
+&gt; It very much feels like @Nullable @Nullable @NonNull T should be a valid
+&gt; intermediate type or at least there should be a conversion between @Nullable
+&gt; T and @Nullable @NonNull T to make the types fit when needed.
+
+Sorry, I have no idea what you are talking about :)
+
+OK, back to facts: each type can only have one of @NonNull or @Nullable (just like: null is either legal or illegal). Everything else is fiction ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2403459</commentid>
+    <comment_count>6</comment_count>
+    <who name="Tom van den Berge">tom.vandenberge</who>
+    <bug_when>2014-05-19 04:01:56 -0400</bug_when>
+    <thetext>I noticed that the target milestone is set to 4.5. If I understand it correctly, this is going to be released in June 1015? Does this mean that I should not expect a fix for this bug within a year? That would be extremely disappointing.
+
+This bug is one of the reasons that most of my projects don&apos;t compile when I upgrade them from Java 7 to 8. I&apos;m heavily using non-null annotations, so this would mean that I can&apos;t use Java 8 for at least another year, which would be quite unacceptable if you ask me.
+
+I really hope you can find a way to fix this bug in 4.3 or 4.4.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2403531</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-19 05:22:08 -0400</bug_when>
+    <thetext>I&apos;d like to fix this ASAP, too.
+
+Some dealines have already passed with more urgent stuff haven priority. 4.3 is EOL, 1015 has passed, too :)
+
+I&apos;ll make a quick go at a group of 2-3 bugs in this area tonight (I&apos;ll look up the other(s) soon).
+
+Jay, this is a follow-up of the recent changes in null analysis for type variables. I&apos;ll try to come up with a patch, under the general disclaimer, that everything is under the guard of the null annotation option.
+
+To avoid confusion with later discussion in this bug: sole basis for a potential fix is the analysis in comment 1.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2404199</commentid>
+    <comment_count>8</comment_count>
+      <attachid>243294</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-20 09:35:07 -0400</bug_when>
+    <thetext>Created attachment 243294
+proposed patch
+
+This patch implements the strategy (1) from comment 1:
+
+We only have to &apos;touch&apos; the return type &quot;@NonNull T&quot; to add another nullHint to the InferenceVariable corresponding to &lt;T&gt; (&quot;T#0&quot;). Now we have contradictory nullHints (from argument &amp; return) which lets inference refrain from guessing any null annotations for the naked &apos;T&apos;.
+
+This is implemented by invoking inference variable substitution on the return type. While visiting the type &quot;@NonNull T&quot; and its substitution &quot;T#0&quot;, we record the desired nullHint.
+
+This was missing only for standalone contexts, other contexts will visit the return type anyway during inference.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2404203</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-20 09:36:08 -0400</bug_when>
+    <thetext>Full test suite is currently running, but patch should already be ready for review. Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2404377</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-20 12:22:21 -0400</bug_when>
+    <thetext>RunJDTCoreTests was green including this patch.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2404410</commentid>
+    <comment_count>11</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-05-20 12:58:07 -0400</bug_when>
+    <thetext>Patch looks good. Was a feeling a bit delusional about the testcase in comment #2, but in the end, looks alright to me.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2404584</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-05-20 17:32:31 -0400</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #11)
+&gt; Patch looks good.
+
+Thanks.
+
+&gt; Was a feeling a bit delusional about the testcase in
+&gt; comment #2, but in the end, looks alright to me.
+
+Yea, there&apos;s a bit a of wishful thinking in that comment.
+For now I focussed on not producing wrong result.
+Always finding optimal solutions remains as an exercise for the reader :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2404603</commentid>
+    <comment_count>13</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-05-20 20:37:26 -0400</bug_when>
+    <thetext>patch looks good.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2405099</commentid>
+    <comment_count>14</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-05-21 13:56:21 -0400</bug_when>
+    <thetext>Stephan, In my eagerness to see the bug count go down, I have gone ahead and released this one :)
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=b3e17a909a1b31bd9a62f4bc41b8e8da13b23038</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2406974</commentid>
+    <comment_count>15</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-05-26 05:42:47 -0400</bug_when>
+    <thetext>Verified for 4.4 RC2 with build I20140524-1500</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>243294</attachid>
+            <date>2014-05-20 09:35:00 -0400</date>
+            <delta_ts>2014-05-20 09:35:07 -0400</delta_ts>
+            <desc>proposed patch</desc>
+            <filename>Bug-434899--18null-Java-18-null-annotations-still-ca.patch</filename>
+            <type>text/plain</type>
+            <size>3370</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5ub3Rh
+dGlvblRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5u
+b3RhdGlvblRlc3QuamF2YQppbmRleCBkYzdhYmQ2Li5iMDRjYTI0IDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsVHlwZUFubm90YXRpb25UZXN0LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbFR5cGVBbm5vdGF0aW9uVGVzdC5q
+YXZhCkBAIC0zNzc3LDYgKzM3NzcsNTEgQEAKIAkJCWdldENvbXBpbGVyT3B0aW9ucygpLAogCQkJ
+IiIpOwogCX0KKwkvLyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvNDM0ODk5CisJcHVibGljIHZv
+aWQgdGVzdFR5cGVWYXJpYWJsZTYoKSB7CisJCXJ1bk5lZ2F0aXZlVGVzdFdpdGhMaWJzKAorCQkJ
+bmV3IFN0cmluZ1tdIHsKKwkJCQkiQXNzZXJ0LmphdmEiLAorCQkJCSJpbXBvcnQgb3JnLmVjbGlw
+c2UuamR0LmFubm90YXRpb24uKjtcbiIgKworCQkJCSJwdWJsaWMgY2xhc3MgQXNzZXJ0IHtcbiIg
+KyAKKwkJCQkiCXB1YmxpYyBzdGF0aWMgdm9pZCBjYWxsZXIoKSB7XG4iICsgCisJCQkJIgkJYXNz
+ZXJ0Tm90TnVsbChcIm5vdCBudWxsXCIpOwkvLyBDb21waWxlciBlcnJvclxuIiArIAorCQkJCSIJ
+CWFzc2VydE5vdE51bGwobnVsbCk7CQkvLyBDb21waWxlciBlcnJvclxuIiArIAorCQkJCSIJfVxu
+IiArIAorCQkJCSIJcHJpdmF0ZSBzdGF0aWMgQE5vbk51bGwgPFQ+IFQgYXNzZXJ0Tm90TnVsbChA
+TnVsbGFibGUgVCBvYmplY3QpIHtcbiIgKyAKKwkJCQkiCQlyZXR1cm4gb2JqZWN0OyAvLyB0aGlz
+IElTIGJvZ3VzXG4iICsgCisJCQkJIgl9XG4iICsgCisJCQkJIn1cbiIKKwkJCX0sCisJCQlnZXRD
+b21waWxlck9wdGlvbnMoKSwKKwkJCSItLS0tLS0tLS0tXG4iICsgCisJCQkiMS4gRVJST1IgaW4g
+QXNzZXJ0LmphdmEgKGF0IGxpbmUgOClcbiIgKyAKKwkJCSIJcmV0dXJuIG9iamVjdDsgLy8gdGhp
+cyBJUyBib2d1c1xuIiArIAorCQkJIgkgICAgICAgXl5eXl5eXG4iICsgCisJCQkiTnVsbCB0eXBl
+IG1pc21hdGNoICh0eXBlIGFubm90YXRpb25zKTogcmVxdWlyZWQgXCdATm9uTnVsbCBUXCcgYnV0
+IHRoaXMgZXhwcmVzc2lvbiBoYXMgdHlwZSBcJ0BOdWxsYWJsZSBUXCdcbiIgKyAKKwkJCSItLS0t
+LS0tLS0tXG4iKTsKKwl9CisJLy8gaHR0cHM6Ly9idWdzLmVjbGlwc2Uub3JnLzQzNDg5OSAtIHZh
+cmlhbnQgd2hpY2ggaGFzIGFsd2F5cyB3b3JrZWQKKwlwdWJsaWMgdm9pZCB0ZXN0VHlwZVZhcmlh
+YmxlNmEoKSB7CisJCXJ1bkNvbmZvcm1UZXN0V2l0aExpYnMoCisJCQluZXcgU3RyaW5nW10gewor
+CQkJCSJBc3NlcnQuamF2YSIsCisJCQkJImltcG9ydCBvcmcuZWNsaXBzZS5qZHQuYW5ub3RhdGlv
+bi4qO1xuIiArCisJCQkJInB1YmxpYyBjbGFzcyBBc3NlcnQge1xuIiArIAorCQkJCSIJcHVibGlj
+IHN0YXRpYyBPYmplY3QgY2FsbGVyKCkge1xuIiArIAorCQkJCSIJCUBOb25OdWxsIE9iamVjdCBy
+ZXN1bHQgPSBhc3NlcnROb3ROdWxsKFwibm90IG51bGxcIik7XG4iICsgCisJCQkJIgkJcmVzdWx0
+ID0gYXNzZXJ0Tm90TnVsbChudWxsKTtcbiIgKworCQkJCSIJCXJldHVybiByZXN1bHQ7XG4iICsg
+CisJCQkJIgl9XG4iICsgCisJCQkJIglwcml2YXRlIHN0YXRpYyBATm9uTnVsbCA8VD4gVCBhc3Nl
+cnROb3ROdWxsKEBOdWxsYWJsZSBUIG9iamVjdCkge1xuIiArCisJCQkJIgkJaWYgKG9iamVjdCA9
+PSBudWxsKSB0aHJvdyBuZXcgTnVsbFBvaW50ZXJFeGNlcHRpb24oKTtcbiIgKyAKKwkJCQkiCQly
+ZXR1cm4gb2JqZWN0O1xuIiArIAorCQkJCSIJfVxuIiArIAorCQkJCSJ9XG4iCisJCQl9LAorCQkJ
+Z2V0Q29tcGlsZXJPcHRpb25zKCksCisJCQkiIik7CisJfQogCXB1YmxpYyB2b2lkIHRlc3RTRTdB
+bm5vdGF0aW9uQ29weSgpIHsgLy8gd2Ugd2VyZSBkcm9wcGluZyBhbm5vdGF0aW9ucyBoZXJlLCBi
+dXQgbnVsbCBhbmFseXNpcyB3b3JrZWQgYWxyZWFkeSBzaW5jZSB0aGUgdGFnYml0cyB3ZXJlIG5v
+dCAiZHJvcHBlZCIsIGp1c3QgdGhlIHNhbWUgY2FwdHVyaW5nIGluIGEgdGVzdAogCQlydW5OZWdh
+dGl2ZVRlc3RXaXRoTGlicygKIAkJCW5ldyBTdHJpbmdbXSB7CmRpZmYgLS1naXQgYS9vcmcuZWNs
+aXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIv
+bG9va3VwL0luZmVyZW5jZUNvbnRleHQxOC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29t
+cGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9JbmZlcmVuY2VD
+b250ZXh0MTguamF2YQppbmRleCAyZTZmOGFhLi5iMjhmMDI0IDEwMDY0NAotLS0gYS9vcmcuZWNs
+aXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIv
+bG9va3VwL0luZmVyZW5jZUNvbnRleHQxOC5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3Jl
+L2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvSW5mZXJl
+bmNlQ29udGV4dDE4LmphdmEKQEAgLTM3Myw2ICszNzMsMTAgQEAKIAlwdWJsaWMgQm91bmRTZXQg
+aW5mZXJJbnZvY2F0aW9uVHlwZShCb3VuZFNldCBiMSwgVHlwZUJpbmRpbmcgZXhwZWN0ZWRUeXBl
+LCBJbnZvY2F0aW9uU2l0ZSBpbnZvY2F0aW9uU2l0ZSwgTWV0aG9kQmluZGluZyBtZXRob2QpCiAJ
+CQl0aHJvd3MgSW5mZXJlbmNlRmFpbHVyZUV4Y2VwdGlvbiAKIAl7CisJCS8vIG5vdCBKTFM6IHNp
+bXBseSBlbnN1cmUgdGhhdCBudWxsIGhpbnRzIGZyb20gdGhlIHJldHVybiB0eXBlIGhhdmUgYmVl
+biBzZWVuIGV2ZW4gaW4gc3RhbmRhbG9uZSBjb250ZXh0czoKKwkJaWYgKGV4cGVjdGVkVHlwZSA9
+PSBudWxsICYmIG1ldGhvZC5yZXR1cm5UeXBlICE9IG51bGwpCisJCQlzdWJzdGl0dXRlKG1ldGhv
+ZC5yZXR1cm5UeXBlKTsgLy8gcmVzdWx0IGlzIGlnbm9yZSwgdGhlIG9ubHkgZWZmZWN0IGlzIG9u
+IEluZmVyZW5jZVZhcmlhYmxlLm51bGxIaW50cworCQkvLwogCQlCb3VuZFNldCBwcmV2aW91cyA9
+IHRoaXMuY3VycmVudEJvdW5kcy5jb3B5KCk7CiAJCXRoaXMuY3VycmVudEJvdW5kcyA9IGIxOwog
+CQl0cnkgew==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

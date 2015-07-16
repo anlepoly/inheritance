@@ -1,0 +1,196 @@
+BUG REPORT COMMENTS:
+See the Sun bug http://bugs.sun.com/view_bug.do?bug_id=6182950
+
+In javac 7, two methods are considered duplicates (or a name clash error) regardless of their return types.
+
+This behaviour is now more consistent with javac 1.5, which reported name clash errors on methods and ignored their return types. Only in 1.6 was a change made that included return types when detecting duplicate methods.
+
+We have decided to make this change across all compliance levels (1.5, 1.6, 1.7) in the 3.6 release so users will not be surprised by the change if they compile their code using javac 7.
+Created an attachment (id=146981)
+Proposed patch for code changes
+
+This patch includes the code changes
+
+The test changes will be in another patch
+Created an attachment (id=146982)
+Proposed patch for test changes
+Released in HEAD for 3.6M2
+
+> We have decided to make this change across all compliance levels (1.5, 1.6,
+> 1.7) in the 3.6 release so users will not be surprised by the change if they
+> compile their code using javac 7.
+
+Our test org.eclipse.jdt.ui.tests.core.OverrideTest.test15Bug97027() was surprised by this change for compliance 1.5, but I've fixed that in HEAD.
+Verified for 3.6M2 using I20090914-1800
+
+
+Thanks to Satyam for pointing me out this bug.
+
+As reported on JDT newsgroup, I have a doubt on this issue and I hope someone can clarify me.
+
+Given the two classes:
+
+class Super <T>  {
+  public void set(T arg){}
+}
+
+and
+
+class Sub extends Super <Number> {
+  public int set(Object arg) {
+    return -1;
+  }
+}
+
+Eclipse 3.5, javac 5 and javac 6 compile them, javac7 and Eclipse 3.6 do not, while NetBeans 6.9 gives a red mark on the editor, but compiles the code if you're using any non-experimental Java compiler (that is, 5 or 6...).
+
+In bug:
+http://bugs.sun.com/view_bug.do?bug_id=6182950
+they recall 8.4.8.3 of the Java language specifications and, in short, they say that my example should be rejected by the compiler because the two "set" methods have the same signature erasure. 
+
+However, 8.4.8.3 says that these classes should be accepted because, if I understand 8.4.2 correctly, the signature of set in Sub is a subsignature of the signature of set in Super, because it's the erasure of the signature of set in Super.
+
+I'm not a JLS expert, however I'm confused on this topic. I suspect that fixing Sun bug 6182950 gave this side effect on my specific example.
+
+Moreover there's one thing that is not so clear to me. 8.4.8.3 says that the compile time error should be given if "m1 or some method m1 overrides (directly or indirectly) has the same erasure as m2 or some method m2 overrides (directly or indirectly).". So, they talk about "erasure", not "signature erasure". I tried to make a search on the JLS but I could not find the definition of "method erasure", because they talk about just the signature erasure. So, is the "erasure of a method" the same as the "erasure of the signature of the method"? Because, if it's not, the two methods of my example do NOT have the same signature, because of their different return type. This would be one reason more to accept that code for compilation.
+(In reply to comment #9)
+> Thanks to Satyam for pointing me out this bug.
+> 
+> As reported on JDT newsgroup, I have a doubt on this issue and I hope someone
+> can clarify me.
+> 
+> Given the two classes:
+> 
+> class Super <T>  {
+>   public void set(T arg){}
+> }
+> 
+> and
+> 
+> class Sub extends Super <Number> {
+>   public int set(Object arg) {
+>     return -1;
+>   }
+> }
+
+I believe your example almost directly maps to the example in
+the discussion section of JLS 8.4.8.3 (1st discussion box in
+page 227) and is illegal for the same reasons outlined there.
+
+> However, 8.4.8.3 says that these classes should be accepted because, if I
+> understand 8.4.2 correctly, the signature of set in Sub is a subsignature of
+> the signature of set in Super, because it's the erasure of the signature of set
+> in Super.
+
+Signature of set in Sub is (ignoring return type - return type is
+a part of "method descriptor" and is not a part of "method signature",
+and we are concerned only with the latter hear) 
+
+     set(Object)
+
+Signature of set in Sub's super class is
+
+     set (Number)  (and not set (T) == set (Object))
+
+accounting for the parametrization and so is a not a subsignature of
+set in super class.
+
+> tried to make a search on the JLS but I could not find the definition of
+> "method erasure", because they talk about just the signature erasure. So, is
+> the "erasure of a method" the same as the "erasure of the signature of the
+> method"? 
+
+Yes it is - Hope this helps.
+(In reply to comment #10)
+> Yes it is - Hope this helps.
+
+More or less.
+In your thought, my mistake was to consider set(T) the signature of Sub.set, rather than  set(Number). So, let's name:
+
+Sub.set(Object) = m1
+Sub.set(Number) = m2 (inherited from Super)
+
+So, you say that m2 signature is not a subsignature of m1 signature. Ok. But then, if I apply 8.4.8.3 literally, the compiler should issue an error if all the following sentences are true:
+
+1. m1 and m2 have the same name: TRUE
+2. m2 is accessible from T: TRUE
+3. the signature of m1 is not a subsignature of the signature of m2: TRUE
+4. m1 or some method m1 overrides (directly or indirectly) has the same erasure as m2 or some method m2 overrides (directly or indirectly): FALSE
+
+In fact, if you say that m2 signature is set(Number) in Sub, it's erasure is set(Number). Isn't it? Neither m1 nor m2 override anything. So 4. is false...
+
+Is there anything else I'm missing? Does erasure apply to m2's parameter even if its type is well defined in Sub?
+(In reply to comment #11)
+> (In reply to comment #10)
+> > Yes it is - Hope this helps.
+> 
+> More or less.
+> In your thought, my mistake was to consider set(T) the signature of Sub.set,
+> rather than  set(Number). So, let's name:
+> 
+> Sub.set(Object) = m1
+> Sub.set(Number) = m2 (inherited from Super)
+> 
+> So, you say that m2 signature is not a subsignature of m1 signature. Ok. But
+> then, if I apply 8.4.8.3 literally, the compiler should issue an error if all
+> the following sentences are true:
+
+I agree the wording of this section can be better. It should be clear
+though, from the example I cited from the JLS that, for point 3, we
+need to consider m2 to be set(Number) and for point 4, we should treat
+that as being set(T) (and set(Object) after erasure as would be seen
+in the class file)
+ 
+I'll try to offer a logical reasoning that should hopefully be simpler
+and convincing: For simplicity's sake I'll slightly modify the example
+you have given and take it to be: (Removing the return type difference
+from your original example, as it is not material to the discussion
+below)
+
+public class Super <T>  {
+  public void set(T arg){}
+}
+
+class Sub extends Super <Number> {
+  public void set(Object arg) {
+  }
+}
+
+This program fails to compiles with JDK 5,6,7 as well as with eclipse
+new and old.
+
+That is because, what Sub inherits from its super class is
+set(Number) and Sub's own supplied method is set(Object) and
+this method does not override the method from the super class.
+If Sub had its own implementation of set(Number) that would have
+overridden Super's method.
+
+So there are two set's in Sub: One from the super and another
+from self. But at the class file level both have the same erasure
+and there is no way to distinguish one from the other: Hence the
+"name clash" messages from the compilers.
+
+That established, we can return to your original example. Now
+since the return type is not a part of a method's signature,
+the reasoning in the previous two paragraphs apply as it is
+to the original test case and so it fails to compiler with
+JDK7 and 3.6 (with the change to ignore return type during
+erasure being implemented there)
+
+> In fact, if you say that m2 signature is set(Number) in Sub, it's erasure is
+> set(Number). Isn't it? 
+
+I think you had raised a valid point earlier about method erasure vs
+signature erasure. Since there is only one underlying class file
+irrespective of however many parameterizations there be, the method's
+erasure at the class file level is only set(Object). From the JLS example
+it is clear that this is what is considered for point 4.
+(In reply to comment #12)
+> I agree the wording of this section can be better. It should be clear
+> though, from the example I cited from the JLS that, for point 3, we
+> need to consider m2 to be set(Number) and for point 4, we should treat
+> that as being set(T) (and set(Object) after erasure as would be seen
+> in the class file)
+
+Thank you Srikanth for your help.
+

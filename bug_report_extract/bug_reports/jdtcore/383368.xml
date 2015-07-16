@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>383368</bug_id>
+          
+          <creation_ts>2012-06-23 09:37:00 -0400</creation_ts>
+          <short_desc>[compiler][null] syntactic null analysis for field references</short_desc>
+          <delta_ts>2013-03-12 08:36:13 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>4.3 M5</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>jarthana</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2128330</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-06-23 09:37:37 -0400</bug_when>
+    <thetext>Given the conceptual difficulties of designing a useful and reliable model
+for flow analysis for fields, the following might be a useful compromise:
+
+Do not include fields in proper flow analysis but perform some syntactic
+analysis for the most obvious cases, as mentioned in
+   http://wiki.eclipse.org/JDT_Core/Null_Analysis/Options#Introducing_syntactic_special_cases</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2128334</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-06-23 10:29:05 -0400</bug_when>
+    <thetext>I&apos;ve pushed as commit aab33cf8d696652a4af5115e5fad974bc4bf3de4 [1] in the topic
+branch sherrmann/NullAnnotationsForFields2 an implementation with the 
+following behavior:
+
+
+Syntactic analysis is added for field references in the shape of 
+SingleNameReference, QualifiedNameReference and FieldReference, 
+i.e., we speak about these shapes:
+- f
+- o.f1, o.f1.f2 ...
+- this.f, this.f1.f2 ... (only &quot;this&quot; is allowed as the initial receiver)
+
+A) We record information from the following events:
+- a field is checked against null in &quot;f != null&quot; or &quot;null != f&quot;
+- a field is checked using &quot;instanceof&quot;
+- a field is assigned a non-null value
+Only information about non-null is stored, no algebra applied.
+
+B) This information is stored in FlowContext and expired at these events:
+- after every statement in a block/method/constructor
+- after every method call
+- after every boolean operation except for &quot;&amp;&amp;&quot; and &quot;&amp;&quot;,
+  in binary expressions even after each operand
+- after the &quot;then&quot; statement of an &quot;if&quot; statement
+Info from an assignment to a field survives two expire events, because the
+assignment itself is (typically) a statement.
+(Note to self: should we check for usage of the assignment as an expression?)
+
+C) The following constructs will try to leverage this information:
+- field dereference (Reference.checkNPE(..))
+- determining the null status of a field reference (Reference.nullStatus(..))
+
+When step C) finds info from step A), equivalence of field references is
+checked by comparing the token sequences of both references.
+(Reference.isEquivalent(..)). 
+(Note to self: still need to implement a check to avoid confusing &quot;o.f&quot; with
+&quot;this.o.f&quot; if &quot;o&quot; is a local and &quot;this.o&quot; a field.).
+
+
+This behavior is controlled by a new option, which is disabled by default.
+
+The tests added in this commit show that the implementation covers all
+cases mentioned in bug 331649 comment 20.
+
+By aggressively/rapidly expiring the information, the implementation should
+avoid the dangers brought about by aliasing and side effects.
+However, concurrency could still bypass our analysis and cause NPE in
+programs that the compiler thinks are safe.
+
+Note, that this implementation is only relevant in the context of
+null annotations, since otherwise there are no field-related warnings to
+begin with.
+
+
+[1] http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=sherrmann/NullAnnotationsForFields2&amp;id=aab33cf8d696652a4af5115e5fad974bc4bf3de4</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2128335</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-06-23 10:49:39 -0400</bug_when>
+    <thetext>Implementation notes:
+
+I had to perform one refactoring that bloats the patch:
+add an argument &quot;FlowContext flowContext&quot; to Expression.nullStatus(..).
+For the most part this does nothing, the only consumer is Reference.nullStatus(..)
+
+All new behavior is short-circuited by the new compiler option since all calls
+to FlowContext.addNullCheckedFieldReferences(..) are guarded by checking
+the compiler option. Subsequent calls to expireNullCheckedFieldInfo()
+and isNullcheckedFieldAccess() are nops if nothing has been recorded.
+
+Also the calls to expireNullCheckedFieldInfo() are quite pervasive,
+but that operation is too trivial to have impact on performance :)
+
+
+One tricky part is in ConditionalExpression:
+- we need to expire information after analysing this.valueIfTrue
+- we may need the already expired information when computing the
+  expression&apos;s null status.
+=&gt; solved by precomputing the null status for valueIfTrue before expiring
+
+
+Also methods isEquivalent(Reference) are non-trivial, because we want
+to detect equivalence of reference with/without a &quot;this.&quot; prefix.
+I hope the code comments are sufficient for understanding.
+
+
+Methods in FlowContext are implemented in the intention to have minimal
+impact on object allocation and performance, but I haven&apos;t done any
+measurements against this claim. The idea is that we will typically
+have only a very small number of field references whose null status
+is protected, since information expires fast. So storing the information
+in any derived formats would probably be more overhead than it could 
+potentially help.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2128354</commentid>
+    <comment_count>3</comment_count>
+      <attachid>217784</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-06-23 17:01:23 -0400</bug_when>
+    <thetext>Created attachment 217784
+expose option in the preferences UI
+
+A quick patch for exposing the new option in the compiler preferences UI.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2128438</commentid>
+    <comment_count>4</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-06-25 01:53:19 -0400</bug_when>
+    <thetext>Just for the record, this bug was spawned off of bug 331649 comment 40. It adds more analysis to the null annotations support for fields, but does not implement a  full blown null analysis for fields</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2128440</commentid>
+    <comment_count>5</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-06-25 01:55:07 -0400</bug_when>
+    <thetext>Marking as null beta to indicate availability on the feature patch and not on master</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2205865</commentid>
+    <comment_count>6</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-22 05:34:57 -0500</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; Info from an assignment to a field survives two expire events, because the
+&gt; assignment itself is (typically) a statement.
+&gt; (Note to self: should we check for usage of the assignment as an expression?)
+
+I added a check for this using the bit InsideExpressionStatement.
+New test is test_nullable_field_10d.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2205896</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-22 06:28:51 -0500</bug_when>
+    <thetext>(In reply to comment #1)
+&gt; When step C) finds info from step A), equivalence of field references is
+&gt; checked by comparing the token sequences of both references.
+&gt; (Reference.isEquivalent(..)). 
+&gt; (Note to self: still need to implement a check to avoid confusing &quot;o.f&quot; with
+&gt; &quot;this.o.f&quot; if &quot;o&quot; is a local and &quot;this.o&quot; a field.).
+
+Check is only necessary when comparing FR with &apos;this&apos;-receiver against QNR since
+- SNR resolving to a local doesn&apos;t participate in this analysis
+- need both a FR for resolving to a field and a QNR for resolving to a local
+- comparing FR&lt;-&gt; QNR and QNR&lt;-&gt;FR are both handled in FR
+Resolved by checking the initial binding of the QNR (whether it&apos;s a local)
+
+New test is test_nullable_field_10e.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2206215</commentid>
+    <comment_count>8</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-01-22 14:43:58 -0500</bug_when>
+    <thetext>Released for 4.3 M5 via commit a846071c58f9098177eef02be0134294158f9c4f together with the fix for bug 331649 et al.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2229503</commentid>
+    <comment_count>9</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-03-12 08:36:13 -0400</bug_when>
+    <thetext>Verified for 4.3 M6 with build I20130311-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>217784</attachid>
+            <date>2012-06-23 17:01:00 -0400</date>
+            <delta_ts>2012-06-23 17:01:23 -0400</delta_ts>
+            <desc>expose option in the preferences UI</desc>
+            <filename>Bug_383368_preference-ui.patch</filename>
+            <type>text/plain</type>
+            <size>4361</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC51aS91aS9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvdWkvcHJlZmVyZW5jZXMvUHJlZmVyZW5jZXNNZXNzYWdlcy5qYXZhIGIvb3JnLmVjbGlwc2Uu
+amR0LnVpL3VpL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC91aS9wcmVmZXJlbmNlcy9QcmVmZXJl
+bmNlc01lc3NhZ2VzLmphdmEKaW5kZXggNTc0ZTBiMi4uZTQ1MTFhYSAxMDA2NDQKLS0tIGEvb3Jn
+LmVjbGlwc2UuamR0LnVpL3VpL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC91aS9wcmVmZXJlbmNl
+cy9QcmVmZXJlbmNlc01lc3NhZ2VzLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LnVpL3VpL29y
+Zy9lY2xpcHNlL2pkdC9pbnRlcm5hbC91aS9wcmVmZXJlbmNlcy9QcmVmZXJlbmNlc01lc3NhZ2Vz
+LmphdmEKQEAgLTc4Nyw2ICs3ODcsNyBAQAogCXB1YmxpYyBzdGF0aWMgU3RyaW5nIENvbXBsaWFu
+Y2VDb25maWd1cmF0aW9uQmxvY2tfc3JjX2dyZWF0ZXJfY29tcGxpYW5jZTsKIAlwdWJsaWMgc3Rh
+dGljIFN0cmluZyBDb21wbGlhbmNlQ29uZmlndXJhdGlvbkJsb2NrX2NsYXNzZmlsZV9ncmVhdGVy
+X2NvbXBsaWFuY2U7CiAJcHVibGljIHN0YXRpYyBTdHJpbmcgQ29tcGxpYW5jZUNvbmZpZ3VyYXRp
+b25CbG9ja19jbGFzc2ZpbGVfZ3JlYXRlcl9zb3VyY2U7CisJcHVibGljIHN0YXRpYyBTdHJpbmcg
+UHJvYmxlbVNldmVyaXRpZXNDb25maWd1cmF0aW9uQmxvY2tfZW5hYmxlX3N5bnRhY3RpY19udWxs
+X2FuYWx5c2lzX2Zvcl9maWVsZHM7CiAJcHVibGljIHN0YXRpYyBTdHJpbmcgUHJvYmxlbVNldmVy
+aXRpZXNDb25maWd1cmF0aW9uQmxvY2tfcGJfcGFyYW1ldGVyX2Fzc2lnbm1lbnQ7CiAJcHVibGlj
+IHN0YXRpYyBTdHJpbmcgUHJvYmxlbVNldmVyaXRpZXNDb25maWd1cmF0aW9uQmxvY2tfcGJfbnVs
+bF9yZWZlcmVuY2U7CiAJcHVibGljIHN0YXRpYyBTdHJpbmcgUHJvYmxlbVNldmVyaXRpZXNDb25m
+aWd1cmF0aW9uQmxvY2tfcGJfbnVsbF9zcGVjX3Zpb2xhdGlvbjsKZGlmZiAtLWdpdCBhL29yZy5l
+Y2xpcHNlLmpkdC51aS91aS9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvdWkvcHJlZmVyZW5jZXMv
+UHJlZmVyZW5jZXNNZXNzYWdlcy5wcm9wZXJ0aWVzIGIvb3JnLmVjbGlwc2UuamR0LnVpL3VpL29y
+Zy9lY2xpcHNlL2pkdC9pbnRlcm5hbC91aS9wcmVmZXJlbmNlcy9QcmVmZXJlbmNlc01lc3NhZ2Vz
+LnByb3BlcnRpZXMKaW5kZXggOGE4M2YwYy4uNzg4N2MzYyAxMDA2NDQKLS0tIGEvb3JnLmVjbGlw
+c2UuamR0LnVpL3VpL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC91aS9wcmVmZXJlbmNlcy9QcmVm
+ZXJlbmNlc01lc3NhZ2VzLnByb3BlcnRpZXMKKysrIGIvb3JnLmVjbGlwc2UuamR0LnVpL3VpL29y
+Zy9lY2xpcHNlL2pkdC9pbnRlcm5hbC91aS9wcmVmZXJlbmNlcy9QcmVmZXJlbmNlc01lc3NhZ2Vz
+LnByb3BlcnRpZXMKQEAgLTQwNyw2ICs0MDcsOCBAQAogTnVsbEFubm90YXRpb25zQ29uZmlndXJh
+dGlvbkRpYWxvZ19udWxsYWJsZV9hbm5vdGF0aW9uX2Vycm9yPSdOdWxsYWJsZScgYW5ub3RhdGlv
+biBtdXN0IGJlIGEgZnVsbHktcXVhbGlmaWVkIHR5cGUgbmFtZQogTnVsbEFubm90YXRpb25zQ29u
+ZmlndXJhdGlvbkRpYWxvZ19udWxsYWJsZV9hbm5vdGF0aW9uX2xhYmVsPScmTnVsbGFibGUnIGFu
+bm90YXRpb246CiAKK1Byb2JsZW1TZXZlcml0aWVzQ29uZmlndXJhdGlvbkJsb2NrX2VuYWJsZV9z
+eW50YWN0aWNfbnVsbF9hbmFseXNpc19mb3JfZmllbGRzPUVuYWJsZSBzeW50YWN0aWMgbnVsbCBh
+bmFseXNpcyBmb3IgZmllbGRzCisKIFByb2JsZW1TZXZlcml0aWVzQ29uZmlndXJhdGlvbkJsb2Nr
+X2NvbW1vbl9kZXNjcmlwdGlvbj0mU2VsZWN0IHRoZSBzZXZlcml0eSBsZXZlbCBmb3IgdGhlIGZv
+bGxvd2luZyBvcHRpb25hbCBwcm9ibGVtczoKIFByb2JsZW1TZXZlcml0aWVzQ29uZmlndXJhdGlv
+bkJsb2NrX3BiX3VuYXZvaWRhYmxlX2dlbmVyaWNfdHlwZV9wcm9ibGVtcz1JZ25vcmUgdW5hdm9p
+ZGFibGUgZ2VuZXJpYyB0eXBlIHByb2JsZW1zCiBQcm9ibGVtU2V2ZXJpdGllc0NvbmZpZ3VyYXRp
+b25CbG9ja19wYl91bnNhZmVfdHlwZV9vcF9sYWJlbD1VbmNoZWNrZWQgZ2VuZXJpYyB0eXBlIG9w
+ZXJhdGlvbjoKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC51aS91aS9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvdWkvcHJlZmVyZW5jZXMvUHJvYmxlbVNldmVyaXRpZXNDb25maWd1cmF0aW9u
+QmxvY2suamF2YSBiL29yZy5lY2xpcHNlLmpkdC51aS91aS9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvdWkvcHJlZmVyZW5jZXMvUHJvYmxlbVNldmVyaXRpZXNDb25maWd1cmF0aW9uQmxvY2suamF2
+YQppbmRleCBiZDBkMzA5Li40ZGYwZDdmIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQudWkv
+dWkvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL3VpL3ByZWZlcmVuY2VzL1Byb2JsZW1TZXZlcml0
+aWVzQ29uZmlndXJhdGlvbkJsb2NrLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LnVpL3VpL29y
+Zy9lY2xpcHNlL2pkdC9pbnRlcm5hbC91aS9wcmVmZXJlbmNlcy9Qcm9ibGVtU2V2ZXJpdGllc0Nv
+bmZpZ3VyYXRpb25CbG9jay5qYXZhCkBAIC0yNzIsNiArMjcyLDggQEAKIAkKIAlwcml2YXRlIHN0
+YXRpYyBmaW5hbCBLZXkgUFJFRl9BTk5PVEFUSU9OX05VTExfQU5BTFlTSVM9IGdldEpEVENvcmVL
+ZXkoSmF2YUNvcmUuQ09NUElMRVJfQU5OT1RBVElPTl9OVUxMX0FOQUxZU0lTKTsKIAkKKwlwcml2
+YXRlIHN0YXRpYyBmaW5hbCBLZXkgUFJFRl9QQl9TWU5UQUNUSUNfTlVMTF9BTkxZU0lTX0ZPUl9G
+SUVMRFM9IGdldEpEVENvcmVLZXkoSmF2YUNvcmUuQ09NUElMRVJfUEJfU1lOVEFDVElDX05VTExf
+QU5BTFlTSVNfRk9SX0ZJRUxEUyk7CisJCiAJLyoqCiAJICogS2V5IGZvciB0aGUgIlVzZSBkZWZh
+dWx0IGFubm90YXRpb25zIGZvciBudWxsICIgc2V0dGluZy4KIAkgKiA8cD5WYWx1ZXMgYXJlIHsg
+e0BsaW5rICNFTkFCTEVEfSwge0BsaW5rICNESVNBQkxFRH0gfS4KQEAgLTM4Miw2ICszODQsNyBA
+QAogCQkJCVBSRUZfUEJfTlVMTF9VTkNIRUNLRURfQ09OVkVSU0lPTiwKIAkJCQlQUkVGX1BCX1JF
+RFVOREFOVF9OVUxMX0FOTk9UQVRJT04sCQogCQkJCVBSRUZfUEJfUkVEVU5EQU5UX05VTExfQ0hF
+Q0ssIFBSRUZfUEJfSU5DTFVERV9BU1NFUlRTX0lOX05VTExfQU5BTFlTSVMsCisJCQkJUFJFRl9Q
+Ql9TWU5UQUNUSUNfTlVMTF9BTkxZU0lTX0ZPUl9GSUVMRFMsCiAJCQkJUFJFRl9QQl9VTkNMT1NF
+RF9DTE9TRUFCTEUsIFBSRUZfUEJfUE9URU5USUFMTFlfVU5DTE9TRURfQ0xPU0VBQkxFLCBQUkVG
+X1BCX0VYUExJQ0lUTFlfQ0xPU0VEX0FVVE9DTE9TRUFCTEUsCiAJCQkJUFJFRl9QQl9GQUxMVEhS
+T1VHSF9DQVNFLCBQUkVGX1BCX1JFRFVOREFOVF9TVVBFUklOVEVSRkFDRSwgUFJFRl9QQl9VTlVT
+RURfV0FSTklOR19UT0tFTiwKIAkJCQlQUkVGXzE1X1BCX1VOQ0hFQ0tFRF9UWVBFX09QRVJBVElP
+TiwgUFJFRl8xNV9QQl9GSU5BTF9QQVJBTV9CT1VORCwgUFJFRl8xNV9QQl9WQVJBUkdTX0FSR1VN
+RU5UX05FRURfQ0FTVCwKQEAgLTgwMCw2ICs4MDMsOSBAQAogCQkJCQl9CiAJCQkJfSk7CiAJCQor
+CQlsYWJlbD0gUHJlZmVyZW5jZXNNZXNzYWdlcy5Qcm9ibGVtU2V2ZXJpdGllc0NvbmZpZ3VyYXRp
+b25CbG9ja19lbmFibGVfc3ludGFjdGljX251bGxfYW5hbHlzaXNfZm9yX2ZpZWxkczsKKwkJZkZp
+bHRlcmVkUHJlZlRyZWUuYWRkQ2hlY2tCb3goaW5uZXIsIGxhYmVsLCBQUkVGX1BCX1NZTlRBQ1RJ
+Q19OVUxMX0FOTFlTSVNfRk9SX0ZJRUxEUywgZW5hYmxlZERpc2FibGVkLCBleHRyYUluZGVudCwg
+bm9kZSk7CisJCQogCQkvLyAtLS0gZ2xvYmFsCiAJCQogCQkvLyBhZGQgc29tZSB2ZXJ0aWNhbCBz
+cGFjZSBiZWZvcmU6CkBAIC05ODgsNiArOTk0LDcgQEAKIAkJc2V0Q29tYm9FbmFibGVkKFBSRUZf
+UEJfTlVMTF9VTkNIRUNLRURfQ09OVkVSU0lPTiwgZW5hYmxlQW5ub3RhdGlvbk51bGxBbmFseXNp
+cyk7CiAJCXNldENvbWJvRW5hYmxlZChQUkVGX1BCX1JFRFVOREFOVF9OVUxMX0FOTk9UQVRJT04s
+IGVuYWJsZUFubm90YXRpb25OdWxsQW5hbHlzaXMpOwogCQlzZXRDb21ib0VuYWJsZWQoUFJFRl9N
+SVNTSU5HX05PTk5VTExfQllfREVGQVVMVF9BTk5PVEFUSU9OLCBlbmFibGVBbm5vdGF0aW9uTnVs
+bEFuYWx5c2lzKTsKKwkJZ2V0Q2hlY2tCb3goUFJFRl9QQl9TWU5UQUNUSUNfTlVMTF9BTkxZU0lT
+X0ZPUl9GSUVMRFMpLnNldEVuYWJsZWQoZW5hYmxlQW5ub3RhdGlvbk51bGxBbmFseXNpcyk7CiAJ
+fQogCiAJcHJpdmF0ZSBJU3RhdHVzIHZhbGlkYXRlTnVsbG5lc3NBbm5vdGF0aW9uKFN0cmluZyB2
+YWx1ZSwgU3RyaW5nIGVycm9yTWVzc2FnZSkgewo=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

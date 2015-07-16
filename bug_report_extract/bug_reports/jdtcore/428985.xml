@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>428985</bug_id>
+          
+          <creation_ts>2014-02-25 06:15:00 -0500</creation_ts>
+          <short_desc>[1.8][null] help the type inference to find a nullness-annotated type if possible</short_desc>
+          <delta_ts>2014-03-07 00:38:49 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>enhancement</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>noopur_gupta</cc>
+    
+    <cc>shankhba</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2368085</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-25 06:15:07 -0500</bug_when>
+    <thetext>Consider examples like this:
+
+//---
+import org.eclipse.jdt.annotation.*;
+
+interface Func&lt;T&gt;  {
+	T a(T i);
+}
+public class PolyNull {
+	&lt;X&gt; X extract(Func&lt;X&gt; f, X s) { return f.a(s); }
+	@NonNull String test() {
+		return extract(i -&gt; i, &quot;hallo&quot;);
+	}
+//---
+
+Type inference will infer X to String, fine.
+But the target type is actually &apos;@NonNull String&apos;.
+
+While null analysis should not affect the basic outcome of type inference, we actually have sufficient leeway to improve the exact inferred type:
+
+Inference comes up with
+  X#0 :&gt; String
+  X#0 &lt;: @NonNull String
+knowing that both bounds are compatible since incorporation didn&apos;t fail.
+
+During resolution X#0 is instantiated just from the lower bound, which has no null annotation. If we add to this result just the nullness findings from the upper bounds we can indeed produces the result &apos;@NonNull String&apos;.
+
+I&apos;ll look for more tests, to see this is already makes for a consistent solution. Another option would be to add nullness hints to TypeBounds during incorporation.
+
+Obviously, any such magic will be controlled by the option to enable null annotations in the first place.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2368105</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-25 07:13:17 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #0)
+&gt; Another option would be to add nullness hints to TypeBounds during
+&gt; incorporation.
+
+This proves to be quite easy and is probably even more consistent than the previous proposal.
+
+I have a patch under test that implements this strategy:
+
+- whenever during incorporation two TypeBounds are combined into a new ConstraintTypeFormula, we inspect if the types in that new formula have null tagBits. If so, we collect &amp; accumulate these bits back into the originating type bounds.
+
+E.g. from
+  T#0 &lt;: @NonNull String
+  T#0 :&gt; String
+we collect the tagBit for nonnull and add it as a hint to both shown TypeBounds
+
+- later when the BoundSet is asked for the lower or upper bounds for a given InferenceVariable, we collect the nullHints of all relevant TypeBounds. If these specify exactly one of @NonNull or @Nullable, we add the corresponding AnnotationBinding to all types in the resp. lower/upper bound.
+
+This suffices to steer inference into producing a solution with the desired null annotation.
+
+
+We don&apos;t influence type inference if both @NonNull and @Nullable are seen in different TypeBounds affecting the same InferenceVariable. In that case we simply refrain from adding null annotations to the result.
+
+This solution is lean, as during inference it only merges a few bits into a new field nullHints. In the final phase of resolution any useful hints collected until then are used to create an annotated type binding of the same naked type.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2368169</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-25 09:16:18 -0500</bug_when>
+    <thetext>For easier review I&apos;ve again split the change into
+
+ a preparatory refactoring in http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=f700051affab74804180d3a8bb296f6cabd751a0
+
+ the test &amp; actual fix in http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=745840be480d4e43f22d0c4f40c198cdee6926a4</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2368420</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-02-25 12:35:32 -0500</bug_when>
+    <thetext>More tests and a bit more hinting released via http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=b16af955ad096598d372b7b23da79db705ddee11
+
+(Here the connection is made during substituting an inference variable, so no TypeBound directly involved).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2372780</commentid>
+    <comment_count>4</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2014-03-07 00:38:49 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC2 using Kepler SR2 +   
+Eclipse Java Development Tools Patch for Java 8 Support (BETA)
+1.0.0.v20140306-1935</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

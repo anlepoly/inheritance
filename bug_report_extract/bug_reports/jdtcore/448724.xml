@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>448724</bug_id>
+          
+          <creation_ts>2014-10-24 10:24:00 -0400</creation_ts>
+          <short_desc>[1.8] [compiler] Wrong resolution of overloaded method when irrelevant type parameter is present and lambda is used as parameter</short_desc>
+          <delta_ts>2014-10-28 04:05:58 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M3</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="ukasz Puawski">lukep</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>manpalat</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2471315</commentid>
+    <comment_count>0</comment_count>
+    <who name="ukasz Puawski">lukep</who>
+    <bug_when>2014-10-24 10:24:46 -0400</bug_when>
+    <thetext>Adding an irrelevant type parameter on the overloaded method breaks resolution of it, if the argument is expresses as lambda expression. 
+Changing lambda expression to the block solves the problem.
+
+import java.util.concurrent.Callable;
+
+public class ErrorExample {
+
+	public void mismatchRunnableCallable() throws Exception {
+        
+		//Resolves to case1(Runnable) method invocation; lambda with block
+		case1(() -&gt; {&quot;abc&quot;.length();});
+        
+		//Resolves to case1(Callable) method invocation, resulting in type mismatch; block removed - lambda with expression
+        case1(() -&gt; &quot;abc&quot;.length());
+	}
+	
+	public void noSuchMismatch() throws Exception {
+		
+		//no difference to case1 
+		case2(() -&gt; {&quot;abc&quot;.length();});
+		
+		//the only difference to case 1 is the missing irrelevant &lt;T&gt; type parameter. Properly resolves to case2(Runnable) here
+		case2(() -&gt; &quot;abc&quot;.length());
+	}
+	
+	public void case1(final Runnable r) {}
+	public &lt;T&gt; void case1(Callable&lt;Boolean&gt; c) {}
+	
+	
+	
+	public void case2(final Runnable supplier) {}
+	public void case2(Callable&lt;Boolean&gt; conditionEvaluator) {}
+
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471407</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-24 12:21:39 -0400</bug_when>
+    <thetext>I haven&apos;t investigated why, but this problem which is reproducible on
+master goes away with the project underway to alternate-integrate type 
+inference and overload resolution 
+(https://bugs.eclipse.org/bugs/show_bug.cgi?id=437444)
+that is a candidate for M3 release (or by one of the incremental patches
+on top of it (see https://bugs.eclipse.org/bugs/show_bug.cgi?id=437444#c152)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471443</commentid>
+    <comment_count>2</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-24 13:04:56 -0400</bug_when>
+    <thetext>(In reply to ukasz Puawski from comment #0)
+&gt; Adding an irrelevant type parameter on the overloaded method breaks
+
+It is not irrelevant :)
+
+&gt; resolution of it, if the argument is expresses as lambda expression. 
+&gt; Changing lambda expression to the block solves the problem.
+
+Yes, 
+
+() -&gt; &quot;abc&quot;.length()
+
+is both value &amp; void compatible while
+
+() -&gt; {&quot;abc&quot;.length();} 
+
+is only void compatible eliminating the overload with Callable from
+the picture right away.
+
+On master, while reducing a lambda against a proper type we do:
+
+LambdaExpression copy = ((LambdaExpression) this.left).getResolvedCopyForInferenceTargeting(this.right);
+                        return (copy != null &amp;&amp; copy.resolvedType != null &amp;&amp; copy.resolvedType.isValidBinding()) ? TRUE : FALSE;
+
+while on the alternate implementation we do:
+
+return this.left.isCompatibleWith(this.right, inferenceContext.scope) || this.left.isBoxingCompatibleWith(this.right, inferenceContext.scope) ? TRUE : FALSE;
+
+Master implementation is tripped by the author of LE who left in
+a valid resolved type even though a result expression type incompatibility
+exists.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471785</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-25 12:07:41 -0400</bug_when>
+    <thetext>This is fixed as of http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=f357f309273e0bfe8345ff708d18fa83c6a34931 made on behalf of 
+https://bugs.eclipse.org/bugs/show_bug.cgi?id=437444
+
+I released a junit here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=43eb93e955ce923da06ef91aac7ea0ff2412f591</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472768</commentid>
+    <comment_count>4</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-10-28 04:05:58 -0400</bug_when>
+    <thetext>Verified fixed for Eclipse Mars 4.5 M3 Build id: I20141027-2000</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

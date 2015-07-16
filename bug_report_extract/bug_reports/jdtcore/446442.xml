@@ -1,0 +1,555 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>446442</bug_id>
+          
+          <creation_ts>2014-10-09 07:19:00 -0400</creation_ts>
+          <short_desc>[1.8] merge null annotations from super methods</short_desc>
+          <delta_ts>2014-12-11 01:50:40 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M4</target_milestone>
+          <dependson>432614</dependson>
+          <blocked>432578</blocked>
+    
+    <blocked>417801</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Noopur Gupta">noopur_gupta</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>shankhba</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2462161</commentid>
+    <comment_count>0</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2014-10-09 07:19:45 -0400</bug_when>
+    <thetext>+++ This bug was initially created as a clone of Bug #432614 +++
+
+package test.one;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Target;
+
+public class C1 {
+	FI fi1= (@T2 int i) -&gt; {};
+}
+
+interface FI {
+	void foo(@T1 int i);
+}
+
+@Target(ElementType.TYPE_USE) @interface T1 {}
+@Target(ElementType.TYPE_USE) @interface T2 {}
+-------------------------------------------------------------
+
+In the above example, lambdaExpression.resolveMethodBinding().getParameterTypes()[0] for the lambda expression, gives &quot;@T1 int&quot;.
+It should be &quot;@T2 int&quot;. 
+&quot;@T1 int&quot; is the type of the parameter in SAM.
+
+&gt;&gt;&gt;&gt;
+The above example is fixed with bug 432614.
+However, if we replace the explicitly typed lambda parameter with type inferred parameter, the annotation from SAM is still present with LambdaExpression#resolveMethodBinding(). 
+
+Example: replace lambda in the above example with:
+FI fi1= i -&gt; {};
+
+lambdaExpression.resolveMethodBinding().getParameterTypes()[0] gives &quot;@T1 int&quot;.
+It should be &quot;int&quot;.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2462455</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-09 14:11:34 -0400</bug_when>
+    <thetext>Hi Noopur :)
+
+From null annotations p.o.v. I disagree: If SAM has a @Nullable parameter and lambda is implicitly typed, I want to see the lambda parameter as @Nullable, too.
+
+This is different from the explicit case, because with explicit types I can check conformance between declarations in SAM and lambda and thus enforce correct nullity in the lambda.
+
+If an implicitly typed lambda uses the bare type, there&apos;s no way I can ever use an implicitly typed lambda to implement a SAM declaring @Nullable parameters, because that would always be incompatible.
+
+Do you have an example, where this approach causes grief?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2463753</commentid>
+    <comment_count>2</comment_count>
+    <who name="Noopur Gupta">noopur_gupta</who>
+    <bug_when>2014-10-13 06:06:17 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #1) 
+&gt; If an implicitly typed lambda uses the bare type, there&apos;s no way I can ever
+&gt; use an implicitly typed lambda to implement a SAM declaring @Nullable
+&gt; parameters, because that would always be incompatible.
+
+Hi Stephan, as per my understanding, a bare type is @Nullable by default.
+So the above case should not be a problem. Please correct me if I am wrong.
+
+&gt; Do you have an example, where this approach causes grief?
+
+---------------------------------------------------------
+interface Foo&lt;T, N extends Number&gt; {
+	void m(@NonNull N arg2);
+
+	void m(@Nullable T arg1);
+}
+
+interface Baz extends Foo&lt;Integer, Integer&gt; {}
+
+class Test {
+	Baz baz= x -&gt; {
+		x= null;
+	}; 
+}
+---------------------------------------------------------
+In the above example, which annotation (@NonNull or @Nullable) should the implicitly typed lambda parameter &apos;x&apos; inherit? 
+And how would I implement the method with the other annotation? - Currently, if I use &quot;@NonNull Integer x&quot; as the lambda parameter, I get the compile error.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2464132</commentid>
+    <comment_count>3</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-10-13 13:51:31 -0400</bug_when>
+    <thetext>(In reply to Noopur Gupta from comment #2)
+That&apos;s a nasty example. If you reverse the order of the methods and put the m(@Nullable T arg1) first, you currently get a compile error. I think the right answer from the null annotations compiler is to reject this program because the (annotated) type of the parameter is ambiguous in Baz.
+
+That problem doesn&apos;t happen for parameters in non-annotated Java, but it happens for return types, where it raises an error:
+
+interface IS { Serializable get(); }
+interface ICS { CharSequence get(); }
+interface ISCS extends IS, ICS {
+//	@Override String get();
+}
+
+For comment 0, I think the current bindings are fine. I think Noopur and I briefly talked about this and I may have said that I&apos;d expect no annotations in the lambda parameter. But looking at a concrete example now, I have to agree with Stephan.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2464143</commentid>
+    <comment_count>4</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-10-13 14:44:36 -0400</bug_when>
+    <thetext>In comment 2, the null analysis could actually infer that the ambiguous parameter must be @Nullable in Baz and subtypes. But that&apos;s only doable for a compiler that understands the merging semantics of these specific annotations. Note that this merging currently also doesn&apos;t work without lambdas:
+
+interface Nu { void me(@Nullable Object u); }
+interface No { void me(@NonNull Object o); }
+interface NuNo extends Nu, No { }
+interface NoNu extends No, Nu { }
+class TestNuNo {
+	void foo(NuNo nuno, NoNu nonu){
+		nuno.me(null);
+		nonu.me(null);
+	}
+}
+
+In the general case, neither reflection nor the JLS define a single type for NuNo/NoNu#me(..)&apos;s parameter. It&apos;s like bug 79798, where choosing any one method would be wrong. We may also want to use a fake method binding (whose parameter type annotations could be empty or the union of all methods&apos; parameter types).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2471832</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-10-25 15:32:48 -0400</bug_when>
+    <thetext>Let&apos;s see if we are on the same page.
+
+From a Java p.o.v. Baz (comment 2) only has one method:
+   void m(Integer m);
+right?
+
+Hence, I wouldn&apos;t want the compiler to report an ambiguity or similar against Baz.
+
+In fact, since contravariant redefinition of nullness is OK, the method with @Nullable parameter is a legal override for the one with @NonNull parameter. I assume this is what Markus meant by merging semantics.
+
+=&gt; In comment 2 a binding with @Nullable parameter should be surfaced.
+
+TODO: investigate why changing the order of methods in Foo / super interfaces of NuNo/NoNu changes the result!
+
+Also see, that depending on the order the following class is/is not accepted:
+//---
+class Impl implements Baz {
+  public void m(@NonNull Integer i) {}
+}
+//---
+
+Correct answer is:
+----------
+        public void m(@NonNull Integer i) {}
+                      ^^^^^^^^^^^^^^^^
+Illegal redefinition of parameter i, inherited method from Foo&lt;Integer,Integer&gt; declares this parameter as @Nullable
+----------
+
+I&apos;ll take a look for M4.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472416</commentid>
+    <comment_count>6</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-10-27 10:22:14 -0400</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #5)
+I agree in general.
+
+&gt; In fact, since contravariant redefinition of nullness is OK, the method with
+&gt; @Nullable parameter is a legal override for the one with @NonNull parameter.
+&gt; I assume this is what Markus meant by merging semantics.
+
+Yes. The problem I wanted to point out is that your conclusion only holds for the @Nullable/@NonNull annotations. For third-party type annotations, you don&apos;t know what overrides are legal. This is the point where the &quot;annotated type system&quot; breaks down, because the &quot;system&quot; is not defined anywhere. 
+
+In the general case, this can become arbitrarily complex, e.g. when you have to merge these two inherited methods:
+    void foo(@Nullable List&lt;@NonNull Object&gt; a);
+    void foo(@NonNull List&lt;@Nullable Object&gt; a);
+
+I think we already agree that non-overridden methods should inherit the type annotations from the method declaration in the super type, so the most logical extension for the multi-supertype case would be to inherit all type annotations from all super types. For the above example, that would e.g. yield (order of annotations is undefined):
+    void foo(@Nullable @NonNull List&lt;@NonNull @Nullable Object&gt; a);
+
+For nullity annotations, the compiler can collapse this to:
+    void foo(@Nullable List&lt;@Nullable Object&gt; a);
+
+For unknown annotations, it just has to keep everything, and the collapsing has to be done in an annotation processor if necessary.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472432</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-10-27 10:37:01 -0400</bug_when>
+    <thetext>(In reply to Markus Keller from comment #6)
+
+&gt; For unknown annotations, it just has to keep everything, and the collapsing
+&gt; has to be done in an annotation processor if necessary.
+
+Just an academic point: (my terminology may not be precise)
+
+While the various javax.model APIs have been enhanced to allow a client
+to retrieve type annotations, type annotations themselves by definition
+do not trigger a visit to the annotation processor.
+
+i.e JSR269 maintenance enhancements for Java 8 do not allow non-declaration
+annotations to be claimed (if that is the word)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2472532</commentid>
+    <comment_count>8</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-10-27 12:39:01 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #7)
+&gt; Just an academic point: (my terminology may not be precise)
+
+Thanks for the reminder.
+
+My terminology is definitely imprecise: With &quot;annotation processor&quot;, I meant anything that somehow processes the type annotations, i.e. a JSR-269 annotation processor, or any tool that reads annotations.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2486676</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-20 14:01:04 -0500</bug_when>
+    <thetext>During initial investigation I found two locations where the compiler arbitrarily picks one of several override-equivalent signatures:
+
+(A) When checking null contract compatibility. This is why the error mentioned in comment 5 is order-sensitive.
+
+(B) When computing a SAM. This is the reason behind order sensitivity reported in comment 3.
+
+
+For case (A) this is easily fixed: I previously assumed that when collecting overridden methods, at most one method on any branch of inheritance would be enough to investigate. By admitting also multiple methods from the same declaring type, we always perform the necessary check and all is fine.
+
+
+For case (B) it is ReferenceBinding.getSingleAbstractMethod() that arbitrarily picks the signature of the first of several override equivalent methods for constructing a new method binding. This can be fixed in either a specific or a general way:
+- consider only null annotations, ensure that any @NonNull on return type, any @Nullable on parameters is picked up, disregarding any other types being thusly trumped.
+- consider all annotations, i.e., collect all of them and merge only null annotations according to our rules.
+
+I personally would be fine with the specific approach :)  but if required I can try and implement the generally approach.
+
+
+I haven&apos;t yet looked at the particulars of annotations on type details (array content, type arguments &amp; bounds). Since compatibility requires no-variance for type arguments we shouldn&apos;t have to do any merging here. But then we should at least *check*, which I don&apos;t think we do for case (B). 
+
+
+Also I haven&apos;t exhaustively searched for other locations that in a similar way make an arbitrary pick among override equivalent methods. From a quick scan of instantiations of MethodBinding I only see:
+- new MostSpecificExceptionMethodBinding (in Scope.mSMB)
+Is this what was meant when referencing bug 79798? Indeed there is a connection: the use of MostSpecificExceptionMethodBinding was introduced in bug 238484 which fixed a regression caused by bug 79798 :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2486679</commentid>
+    <comment_count>10</comment_count>
+      <attachid>248800</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-20 14:07:45 -0500</bug_when>
+    <thetext>Created attachment 248800
+fix for order sensitivity
+
+This patch fixes order sensitivity wrt reporting null problems.
+
+Not yet:
+- analysis of annotations on type details
+- general merging of arbitrary type annotations
+- integration with creation of MostSpecificMethodBinding</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2486683</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-11-20 14:12:17 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #10)
+&gt; - integration with creation of MostSpecificMethodBinding
+
+MostSpecificExceptionMethodBinding</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2492938</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-04 14:38:03 -0500</bug_when>
+    <thetext>@Markus, do you think a solution that focuses on null annotations would be good enough for M4 (or even for Mars)? See comment 9.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2493883</commentid>
+    <comment_count>13</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-12-08 08:39:27 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #12)
+&gt; @Markus, do you think a solution that focuses on null annotations would be
+&gt; good enough for M4 (or even for Mars)? See comment 9.
+
+Yes, good enough for me.
+
+If somebody needs more support, then they should speak up. I repeatedly tried to convince the JSR 308 EG that just specifying a type annotation syntax is not enough if the goal is to allow users to do anything useful with type annotations. The answer was always: &quot;We don&apos;t want to impose any semantics&quot;. Since the inheritance/merging semantics are not specified, we&apos;re free to do whatever we want here (including changing the implementation in the future).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494678</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-09 11:23:36 -0500</bug_when>
+    <thetext>(In reply to comment #10)
+&gt; Not yet:
+&gt; - analysis of annotations on type details
+working on this right now.
+
+&gt; - general merging of arbitrary type annotations
+no work planned here
+
+&gt; - integration with creation of MostSpecificMethodBinding
+Doesn&apos;t seem to be relevant: the use of MostSpecificExceptionMethodBinding only kicks in at the call site. As per interface Baz (see comment 2) the method m is ambiguous and hence not invocable. An implementing class may resolve ambiguity by merging, but for such a class I failed to trigger the code path leading to creating a MostSpecificExceptionMethodBinding.
+
+I&apos;m also changing the title to reflect what *is* being fixed via this bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494756</commentid>
+    <comment_count>15</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-09 12:50:00 -0500</bug_when>
+    <thetext>Working on conflict detection for annotations on type arguments I found that a SAM with contradictory null annotations would require a variant of IProblem.ContradictoryNullAnnotationsInferred. When adding that I noticed that a group of IProblems was missing from ProblemReporter.getIrritant() - fixed.
+
+For illustration:
+//---
+import org.eclipse.jdt.annotation.*;
+import java.util.*;
+interface Foo&lt;T,C1 extends Collection&lt;T&gt;, C2 extends List&lt;T&gt;&gt; {
+	void m(C1 a1);
+
+	void m(C2 a2);
+}
+
+interface Baz extends Foo&lt;Integer, ArrayList&lt;@NonNull Integer&gt;, ArrayList&lt;@Nullable Integer&gt;&gt; {}
+
+public class Test {
+	Baz baz= x -&gt; { // contradictory type cannot be used as SAM
+		;
+	}; 
+}
+//---
+
+From a pure Java p.o.v. Foo is indeed a FI, but with null type annotations this will now report:
+   Contradictory null annotations: function type was inferred as &apos;void (ArrayList&lt;@NonNull @Nullable Integer&gt;)&apos;, but only one of &apos;@NonNull&apos; and &apos;@Nullable&apos; can be effective at any location.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2494861</commentid>
+    <comment_count>16</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-12-09 16:30:31 -0500</bug_when>
+    <thetext>Tests &amp; fix released for 4.5 M4 via commit 1b555425db41a9eb4fba300521a43b3ff494a42f.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2495635</commentid>
+    <comment_count>17</comment_count>
+    <who name="shankha banerjee">shankhba</who>
+    <bug_when>2014-12-11 01:50:26 -0500</bug_when>
+    <thetext>Verified for Eclipse Mars 4.5M4 using build I20141210-2000.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>248800</attachid>
+            <date>2014-11-20 14:07:00 -0500</date>
+            <delta_ts>2014-11-20 14:07:45 -0500</delta_ts>
+            <desc>fix for order sensitivity</desc>
+            <filename>Bug-446442--18-LambdaExpressionresolveMethodBinding-.patch</filename>
+            <type>text/plain</type>
+            <size>7558</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5ub3Rh
+dGlvblRlc3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9v
+cmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL051bGxUeXBlQW5u
+b3RhdGlvblRlc3QuamF2YQppbmRleCBjN2ZiYzRjLi40Y2NmYmU4IDEwMDY0NAotLS0gYS9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUv
+dGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9OdWxsVHlwZUFubm90YXRpb25UZXN0LmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vTnVsbFR5cGVBbm5vdGF0aW9uVGVzdC5q
+YXZhCkBAIC02OTA5LDQgKzY5MDksNjQgQEAKIAkJbnVsbCwKIAkJIiIpOwogfQorcHVibGljIHZv
+aWQgdGVzdEJ1ZzQ0NjQ0Ml9jb21tZW50MmEoKSB7CisJcnVuTmVnYXRpdmVUZXN0V2l0aExpYnMo
+CisJCW5ldyBTdHJpbmdbXSB7CisJCQkiVGVzdC5qYXZhIiwKKwkJCSJpbXBvcnQgb3JnLmVjbGlw
+c2UuamR0LmFubm90YXRpb24uKjtcbiIgKworCQkJImludGVyZmFjZSBGb288VCwgTiBleHRlbmRz
+IE51bWJlcj4ge1xuIiArIAorCQkJIgl2b2lkIG0oQE5vbk51bGwgTiBhcmcyKTtcbiIgKyAKKwkJ
+CSJcbiIgKyAKKwkJCSIJdm9pZCBtKEBOdWxsYWJsZSBUIGFyZzEpO1xuIiArIAorCQkJIn1cbiIg
+KyAKKwkJCSJcbiIgKyAKKwkJCSJpbnRlcmZhY2UgQmF6IGV4dGVuZHMgRm9vPEludGVnZXIsIElu
+dGVnZXI+IHt9XG4iICsgCisJCQkiXG4iICsgCisJCQkiY2xhc3MgSW1wbCBpbXBsZW1lbnRzIEJh
+eiB7XG4iICsgCisJCQkiICBwdWJsaWMgdm9pZCBtKEBOb25OdWxsIEludGVnZXIgaSkge31cbiIg
+KyAKKwkJCSJ9XG4iICsKKwkJCSJcbiIgKyAKKwkJCSJwdWJsaWMgY2xhc3MgVGVzdCB7XG4iICsg
+CisJCQkiCUJheiBiYXo9IHggLT4ge1xuIiArIAorCQkJIgkJeD0gbnVsbDtcbiIgKyAKKwkJCSIJ
+fTsgXG4iICsgCisJCQkifVxuIgorCQl9LAorCQkiLS0tLS0tLS0tLVxuIiArIAorCQkiMS4gRVJS
+T1IgaW4gVGVzdC5qYXZhIChhdCBsaW5lIDExKVxuIiArIAorCQkiCXB1YmxpYyB2b2lkIG0oQE5v
+bk51bGwgSW50ZWdlciBpKSB7fVxuIiArIAorCQkiCSAgICAgICAgICAgICAgXl5eXl5eXl5eXl5e
+Xl5eXlxuIiArIAorCQkiSWxsZWdhbCByZWRlZmluaXRpb24gb2YgcGFyYW1ldGVyIGksIGluaGVy
+aXRlZCBtZXRob2QgZnJvbSBGb288SW50ZWdlcixJbnRlZ2VyPiBkZWNsYXJlcyB0aGlzIHBhcmFt
+ZXRlciBhcyBATnVsbGFibGVcbiIgKyAKKwkJIi0tLS0tLS0tLS1cbiIpOworfQorcHVibGljIHZv
+aWQgdGVzdEJ1ZzQ0NjQ0Ml9jb21tZW50MmIoKSB7CisJcnVuTmVnYXRpdmVUZXN0V2l0aExpYnMo
+CisJCW5ldyBTdHJpbmdbXSB7CisJCQkiVGVzdC5qYXZhIiwKKwkJCSJpbXBvcnQgb3JnLmVjbGlw
+c2UuamR0LmFubm90YXRpb24uKjtcbiIgKworCQkJImludGVyZmFjZSBGb288VCwgTiBleHRlbmRz
+IE51bWJlcj4ge1xuIiArIAorCQkJIgl2b2lkIG0oQE51bGxhYmxlIFQgYXJnMSk7XG4iICsgCisJ
+CQkiXG4iICsgCisJCQkiCXZvaWQgbShATm9uTnVsbCBOIGFyZzIpO1xuIiArIAorCQkJIn1cbiIg
+KyAKKwkJCSJcbiIgKyAKKwkJCSJpbnRlcmZhY2UgQmF6IGV4dGVuZHMgRm9vPEludGVnZXIsIElu
+dGVnZXI+IHt9XG4iICsgCisJCQkiXG4iICsKKwkJCSJjbGFzcyBJbXBsIGltcGxlbWVudHMgQmF6
+IHtcbiIgKyAKKwkJCSIgIHB1YmxpYyB2b2lkIG0oQE5vbk51bGwgSW50ZWdlciBpKSB7fVxuIiAr
+IAorCQkJIn1cbiIgKworCQkJIlxuIiArIAorCQkJInB1YmxpYyBjbGFzcyBUZXN0IHtcbiIgKyAK
+KwkJCSIJQmF6IGJhej0geCAtPiB7XG4iICsgCisJCQkiCQl4PSBudWxsO1xuIiArIAorCQkJIgl9
+OyBcbiIgKyAKKwkJCSJ9XG4iCisJCX0sCisJCSItLS0tLS0tLS0tXG4iICsgCisJCSIxLiBFUlJP
+UiBpbiBUZXN0LmphdmEgKGF0IGxpbmUgMTEpXG4iICsgCisJCSIJcHVibGljIHZvaWQgbShATm9u
+TnVsbCBJbnRlZ2VyIGkpIHt9XG4iICsgCisJCSIJICAgICAgICAgICAgICBeXl5eXl5eXl5eXl5e
+Xl5eXG4iICsgCisJCSJJbGxlZ2FsIHJlZGVmaW5pdGlvbiBvZiBwYXJhbWV0ZXIgaSwgaW5oZXJp
+dGVkIG1ldGhvZCBmcm9tIEZvbzxJbnRlZ2VyLEludGVnZXI+IGRlY2xhcmVzIHRoaXMgcGFyYW1l
+dGVyIGFzIEBOdWxsYWJsZVxuIiArIAorCQkiLS0tLS0tLS0tLVxuIik7Cit9CiB9CmRpZmYgLS1n
+aXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvYXN0L051bGxBbm5vdGF0aW9uTWF0Y2hpbmcuamF2YSBiL29yZy5lY2xpcHNl
+LmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9hc3Qv
+TnVsbEFubm90YXRpb25NYXRjaGluZy5qYXZhCmluZGV4IGZjNTFiYTQuLjQ2Mzk5MDIgMTAwNjQ0
+Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRl
+cm5hbC9jb21waWxlci9hc3QvTnVsbEFubm90YXRpb25NYXRjaGluZy5qYXZhCisrKyBiL29yZy5l
+Y2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxl
+ci9hc3QvTnVsbEFubm90YXRpb25NYXRjaGluZy5qYXZhCkBAIC00NjgsNCArNDY4LDIxIEBACiAJ
+CX0KIAkJcmV0dXJuIG1ldGhvZDsKIAl9CisKKwlwdWJsaWMgc3RhdGljIFR5cGVCaW5kaW5nIHN0
+cm9uZ2VyVHlwZShUeXBlQmluZGluZyB0eXBlMSwgVHlwZUJpbmRpbmcgdHlwZTIpIHsKKwkJaWYg
+KCh0eXBlMS50YWdCaXRzICYgVGFnQml0cy5Bbm5vdGF0aW9uTm9uTnVsbCkgIT0gMCkKKwkJCXJl
+dHVybiB0eXBlMTsKKwkJcmV0dXJuIHR5cGUyOyAvLyBkb24ndCBib3RoZXIgdG8gZGlzdGluZ3Vp
+c2ggdW5hbm5vdGF0ZWQgdnMuIEBOdWxsYWJsZQorCX0KKworCXB1YmxpYyBzdGF0aWMgVHlwZUJp
+bmRpbmdbXSB3ZWFrZXJUeXBlcyhUeXBlQmluZGluZ1tdIHBhcmFtZXRlcnMxLCBUeXBlQmluZGlu
+Z1tdIHBhcmFtZXRlcnMyKSB7CisJCVR5cGVCaW5kaW5nW10gbmV3UGFyYW1ldGVycyA9IG5ldyBU
+eXBlQmluZGluZ1twYXJhbWV0ZXJzMS5sZW5ndGhdOworCQlmb3IgKGludCBpID0gMDsgaSA8IG5l
+d1BhcmFtZXRlcnMubGVuZ3RoOyBpKyspIHsKKwkJCWlmICgocGFyYW1ldGVyczFbaV0udGFnQml0
+cyAmIFRhZ0JpdHMuQW5ub3RhdGlvbk51bGxhYmxlKSAhPSAwKQorCQkJCW5ld1BhcmFtZXRlcnNb
+aV0gPSBwYXJhbWV0ZXJzMVtpXTsKKwkJCWVsc2UgCisJCQkJbmV3UGFyYW1ldGVyc1tpXSA9IHBh
+cmFtZXRlcnMyW2ldOworCQl9CisJCXJldHVybiBuZXdQYXJhbWV0ZXJzOworCX0KIH0KZGlmZiAt
+LWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRl
+cm5hbC9jb21waWxlci9sb29rdXAvSW1wbGljaXROdWxsQW5ub3RhdGlvblZlcmlmaWVyLmphdmEg
+Yi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwv
+Y29tcGlsZXIvbG9va3VwL0ltcGxpY2l0TnVsbEFubm90YXRpb25WZXJpZmllci5qYXZhCmluZGV4
+IDM2ZTA4YTYuLmJlNmFiNDAgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBp
+bGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvSW1wbGljaXROdWxs
+QW5ub3RhdGlvblZlcmlmaWVyLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGls
+ZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9JbXBsaWNpdE51bGxB
+bm5vdGF0aW9uVmVyaWZpZXIuamF2YQpAQCAtMTkyLDE2ICsxOTIsMTggQEAKIAl7CiAJCU1ldGhv
+ZEJpbmRpbmcgW10gaWZjTWV0aG9kcyA9IHN1cGVyVHlwZS5nZXRNZXRob2RzKHNlbGVjdG9yLCBz
+dWdnZXN0ZWRQYXJhbWV0ZXJMZW5ndGgpOwogCQlpbnQgbGVuZ3RoID0gaWZjTWV0aG9kcy5sZW5n
+dGg7CisJCWJvb2xlYW4gYWRkZWQgPSBmYWxzZTsKIAkJZm9yICAoaW50IGk9MDsgaTxsZW5ndGg7
+IGkrKykgewogCQkJTWV0aG9kQmluZGluZyBjdXJyZW50TWV0aG9kID0gaWZjTWV0aG9kc1tpXTsK
+IAkJCWlmIChjdXJyZW50TWV0aG9kLmlzU3RhdGljKCkpCiAJCQkJY29udGludWU7CiAJCQlpZiAo
+TWV0aG9kVmVyaWZpZXIuZG9lc01ldGhvZE92ZXJyaWRlKG9yaWdpbmFsLCBjdXJyZW50TWV0aG9k
+LCB0aGlzLmVudmlyb25tZW50KSkgewogCQkJCXJlc3VsdC5hZGQoY3VycmVudE1ldGhvZCk7Ci0J
+CQkJcmV0dXJuOyAvLyBhdCBtb3N0IG9uZSBtZXRob2QgaXMgb3ZlcnJpZGRlbiBmcm9tIGFueSBz
+dXBlcnR5cGUKKwkJCQlhZGRlZCA9IHRydWU7IC8vIHdoZW4gb3ZlcnJpZGluZyBvbmUgb3IgbW9y
+ZSBtZXRob2RzIGZyb20gc3VwZXJUeXBlIGRvbid0IHRyYXZlcnNlIHRvIHRyYW5zaXRpdmUgc3Vw
+ZXJUeXBlcwogCQkJfQogCQl9Ci0JCWZpbmRBbGxPdmVycmlkZGVuTWV0aG9kcyhvcmlnaW5hbCwg
+c2VsZWN0b3IsIHN1Z2dlc3RlZFBhcmFtZXRlckxlbmd0aCwgc3VwZXJUeXBlLCBpZmNzU2Vlbiwg
+cmVzdWx0KTsKKwkJaWYgKCFhZGRlZCkKKwkJCWZpbmRBbGxPdmVycmlkZGVuTWV0aG9kcyhvcmln
+aW5hbCwgc2VsZWN0b3IsIHN1Z2dlc3RlZFBhcmFtZXRlckxlbmd0aCwgc3VwZXJUeXBlLCBpZmNz
+U2VlbiwgcmVzdWx0KTsKIAl9CiAKIAkvKioKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5j
+b3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvUmVm
+ZXJlbmNlQmluZGluZy5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2Vj
+bGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9SZWZlcmVuY2VCaW5kaW5nLmphdmEK
+aW5kZXggYjdmNzg2Yi4uYzFlYzliZSAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUv
+Y29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9SZWZlcmVu
+Y2VCaW5kaW5nLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2Vj
+bGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9SZWZlcmVuY2VCaW5kaW5nLmphdmEK
+QEAgLTQ0LDYgKzQ0LDcgQEAKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5jb21waWxlci5D
+aGFyT3BlcmF0aW9uOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5jb3JlLmNvbXBpbGVyLkludmFs
+aWRJbnB1dEV4Y2VwdGlvbjsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGls
+ZXIuYXN0Lk1ldGhvZERlY2xhcmF0aW9uOworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5h
+bC5jb21waWxlci5hc3QuTnVsbEFubm90YXRpb25NYXRjaGluZzsKIGltcG9ydCBvcmcuZWNsaXBz
+ZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuY2xhc3NmbXQuQ2xhc3NGaWxlQ29uc3RhbnRzOwogaW1w
+b3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5pbXBsLkNvbXBpbGVyT3B0aW9u
+czsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIudXRpbC5TaW1wbGVM
+b29rdXBUYWJsZTsKQEAgLTE5NjksMTEgKzE5NzAsMTQgQEAKIAlmaW5hbCBMb29rdXBFbnZpcm9u
+bWVudCBlbnZpcm9ubWVudCA9IHNjb3BlLmVudmlyb25tZW50KCk7CiAJYm9vbGVhbiBnZW5lcmlj
+TWV0aG9kU2VlbiA9IGZhbHNlOwogCWludCBsZW5ndGggPSBtZXRob2RzLmxlbmd0aDsKKwlib29s
+ZWFuIGFuYWx5c2VOdWxsQW5ub3RhdGlvbnMgPSBlbnZpcm9ubWVudC5nbG9iYWxPcHRpb25zLmlz
+QW5ub3RhdGlvbkJhc2VkTnVsbEFuYWx5c2lzRW5hYmxlZDsKIAkKIAluZXh0OmZvciAoaW50IGkg
+PSBsZW5ndGggLSAxOyBpID49IDA7IC0taSkgewogCQlNZXRob2RCaW5kaW5nIG1ldGhvZCA9IG1l
+dGhvZHNbaV0sIG90aGVyTWV0aG9kID0gbnVsbDsKIAkJaWYgKG1ldGhvZC50eXBlVmFyaWFibGVz
+ICE9IEJpbmRpbmcuTk9fVFlQRV9WQVJJQUJMRVMpCiAJCQlnZW5lcmljTWV0aG9kU2VlbiA9IHRy
+dWU7CisJCVR5cGVCaW5kaW5nIHJldHVyblR5cGUgPSBtZXRob2QucmV0dXJuVHlwZTsKKwkJVHlw
+ZUJpbmRpbmdbXSBwYXJhbWV0ZXJzID0gbWV0aG9kLnBhcmFtZXRlcnM7CiAJCWZvciAoaW50IGog
+PSAwOyBqIDwgbGVuZ3RoOyBqKyspIHsKIAkJCWlmIChpID09IGopIGNvbnRpbnVlOwogCQkJb3Ro
+ZXJNZXRob2QgPSBtZXRob2RzW2pdOwpAQCAtMTk4Niw3ICsxOTkwLDExIEBACiAJCQkJCWNvbnRp
+bnVlIG5leHQ7CiAJCQl9CiAJCQlpZiAoIU1ldGhvZFZlcmlmaWVyLmlzU3Vic3RpdHV0ZVBhcmFt
+ZXRlclN1YnNpZ25hdHVyZShtZXRob2QsIG90aGVyTWV0aG9kLCBlbnZpcm9ubWVudCkgfHwgIU1l
+dGhvZFZlcmlmaWVyLmFyZVJldHVyblR5cGVzQ29tcGF0aWJsZShtZXRob2QsIG90aGVyTWV0aG9k
+LCBlbnZpcm9ubWVudCkpIAotCQkJCWNvbnRpbnVlIG5leHQ7IAorCQkJCWNvbnRpbnVlIG5leHQ7
+CisJCQlpZiAoYW5hbHlzZU51bGxBbm5vdGF0aW9ucykgeworCQkJCXJldHVyblR5cGUgPSBOdWxs
+QW5ub3RhdGlvbk1hdGNoaW5nLnN0cm9uZ2VyVHlwZShyZXR1cm5UeXBlLCBvdGhlck1ldGhvZC5y
+ZXR1cm5UeXBlKTsKKwkJCQlwYXJhbWV0ZXJzID0gTnVsbEFubm90YXRpb25NYXRjaGluZy53ZWFr
+ZXJUeXBlcyhwYXJhbWV0ZXJzLCBvdGhlck1ldGhvZC5wYXJhbWV0ZXJzKTsKKwkJCX0KIAkJfQog
+CQkvLyBJZiB3ZSByZWFjaCBoZXJlLCB3ZSBmb3VuZCBhIG1ldGhvZCB0aGF0IGlzIG92ZXJyaWRl
+IGVxdWl2YWxlbnQgd2l0aCBldmVyeSBvdGhlciBtZXRob2QgYW5kIGlzIGFsc28gcmV0dXJuIHR5
+cGUgc3Vic3RpdHV0YWJsZS4gQ29tcHV0ZSBrb3NoZXIgZXhjZXB0aW9ucyBub3cgLi4uCiAJCVJl
+ZmVyZW5jZUJpbmRpbmcgW10gZXhjZXB0aW9ucyA9IG5ldyBSZWZlcmVuY2VCaW5kaW5nWzBdOwpA
+QCAtMjA1Miw4ICsyMDYwLDggQEAKIAkJfQogCQl0aGlzLnNpbmdsZUFic3RyYWN0TWV0aG9kW2lu
+ZGV4XSA9IG5ldyBNZXRob2RCaW5kaW5nKHRoZUFic3RyYWN0TWV0aG9kLm1vZGlmaWVycyB8IENs
+YXNzRmlsZUNvbnN0YW50cy5BY2NTeW50aGV0aWMsIAogCQkJCXRoZUFic3RyYWN0TWV0aG9kLnNl
+bGVjdG9yLCAKLQkJCQl0aGVBYnN0cmFjdE1ldGhvZC5yZXR1cm5UeXBlLCAKLQkJCQl0aGVBYnN0
+cmFjdE1ldGhvZC5wYXJhbWV0ZXJzLCAKKwkJCQlyZXR1cm5UeXBlLCAKKwkJCQlwYXJhbWV0ZXJz
+LCAKIAkJCQlleGNlcHRpb25zLCAKIAkJCQl0aGVBYnN0cmFjdE1ldGhvZC5kZWNsYXJpbmdDbGFz
+cyk7CiAJICAgIHRoaXMuc2luZ2xlQWJzdHJhY3RNZXRob2RbaW5kZXhdLnR5cGVWYXJpYWJsZXMg
+PSB0aGVBYnN0cmFjdE1ldGhvZC50eXBlVmFyaWFibGVzOw==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

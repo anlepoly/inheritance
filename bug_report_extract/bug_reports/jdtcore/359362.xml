@@ -1,0 +1,342 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>359362</bug_id>
+          
+          <creation_ts>2011-09-29 04:19:00 -0400</creation_ts>
+          <short_desc>FUP of bug 349326: Resource leak on non-Closeable resource.</short_desc>
+          <delta_ts>2011-10-24 20:50:13 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>major</bug_severity>
+          <target_milestone>3.8 M3</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Ayushman Jain">amj87.iitr</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>deepakazad</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2002169</commentid>
+    <comment_count>0</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-09-29 04:19:15 -0400</bug_when>
+    <thetext>Due to thw fix for bug 349326, the following two tests fail:
+
+1)test0147(org.eclipse.jdt.core.tests.dom.ASTConverter15Test)
+junit.framework.ComparisonFailure: different output.
+----------- Expected ------------
+
+------------ but was ------------
+Resource leak: &apos;next&apos; is never closed
+
+
+2) test0147(org.eclipse.jdt.core.tests.dom.ASTConverter15JLS4Test)
+junit.framework.ComparisonFailure: different output.
+----------- Expected ------------
+
+------------ but was ------------
+Resource leak: &apos;next&apos; is never closed
+
+
+Test snippet is as follows
+import java.lang.Comparable;
+import java.util.Collection;
+import java.util.Iterator;
+
+public class X {
+	public static &lt;T extends Object &amp; Comparable&lt;? super T&gt;&gt; T min(
+			Collection&lt;? extends T&gt; coll) {
+		Iterator&lt;? extends T&gt; i = coll.iterator();
+		T candidate = i.next();
+
+		while (i.hasNext()) {
+			T next = i.next();
+			if (next.compareTo(candidate) &lt; 0)
+				candidate = next;
+		}
+		return candidate;
+	}
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2002170</commentid>
+    <comment_count>1</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-09-29 04:20:15 -0400</bug_when>
+    <thetext>In the snippet, &apos;T&apos; is not a resource of type &apos;Closeable&apos;, yet we get the warning.
+
+Stephan, can you take a look? Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2002194</commentid>
+    <comment_count>2</comment_count>
+      <attachid>204267</attachid>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-09-29 04:55:12 -0400</bug_when>
+    <thetext>Created attachment 204267
+proposed fix
+
+Stephan, can you check if this fix is ok? The tests pass with this. Thanks!</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2002363</commentid>
+    <comment_count>3</comment_count>
+      <attachid>204285</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-09-29 08:24:04 -0400</bug_when>
+    <thetext>Created attachment 204285
+enhanced fix
+
+(In reply to comment #2)
+&gt; Created attachment 204267 [details]
+&gt; proposed fix
+&gt; 
+&gt; Stephan, can you check if this fix is ok? The tests pass with this. Thanks!
+
+The location and idea of your fix is perfect.
+The underlying issue is that super types of a type variable may have their
+typeBits still uninitialized at this point. Thus we were passing -1 (marking
+state uninitialized) down.
+
+Rather than filtering out -1 in the end my patch ensures that all super
+types properly initialized their typeBits before merging bits.
+For this purpose I changed -1 for uninitialized to an explicit new bit:
+TypeIds.BitUninitialized.
+
+I also changed the corresponding method for WildcardBinding, yet I 
+wouldn&apos;t know how to create a test for this, as concrete expressions
+should never have the type of a wildcard, but rather a capture binding.
+
+Also included in this patch: I added close() calls to the class VerifyTests
+(string constant in TestVerifier) to avoid the new warning in the console
+output of compiler tests.
+
+I&apos;m currently re-running the model tests.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2002397</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2011-09-29 09:05:16 -0400</bug_when>
+    <thetext>Tests pass with the enhanced fix.
+
+Released as commit 247dd2da1a649afa18a4b7387fd9cbdf69c251eb for 3.8 M3.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2002399</commentid>
+    <comment_count>5</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2011-09-29 09:08:14 -0400</bug_when>
+    <thetext>(In reply to comment #3)
+Thanks Stephan! For fixing this and the VerifyTests issue. I noticed it recently and was going to fix it :)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2015850</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2011-10-24 20:50:13 -0400</bug_when>
+    <thetext>Verified for 3.8 M3 using build id: N20111022-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>204267</attachid>
+            <date>2011-09-29 04:55:00 -0400</date>
+            <delta_ts>2011-09-29 08:24:04 -0400</delta_ts>
+            <desc>proposed fix</desc>
+            <filename>HEAD--Fixed-bug-359362-FUP-of-bug-349326-Resource-le.patch</filename>
+            <type>text/plain</type>
+            <size>703</size>
+            <attacher name="Ayushman Jain">amj87.iitr</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvVHlwZVZhcmlhYmxlQmluZGluZy5qYXZhIGIvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBp
+bGVyL2xvb2t1cC9UeXBlVmFyaWFibGVCaW5kaW5nLmphdmEKaW5kZXggZTQ2Mzk2MC4uNGIwZmE4
+MCAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2Uv
+amR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9UeXBlVmFyaWFibGVCaW5kaW5nLmphdmEKKysr
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFs
+L2NvbXBpbGVyL2xvb2t1cC9UeXBlVmFyaWFibGVCaW5kaW5nLmphdmEKQEAgLTMyMCw3ICszMjAs
+NyBAQAogCQkJCWZvciAoaW50IGkgPSAwLCBsID0gdGhpcy5zdXBlckludGVyZmFjZXMubGVuZ3Ro
+OyBpIDwgbDsgaSsrKQogCQkJCQl0aGlzLnR5cGVCaXRzIHw9IHRoaXMuc3VwZXJJbnRlcmZhY2Vz
+W2ldLnR5cGVCaXRzOwogCQl9Ci0JCXJldHVybiAodGhpcy50eXBlQml0cyAmIGJpdCkgIT0gMDsK
+KwkJcmV0dXJuICgodGhpcy50eXBlQml0cyAhPSAtMSkgJiYgKHRoaXMudHlwZUJpdHMgJiBiaXQp
+ICE9IDApOwogCX0KIAogCS8qKg==
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>204285</attachid>
+            <date>2011-09-29 08:24:00 -0400</date>
+            <delta_ts>2011-09-29 08:24:04 -0400</delta_ts>
+            <desc>enhanced fix</desc>
+            <filename>Bug_359362.patch</filename>
+            <type>text/plain</type>
+            <size>6880</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy91dGlsL1Rlc3RWZXJpZmllci5qYXZhIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L3V0aWwvVGVzdFZlcmlmaWVyLmphdmEKaW5kZXggOGMzOGM1OC4uZjcyYWE2OSAxMDA2NDQKLS0t
+IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pk
+dC9jb3JlL3Rlc3RzL3V0aWwvVGVzdFZlcmlmaWVyLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL3V0aWwv
+VGVzdFZlcmlmaWVyLmphdmEKQEAgLTEsNSArMSw1IEBACiAvKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KgotICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDEwIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJz
+LgorICogQ29weXJpZ2h0IChjKSAyMDAwLCAyMDExIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJz
+LgogICogQWxsIHJpZ2h0cyByZXNlcnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55
+aW5nIG1hdGVyaWFscwogICogYXJlIG1hZGUgYXZhaWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0
+aGUgRWNsaXBzZSBQdWJsaWMgTGljZW5zZSB2MS4wCiAgKiB3aGljaCBhY2NvbXBhbmllcyB0aGlz
+IGRpc3RyaWJ1dGlvbiwgYW5kIGlzIGF2YWlsYWJsZSBhdApAQCAtMzM0LDcgKzMzNCw3IEBACiAJ
+CSIJdGhpcy5zb2NrZXQuc2V0VGNwTm9EZWxheSh0cnVlKTtcbiIgKwogCQkiCXNlcnZlci5jbG9z
+ZSgpO1xuIiArCiAJCSJcbiIgKwotCQkiCURhdGFJbnB1dFN0cmVhbSBpbiA9IG5ldyBEYXRhSW5w
+dXRTdHJlYW0odGhpcy5zb2NrZXQuZ2V0SW5wdXRTdHJlYW0oKSk7XG4iICsKKwkJIglmaW5hbCBE
+YXRhSW5wdXRTdHJlYW0gaW4gPSBuZXcgRGF0YUlucHV0U3RyZWFtKHRoaXMuc29ja2V0LmdldElu
+cHV0U3RyZWFtKCkpO1xuIiArCiAJCSIJZmluYWwgRGF0YU91dHB1dFN0cmVhbSBvdXQgPSBuZXcg
+RGF0YU91dHB1dFN0cmVhbSh0aGlzLnNvY2tldC5nZXRPdXRwdXRTdHJlYW0oKSk7XG4iICsKIAkJ
+Igl3aGlsZSAodHJ1ZSkge1xuIiArCiAJCSIJCWZpbmFsIFN0cmluZyBjbGFzc05hbWUgPSBpbi5y
+ZWFkVVRGKCk7XG4iICsKQEAgLTM1NCw3ICszNTQsMTIgQEAKIAkJIgkJCQkJfSBjYXRjaCAoSU9F
+eGNlcHRpb24gZTEpIHtcbiIgKwogCQkiCQkJCQkJLy8gaWdub3JlXG4iICsKIAkJIgkJCQkJfVxu
+IiArCi0JCSIJCQkJfVxuIiArCisJCSIJCQkJfSBmaW5hbGx5IHtcbiIgKworCQkiICAgICAgICAg
+ICAgICAgICAgIHRyeSB7XG4iICsKKwkJIgkJCQkJICAgIGluLmNsb3NlKCk7XG4iICsKKwkJIgkJ
+CQkJICAgIG91dC5jbG9zZSgpO1xuIiArCisJCSIgICAgICAgICAgICAgICAgICAgfSBjYXRjaCAo
+SU9FeGNlcHRpb24gaW9leCkge31cbiIgKworCQkiICAgICAgICAgICAgICAgfVxuIiArCiAJCSIJ
+CQl9XG4iICsKIAkJIgkJfTtcbiIgKwogCQkiCQl0aHJlYWQuc3RhcnQoKTtcbiIgKwpkaWZmIC0t
+Z2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVy
+bmFsL2NvbXBpbGVyL2xvb2t1cC9UeXBlSWRzLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9j
+b21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1R5cGVJZHMu
+amF2YQppbmRleCAyYmQ1MGJjLi4xMTViZjgzIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1R5
+cGVJZHMuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBz
+ZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1R5cGVJZHMuamF2YQpAQCAtNyw3ICs3LDkg
+QEAKICAqIAogICogQ29udHJpYnV0b3JzOgogICogICAgIElCTSBDb3Jwb3JhdGlvbiAtIGluaXRp
+YWwgQVBJIGFuZCBpbXBsZW1lbnRhdGlvbgotICogICAgIFN0ZXBoYW4gSGVycm1hbm4gLSBDb250
+cmlidXRpb24gZm9yIGJ1ZyAzNDkzMjYgLSBbMS43XSBuZXcgd2FybmluZyBmb3IgbWlzc2luZyB0
+cnktd2l0aC1yZXNvdXJjZXMKKyAqICAgICBTdGVwaGFuIEhlcnJtYW5uIC0gQ29udHJpYnV0aW9u
+cyBmb3IKKyAqICAgICAJCQkJCQkJYnVnIDM0OTMyNiAtIFsxLjddIG5ldyB3YXJuaW5nIGZvciBt
+aXNzaW5nIHRyeS13aXRoLXJlc291cmNlcworICogICAgIAkJCQkJCQlidWcgMzU5MzYyIC0gRlVQ
+IG9mIGJ1ZyAzNDkzMjY6IFJlc291cmNlIGxlYWsgb24gbm9uLUNsb3NlYWJsZSByZXNvdXJjZQog
+ICoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKiovCiBwYWNrYWdlIG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5h
+bC5jb21waWxlci5sb29rdXA7CiAKQEAgLTE4NCw2ICsxODYsMTEgQEAKIAlmaW5hbCBpbnQgQk9Y
+SU5HID0gMHgyMDA7CiAJZmluYWwgaW50IFVOQk9YSU5HID0gMHg0MDA7CiAKKwkvKioKKwkgKiBN
+YXJrcyBhIHR5cGUgd2hvc2UgdHlwZSBiaXRzIGhhdmUgbm90IHlldCBiZWVuIGluaXRpYWxpemVk
+LgorCSAqIEBzZWUgUmVmZXJlbmNlQmluZGluZyNoYXNUeXBlQml0KGludCkKKwkgKi8KKwlmaW5h
+bCBpbnQgQml0VW5pbml0aWFsaXplZCA9IDB4ODAwMDAwMDsKIAkvKiogCiAJICogTWFya3MgYWxs
+IHN1Yi10eXBlcyBvZiBqYXZhLmxhbmcuQXV0b0Nsb3NlYWJsZS4KIAkgKiBAc2VlIFJlZmVyZW5j
+ZUJpbmRpbmcjaGFzVHlwZUJpdChpbnQpCmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1R5cGVW
+YXJpYWJsZUJpbmRpbmcuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvVHlwZVZhcmlhYmxlQmluZGluZy5q
+YXZhCmluZGV4IGU0NjM5NjAuLjk5NWYzMGUgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5j
+b3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvVHlw
+ZVZhcmlhYmxlQmluZGluZy5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVy
+L29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvVHlwZVZhcmlhYmxlQmlu
+ZGluZy5qYXZhCkBAIC0xMCw2ICsxMCw3IEBACiAgKiAgICAgU3RlcGhhbiBIZXJybWFubiA8c3Rl
+cGhhbkBjcy50dS1iZXJsaW4uZGU+IC0gQ29udHJpYnV0aW9ucyBmb3IKICAqICAgICAJCQkJCQkJ
+YnVnIDI4MjE1MiAtIFsxLjVdW2NvbXBpbGVyXSBHZW5lcmljcyBjb2RlIHJlamVjdGVkIGJ5IEVj
+bGlwc2UgYnV0IGFjY2VwdGVkIGJ5IGphdmFjCiAgKiAgICAgCQkJCQkJCWJ1ZyAzNDkzMjYgLSBb
+MS43XSBuZXcgd2FybmluZyBmb3IgbWlzc2luZyB0cnktd2l0aC1yZXNvdXJjZXMKKyAqICAgICAJ
+CQkJCQkJYnVnIDM1OTM2MiAtIEZVUCBvZiBidWcgMzQ5MzI2OiBSZXNvdXJjZSBsZWFrIG9uIG5v
+bi1DbG9zZWFibGUgcmVzb3VyY2UKICAqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqLwogcGFja2FnZSBv
+cmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwOwogCkBAIC00NCw3ICs0NSw3
+IEBACiAJCXRoaXMubW9kaWZpZXJzID0gQ2xhc3NGaWxlQ29uc3RhbnRzLkFjY1B1YmxpYyB8IEV4
+dHJhQ29tcGlsZXJNb2RpZmllcnMuQWNjR2VuZXJpY1NpZ25hdHVyZTsgLy8gdHJlYXQgdHlwZSB2
+YXIgYXMgcHVibGljCiAJCXRoaXMudGFnQml0cyB8PSBUYWdCaXRzLkhhc1R5cGVWYXJpYWJsZTsK
+IAkJdGhpcy5lbnZpcm9ubWVudCA9IGVudmlyb25tZW50OwotCQl0aGlzLnR5cGVCaXRzID0gLTE7
+CisJCXRoaXMudHlwZUJpdHMgPSBUeXBlSWRzLkJpdFVuaW5pdGlhbGl6ZWQ7CiAJfQogCiAJLyoq
+CkBAIC0zMTEsMTQgKzMxMiwxNSBAQAogCX0KIAogCXB1YmxpYyBib29sZWFuIGhhc1R5cGVCaXQo
+aW50IGJpdCkgewotCQlpZiAodGhpcy50eXBlQml0cyA9PSAtMSkgeworCQlpZiAodGhpcy50eXBl
+Qml0cyA9PSBUeXBlSWRzLkJpdFVuaW5pdGlhbGl6ZWQpIHsKIAkJCS8vIGluaXRpYWxpemUgZnJv
+bSBib3VuZHMKIAkJCXRoaXMudHlwZUJpdHMgPSAwOwotCQkJaWYgKHRoaXMuc3VwZXJjbGFzcyAh
+PSBudWxsKQorCQkJaWYgKHRoaXMuc3VwZXJjbGFzcyAhPSBudWxsICYmIHRoaXMuc3VwZXJjbGFz
+cy5oYXNUeXBlQml0KH5UeXBlSWRzLkJpdFVuaW5pdGlhbGl6ZWQpKQogCQkJCXRoaXMudHlwZUJp
+dHMgfD0gdGhpcy5zdXBlcmNsYXNzLnR5cGVCaXRzOwogCQkJaWYgKHRoaXMuc3VwZXJJbnRlcmZh
+Y2VzICE9IG51bGwpCiAJCQkJZm9yIChpbnQgaSA9IDAsIGwgPSB0aGlzLnN1cGVySW50ZXJmYWNl
+cy5sZW5ndGg7IGkgPCBsOyBpKyspCi0JCQkJCXRoaXMudHlwZUJpdHMgfD0gdGhpcy5zdXBlcklu
+dGVyZmFjZXNbaV0udHlwZUJpdHM7CisJCQkJCWlmICh0aGlzLnN1cGVySW50ZXJmYWNlc1tpXS5o
+YXNUeXBlQml0KH5UeXBlSWRzLkJpdFVuaW5pdGlhbGl6ZWQpKQorCQkJCQkJdGhpcy50eXBlQml0
+cyB8PSB0aGlzLnN1cGVySW50ZXJmYWNlc1tpXS50eXBlQml0czsKIAkJfQogCQlyZXR1cm4gKHRo
+aXMudHlwZUJpdHMgJiBiaXQpICE9IDA7CiAJfQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9X
+aWxkY2FyZEJpbmRpbmcuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvV2lsZGNhcmRCaW5kaW5nLmphdmEK
+aW5kZXggMzc1ZWJlYy4uMDFmMzY5ZSAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUv
+Y29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9XaWxkY2Fy
+ZEJpbmRpbmcuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNs
+aXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL1dpbGRjYXJkQmluZGluZy5qYXZhCkBA
+IC03LDcgKzcsOSBAQAogICoKICAqIENvbnRyaWJ1dG9yczoKICAqICAgICBJQk0gQ29ycG9yYXRp
+b24gLSBpbml0aWFsIEFQSSBhbmQgaW1wbGVtZW50YXRpb24KLSAqICAgICBTdGVwaGFuIEhlcnJt
+YW5uIC0gQ29udHJpYnV0aW9uIGZvciBidWcgMzQ5MzI2IC0gWzEuN10gbmV3IHdhcm5pbmcgZm9y
+IG1pc3NpbmcgdHJ5LXdpdGgtcmVzb3VyY2VzCisgKiAgICAgU3RlcGhhbiBIZXJybWFubiAtIENv
+bnRyaWJ1dGlvbiBmb3IKKyAqICAgICAJCQkJCQkJYnVnIDM0OTMyNiAtIFsxLjddIG5ldyB3YXJu
+aW5nIGZvciBtaXNzaW5nIHRyeS13aXRoLXJlc291cmNlcworICogICAgIAkJCQkJCQlidWcgMzU5
+MzYyIC0gRlVQIG9mIGJ1ZyAzNDkzMjY6IFJlc291cmNlIGxlYWsgb24gbm9uLUNsb3NlYWJsZSBy
+ZXNvdXJjZQogICoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKiovCiBwYWNrYWdlIG9yZy5lY2xpcHNlLmpk
+dC5pbnRlcm5hbC5jb21waWxlci5sb29rdXA7CiAKQEAgLTU1LDcgKzU3LDcgQEAKIAkJaWYgKGJv
+dW5kIGluc3RhbmNlb2YgVW5yZXNvbHZlZFJlZmVyZW5jZUJpbmRpbmcpCiAJCQkoKFVucmVzb2x2
+ZWRSZWZlcmVuY2VCaW5kaW5nKSBib3VuZCkuYWRkV3JhcHBlcih0aGlzLCBlbnZpcm9ubWVudCk7
+CiAJCXRoaXMudGFnQml0cyB8PSAgVGFnQml0cy5IYXNVbnJlc29sdmVkVHlwZVZhcmlhYmxlczsg
+Ly8gY2xlYXJlZCBpbiByZXNvbHZlKCkKLQkJdGhpcy50eXBlQml0cyA9IC0xOworCQl0aGlzLnR5
+cGVCaXRzID0gVHlwZUlkcy5CaXRVbmluaXRpYWxpemVkOwogCX0KIAogCXB1YmxpYyBpbnQga2lu
+ZCgpIHsKQEAgLTQyMywxNCArNDI1LDE1IEBACiAJfQogCiAJcHVibGljIGJvb2xlYW4gaGFzVHlw
+ZUJpdChpbnQgYml0KSB7Ci0JCWlmICh0aGlzLnR5cGVCaXRzID09IC0xKSB7CisJCWlmICh0aGlz
+LnR5cGVCaXRzID09IFR5cGVJZHMuQml0VW5pbml0aWFsaXplZCkgewogCQkJLy8gaW5pdGlhbGl6
+ZSBmcm9tIHVwcGVyIGJvdW5kcwogCQkJdGhpcy50eXBlQml0cyA9IDA7Ci0JCQlpZiAodGhpcy5z
+dXBlcmNsYXNzICE9IG51bGwpCisJCQlpZiAodGhpcy5zdXBlcmNsYXNzICE9IG51bGwgJiYgdGhp
+cy5zdXBlcmNsYXNzLmhhc1R5cGVCaXQoflR5cGVJZHMuQml0VW5pbml0aWFsaXplZCkpCiAJCQkJ
+dGhpcy50eXBlQml0cyB8PSB0aGlzLnN1cGVyY2xhc3MudHlwZUJpdHM7CiAJCQlpZiAodGhpcy5z
+dXBlckludGVyZmFjZXMgIT0gbnVsbCkKIAkJCQlmb3IgKGludCBpID0gMCwgbCA9IHRoaXMuc3Vw
+ZXJJbnRlcmZhY2VzLmxlbmd0aDsgaSA8IGw7IGkrKykKLQkJCQkJdGhpcy50eXBlQml0cyB8PSB0
+aGlzLnN1cGVySW50ZXJmYWNlc1tpXS50eXBlQml0czsKKwkJCQkJaWYgKHRoaXMuc3VwZXJJbnRl
+cmZhY2VzW2ldLmhhc1R5cGVCaXQoflR5cGVJZHMuQml0VW5pbml0aWFsaXplZCkpCisJCQkJCQl0
+aGlzLnR5cGVCaXRzIHw9IHRoaXMuc3VwZXJJbnRlcmZhY2VzW2ldLnR5cGVCaXRzOwogCQl9CiAJ
+CXJldHVybiAodGhpcy50eXBlQml0cyAmIGJpdCkgIT0gMDsKIAl9Cg==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

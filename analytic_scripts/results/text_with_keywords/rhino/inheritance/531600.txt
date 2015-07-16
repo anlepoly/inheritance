@@ -1,0 +1,86 @@
+BUG REPORT COMMENTS:
+User-Agent:       Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_2; en-US) AppleWebKit/532.5 (KHTML, like Gecko) Chrome/4.0.249.12 Safari/532.5
+Build Identifier: 1.7R2
+
+I've setup a Context with setInstructionObserverThreshold(1000) and a corresponding ContextFactory with an observeInstructionCount function which immediately throws an error.  Most infinite loops correctly throw an error, but "while(true) continue;" does not, and runs forever.
+
+Reproducible: Always
+
+Steps to Reproduce:
+Here's my code:
+
+	private static RunResult runJSProgram(String program) {
+		RunResult result = new RunResult();
+		
+		
+		SecureContextFactory cf = new SecureContextFactory();
+		Context cx = cf.enterContext();
+		
+		Scriptable scope = cx.initStandardObjects();
+		try {
+			cx.evaluateString(scope, program, "<cmd>", 1, null);
+		}
+		catch(Throwable t) {
+			result.exceptionEncountered = t;
+		}
+		
+		Context.exit();
+		return result;
+	}
+
+	private static class RunResult {
+		public Throwable exceptionEncountered = null;
+		public StringBuilder output = new StringBuilder();
+		
+		public void addOutput(String out) {
+			output.append(out);
+		}
+		
+		public boolean equals(Object o) {
+			if (!(o instanceof RunResult)) return false;
+			RunResult r = (RunResult) o;
+			if ((this.exceptionEncountered == null) !=
+			    (r.exceptionEncountered    == null))
+				return false;
+			
+			if (!output.toString().equals(r.output.toString()))
+				return false;
+			
+			return true;
+		}
+	}
+	
+	private static class SecureContextFactory extends ContextFactory {
+		@Override
+		public Context makeContext() {
+			return new SecureContext(this);
+		}
+		
+		@Override
+		protected void observeInstructionCount(Context cx, int instructionCount) {
+			throw new RuntimeException("timout reached");
+		}
+	}
+	
+	private static class SecureContext extends Context {
+		static private final ClassShutter denyAllClasses = new ClassShutter() {
+			@Override
+			public boolean visibleToScripts(String classname) {
+				return false;//no access to Java classes
+			}
+		};
+		
+		public SecureContext(ContextFactory cf) {
+			super(cf);
+			
+			this.setClassShutter(denyAllClasses);
+			this.setInstructionObserverThreshold(1000);
+		}
+	}
+Actual Results:  
+runJSProgram("while(true) continue;") runs forever
+
+Expected Results:  
+It should throw an exception.
+Fixed in CVS (now erring on the safe side and rather counting too much than too little)
+

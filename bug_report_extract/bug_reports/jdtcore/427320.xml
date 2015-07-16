@@ -1,0 +1,670 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>427320</bug_id>
+          
+          <creation_ts>2014-02-03 14:24:00 -0500</creation_ts>
+          <short_desc>[1.8][dom ast] Type annotation on constructor is returned via IBinding#getAnnotations()</short_desc>
+          <delta_ts>2014-04-02 09:58:45 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>431810</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Markus Keller">markus_keller</reporter>
+          <assigned_to name="Jay Arthanareeswaran">jarthana</assigned_to>
+          <cc>manpalat</cc>
+    
+    <cc>noopur_gupta</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2358165</commentid>
+    <comment_count>0</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-02-03 14:24:41 -0500</bug_when>
+    <thetext>Question from Noopur: How to differentiate between a type use annotation and a constructor annotation on a constructor. We get both via IBinding.getAnnotations(). - Probably a bug?
+
+I would also expect @A to be treated as a type annotation in the snippet below. Java 8 reflection seems to agree with that viewpoint.
+
+
+package jsr308.bug.ctor;
+
+import java.lang.annotation.*;
+
+@Target(ElementType.TYPE_USE)
+@Retention(RetentionPolicy.RUNTIME)
+@interface A {}
+
+@Target(ElementType.TYPE_USE)
+@Retention(RetentionPolicy.RUNTIME)
+@interface B {}
+
+@Target(ElementType.CONSTRUCTOR)
+@Retention(RetentionPolicy.RUNTIME)
+@interface C {}
+
+public class Test&lt;E&gt; {
+    @C
+    public @A &lt;T&gt; Test() { // @A should be type annotation on constructor binding
+        new @B() Test();
+    }
+    
+    public static void main(String[] args) throws Exception {
+        Annotation[] declAnnos = Test.class.getDeclaredConstructors()[0].getAnnotations();
+        System.out.println(java.util.Arrays.asList(declAnnos));
+        
+        Annotation[] typeAnnos = Test.class.getDeclaredConstructors()[0].getAnnotatedReturnType().getAnnotations();
+        System.out.println(java.util.Arrays.asList(typeAnnos));
+    }
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359406</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-05 19:16:42 -0500</bug_when>
+    <thetext>Jay, please take a look. For us the expectations of javax.model APIs are
+more clinching than reflection. IIRC, javax.model expects the present
+behavior.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359436</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-06 00:42:20 -0500</bug_when>
+    <thetext>Even through the javax.lang interface, Javac and our APT differ - Javac attaches only @C to the constructor element while we attach both. I think we should do that too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359439</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-06 00:54:45 -0500</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #2)
+&gt; Even through the javax.lang interface, Javac and our APT differ - Javac
+&gt; attaches only @C to the constructor element while we attach both. I think we
+&gt; should do that too.
+
+Thanks for confirming, please follow up. Some of the calls to 
+ASTNode.copySE8AnnotationsToType are short circuited for constructors.
+
+We also need to invent a place to stick in these annotation bindings in the
+compiler side since ConstructorDeclaration does not have a return type
+and decide how to expose them on the DOM side.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359447</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-06 01:57:40 -0500</bug_when>
+    <thetext>Markus, do you need a fix for GA, or can this wait for 4.4 ? We don&apos;t see
+any major impediments to solving it and will definitely do if the UI will
+benefit in the near term, but if this is academic in the near run, it helps
+to know. Thanks.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359486</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-06 03:51:52 -0500</bug_when>
+    <thetext>I and Srikanth had a quick discussion on this and came up with this:
+
+We won&apos;t introduce any new DOM api. The clients can simply use IMethodBinding#getReturnType()#getTypeAnnotations() to get the type annotations. Also, we will filter out the type use annotations from IMethodBindning#getAnnotations(). This will require zero changes on the compiler side. But one thing I am worried about is bypassing the binding resolver and creating DOM bindings on the fly.
+
+Markus, do you see any problem with this approach?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359681</commentid>
+    <comment_count>6</comment_count>
+      <attachid>239702</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-06 10:47:30 -0500</bug_when>
+    <thetext>Created attachment 239702
+Proposed fix
+
+Patch + Test
+
+(In reply to Jayaprakash Arthanareeswaran from comment #5)
+&gt; Markus, do you see any problem with this approach?
+
+Never mind, that question doesn&apos;t arise as we just update the annotations of the bindings and not really creating new bindings as such.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359773</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-06 13:49:05 -0500</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #6)
+
+&gt; Never mind, that question doesn&apos;t arise as we just update the annotations of
+&gt; the bindings and not really creating new bindings as such.
+
+Jay, the present fix is problematic - since type bindings are shared 
+
+class X {
+@A
+X() {}
+
+X(int x) {}
+
+}
+
+will both share the void type binding. So we cannot directly attach type
+annotations to the binding. If we do, the getReturnType() calls on different
+constructors will overwrite the prior annotations.
+
+I am fine with relaxing the compiler side restriction to disallow annotations
+on void types as long as we ensure it is not allowed the program level if that
+would simplify this fix.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359781</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-06 13:56:50 -0500</bug_when>
+    <thetext>An alternate approach is to invent a new abstraction on the compiler side
+say ConstructedTypeBinding as a subclass of VoidTypeBinding that would allow
+cloning and decorations with annotations and have MethodBinding.returnType
+point to the new object for constructors.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359785</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-06 14:11:26 -0500</bug_when>
+    <thetext>org.eclipse.jdt.core.dom.IBinding.getAnnotations() already says it returns
+only SE7 annotations and points to ITypeBinding.getTypeAnnotations. I think
+a simpler fix is to introduce 
+
+org.eclipse.jdt.core.dom.IBinding.getTypeAnnotations() which would work for
+both constructors and methods and document that ITypeBinding.getTypeAnnotations
+route will not work for constructors.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359896</commentid>
+    <comment_count>10</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-06 19:32:25 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #9)
+&gt; org.eclipse.jdt.core.dom.IBinding.getAnnotations() already says it returns
+&gt; only SE7 annotations and points to ITypeBinding.getTypeAnnotations. I think
+&gt; a simpler fix is to introduce 
+&gt; 
+&gt; org.eclipse.jdt.core.dom.IBinding.getTypeAnnotations() which would work for
+&gt; both constructors and methods and document that
+&gt; ITypeBinding.getTypeAnnotations
+&gt; route will not work for constructors.
+
+Thinking about this a bit more, I dislike the annotated void type approach.
+void is not a type, it is indicating the absence of a type. Just like one
+should not be able create objects or arrays of it, one should not also expect
+to be able to have annotated versions of it.
+
+I see two possible ways forward:
+
+    - Document it away.
+    - Offer a getTypeAnnotations() service that would work for both methods
+and constructors.
+
+Markus, let us know what you prefer. Though in the last passage of comment#7
+and comment#8, I said certain changes are OK on the compiler side, I am having
+second thoughts and without associations from bindings on both sides, there could
+be unwelcome side effects.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359925</commentid>
+    <comment_count>11</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-06 22:30:52 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #10)
+&gt;     - Document it away.
+
+With the patch posted, we still abide by the IBinding#getAnnotations() documentation. Invoking this on a constructor will only give constructor annotations. Only thing we need to document is that the client will have to call getReturnType().getTypeAnnotations() to get the type annotations on the constructor.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2359926</commentid>
+    <comment_count>12</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-06 22:37:24 -0500</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #11)
+
+&gt; With the patch posted, we still abide by the IBinding#getAnnotations()
+&gt; documentation. Invoking this on a constructor will only give constructor
+&gt; annotations. Only thing we need to document is that the client will have to
+&gt; call getReturnType().getTypeAnnotations() to get the type annotations on the
+&gt; constructor.
+
+In comment#10, I am basically suggesting that we document 
+getReturnType().getTypeAnnotations() as being applicable only for methods and
+not constructors and that we introduce a new
+
+getTypeAnnotations() on IMethodBinding.
+
+So
+
+MethodBinding.getAnnotations() ==&gt; only SE7 annotations for methods &amp; ctors
+MethodBinding.getTypeAnnotations() ==&gt; only SE8 annotations for methods &amp; ctors.
+getReturnType().getTypeAnnotations() ==&gt; only SE8 annotations only for methods.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2360348</commentid>
+    <comment_count>13</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2014-02-07 12:50:22 -0500</bug_when>
+    <thetext>Hmm, I didn&apos;t realize that type annotations on a constructor declaration are such a special case. I agree that annotating the void return type is odd.
+
+I&apos;m OK with just dropping @A from the IMethodBinding#getAnnotations(). The current way to get from a constructor&apos;s IMethodBinding to the type of the created object is IMethodBinding#getDeclaringClass(). Maybe the result of that method could include the type annotations? Or IMethodBinding#getReturnType() could be changed to return the constructed type (including type annotations).
+
+However, I&apos;m not aware of a current use case for this, so it&apos;s also OK if the type annotation is inaccessible for now.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2360375</commentid>
+    <comment_count>14</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-07 13:52:28 -0500</bug_when>
+    <thetext>Jay, per comment#13, for GA, let us filter out the type annotations from the
+getAnnotations() call, Please raise a bug targetting 4.4 so this issue can
+get revisited.
+
+Thanks for ensuring javadoc and code is in sync for what has been decided.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2360902</commentid>
+    <comment_count>15</comment_count>
+      <attachid>239782</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-10 07:14:30 -0500</bug_when>
+    <thetext>Created attachment 239782
+Updated patch
+
+Patch with changes as discussed in previous comments.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2360923</commentid>
+    <comment_count>16</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-02-10 07:38:02 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #14)
+&gt; Please raise a bug targetting 4.4 so this issue can
+&gt; get revisited.
+
+Bug 427789 raised for this.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2360971</commentid>
+    <comment_count>17</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-02-10 08:43:10 -0500</bug_when>
+    <thetext>Thanks Jay, patch looks good, I made some minor changes (removed the unused
+parameter, simplified the check for whether we should filter or not) and 
+released here: 
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=80724a8df94e8e8610a4d46586b0b0c806074736</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2366662</commentid>
+    <comment_count>18</comment_count>
+    <who name="Manoj Palat Away Until May 11 2015">manpalat</who>
+    <bug_when>2014-02-21 06:07:20 -0500</bug_when>
+    <thetext>Verified as working for Eclipse + Java 8 RC1 using Kepler SR2(RC4) +   
+Eclipse Java Development Tools Patch for Java 8 Support (BETA)   
+1.0.0.v20140220-2054</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>239702</attachid>
+            <date>2014-02-06 10:47:00 -0500</date>
+            <delta_ts>2014-02-10 07:14:30 -0500</delta_ts>
+            <desc>Proposed fix</desc>
+            <filename>Bug-427320.patch</filename>
+            <type>text/plain</type>
+            <size>8369</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9kb20vVHlwZUJpbmRpbmdUZXN0czMwOC5qYXZhIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L2RvbS9UeXBlQmluZGluZ1Rlc3RzMzA4LmphdmEKaW5kZXggZmMwZTc0OS4uMjUxMDA0ZCAxMDA2
+NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNl
+L2pkdC9jb3JlL3Rlc3RzL2RvbS9UeXBlQmluZGluZ1Rlc3RzMzA4LmphdmEKKysrIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L2RvbS9UeXBlQmluZGluZ1Rlc3RzMzA4LmphdmEKQEAgLTIwMjUsNCArMjAyNSw2IEBACiAJCQkN
+CiAJCQlhbm5vdGF0aW9ucyA9IHR5cGVEZWNsLmdldE1ldGhvZHMoKVsxXS5yZXNvbHZlQmluZGlu
+ZygpLmdldEFubm90YXRpb25zKCk7DQorCQkJYXNzZXJ0VHJ1ZSgiU2hvdWxkIGJlIDAiLCBhbm5v
+dGF0aW9ucy5sZW5ndGggPT0gMCk7DQorCQkJYW5ub3RhdGlvbnMgPSB0eXBlRGVjbC5nZXRNZXRo
+b2RzKClbMV0ucmVzb2x2ZUJpbmRpbmcoKS5nZXRSZXR1cm5UeXBlKCkuZ2V0VHlwZUFubm90YXRp
+b25zKCk7DQogCQkJYXNzZXJ0VHJ1ZSgiU2hvdWxkIGJlIDEiLCBhbm5vdGF0aW9ucy5sZW5ndGgg
+PT0gMSk7DQogCQkJYXNzZXJ0RXF1YWxzKCJBbm5vdGF0aW9uIG1pc21hdGNoIiwgIkBUKHZhbHVl
+ID0gMjkpIiwgYW5ub3RhdGlvbnNbMF0udG9TdHJpbmcoKSk7DQpAQCAtMjA2OCw0ICsyMDcwLDYg
+QEAKIAkJCQ0KIAkJCWFubm90YXRpb25zID0gdHlwZUJpbmRpbmcuZ2V0U3VwZXJjbGFzcygpLmdl
+dERlY2xhcmVkTWV0aG9kcygpWzBdLmdldEFubm90YXRpb25zKCk7DQorCQkJYXNzZXJ0VHJ1ZSgi
+U2hvdWxkIGJlIDAiLCBhbm5vdGF0aW9ucy5sZW5ndGggPT0gMCk7DQorCQkJYW5ub3RhdGlvbnMg
+PSB0eXBlQmluZGluZy5nZXRTdXBlcmNsYXNzKCkuZ2V0RGVjbGFyZWRNZXRob2RzKClbMF0uZ2V0
+UmV0dXJuVHlwZSgpLmdldFR5cGVBbm5vdGF0aW9ucygpOw0KIAkJCWFzc2VydFRydWUoIlNob3Vs
+ZCBiZSAxIiwgYW5ub3RhdGlvbnMubGVuZ3RoID09IDEpOw0KIAkJCWFzc2VydEVxdWFscygiQW5u
+b3RhdGlvbiBtaXNtYXRjaCIsICJAVCh2YWx1ZSA9IDkpIiwgYW5ub3RhdGlvbnNbMF0udG9TdHJp
+bmcoKSk7DQpAQCAtMjIyMywzICsyMjI3LDQ4IEBACiAJCX0NCiAJfQ0KKwkvLyBodHRwczovL2J1
+Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/aWQ9NDI3MzIwDQorCXB1YmxpYyB2b2lk
+IHRlc3RCdWc0MjczMjAoKSB0aHJvd3MgRXhjZXB0aW9uIHsNCisJCXRyeSB7DQorCQkJU3RyaW5n
+IGNvbnRlbnRzID0gDQorCQkJCQkicHVibGljIGNsYXNzIFgge1xuIiArDQorCQkJCQkiCUBBIEBC
+IFgoKSB7fVxuIiArDQorCQkJCQkiCUBBIEBCIFN0cmluZyBmb28oKSB7XG5yZXR1cm4gbnVsbDtc
+bn1cbiIgKw0KKwkJCQkJIn1cbiIgKw0KKwkJCQkJIkBqYXZhLmxhbmcuYW5ub3RhdGlvbi5UYXJn
+ZXQgKHtqYXZhLmxhbmcuYW5ub3RhdGlvbi5FbGVtZW50VHlwZS5DT05TVFJVQ1RPUiwgIg0KKwkJ
+CQkJCQkJCQkJCQkrICJqYXZhLmxhbmcuYW5ub3RhdGlvbi5FbGVtZW50VHlwZS5NRVRIT0R9KVxu
+IiArDQorCQkJCQkiQGludGVyZmFjZSBBIHt9XG4iICsNCisJCQkJCSJAamF2YS5sYW5nLmFubm90
+YXRpb24uVGFyZ2V0IChqYXZhLmxhbmcuYW5ub3RhdGlvbi5FbGVtZW50VHlwZS5UWVBFX1VTRSlc
+biIgKw0KKwkJCQkJIkBpbnRlcmZhY2UgQiB7fVxuIjsNCisJCQ0KKwkJdGhpcy53b3JraW5nQ29w
+eSA9IGdldFdvcmtpbmdDb3B5KCIvQ29udmVydGVyMTgvc3JjL1guamF2YSIsIHRydWUvKnJlc29s
+dmUqLyk7DQorCQlBU1ROb2RlIG5vZGUgPSBidWlsZEFTVChjb250ZW50cywgdGhpcy53b3JraW5n
+Q29weSwgZmFsc2UpOw0KKwkJYXNzZXJ0RXF1YWxzKCJOb3QgYSBjb21waWxhdGlvbiB1bml0Iiwg
+QVNUTm9kZS5DT01QSUxBVElPTl9VTklULCBub2RlLmdldE5vZGVUeXBlKCkpOw0KKwkJQ29tcGls
+YXRpb25Vbml0IGNvbXBpbGF0aW9uVW5pdCA9IChDb21waWxhdGlvblVuaXQpIG5vZGU7DQorCQlh
+c3NlcnRQcm9ibGVtc1NpemUoY29tcGlsYXRpb25Vbml0LCAwKTsNCisJCUxpc3QgdHlwZXMgPSBj
+b21waWxhdGlvblVuaXQudHlwZXMoKTsNCisJCVR5cGVEZWNsYXJhdGlvbiB0eXBlRGVjbCA9IChU
+eXBlRGVjbGFyYXRpb24pIHR5cGVzLmdldCgwKTsNCisJCU1ldGhvZERlY2xhcmF0aW9uIG1ldGhv
+ZCA9IHR5cGVEZWNsLmdldE1ldGhvZHMoKVswXTsNCisJCWFzc2VydFRydWUoIlNob3VsZCBiZSBh
+IGNvbnN0cnVjdG9yIiwgbWV0aG9kLmlzQ29uc3RydWN0b3IoKSk7DQorCQlJTWV0aG9kQmluZGlu
+ZyBtZXRob2RCaW5kaW5nID0gbWV0aG9kLnJlc29sdmVCaW5kaW5nKCk7DQorCQlJQW5ub3RhdGlv
+bkJpbmRpbmdbXSBhbm5vdHMgPSBtZXRob2RCaW5kaW5nLmdldEFubm90YXRpb25zKCk7DQorCQlh
+c3NlcnRFcXVhbHMoIkluY29ycmVjdCBubyBvZiBhbm5vdGF0aW9ucyIsIDEsIGFubm90cy5sZW5n
+dGgpOw0KKwkJYXNzZXJ0RXF1YWxzKCJJbmNvcnJlY3QgYW5ub3RhdGlvbnMgYXR0YWNoZWQiLCJA
+QSgpIiwgYW5ub3RzWzBdLnRvU3RyaW5nKCkpOw0KKwkJSVR5cGVCaW5kaW5nIGJpbmRpbmcgPSBt
+ZXRob2RCaW5kaW5nLmdldFJldHVyblR5cGUoKTsNCisJCWFubm90cyA9IGJpbmRpbmcuZ2V0VHlw
+ZUFubm90YXRpb25zKCk7DQorCQlhc3NlcnRFcXVhbHMoIkluY29ycmVjdCBubyBvZiBhbm5vdGF0
+aW9ucyIsIDEsIGFubm90cy5sZW5ndGgpOw0KKwkJYXNzZXJ0RXF1YWxzKCJJbmNvcnJlY3QgYW5u
+b3RhdGlvbnMgYXR0YWNoZWQiLCJAQigpIiwgYW5ub3RzWzBdLnRvU3RyaW5nKCkpOw0KKwkJDQor
+CQltZXRob2QgPSB0eXBlRGVjbC5nZXRNZXRob2RzKClbMV07DQorCQltZXRob2RCaW5kaW5nID0g
+bWV0aG9kLnJlc29sdmVCaW5kaW5nKCk7DQorCQlhbm5vdHMgPSBtZXRob2RCaW5kaW5nLmdldEFu
+bm90YXRpb25zKCk7DQorCQlhc3NlcnRFcXVhbHMoIkluY29ycmVjdCBubyBvZiBhbm5vdGF0aW9u
+cyIsIDEsIGFubm90cy5sZW5ndGgpOw0KKwkJYXNzZXJ0RXF1YWxzKCJJbmNvcnJlY3QgYW5ub3Rh
+dGlvbnMgYXR0YWNoZWQiLCJAQSgpIiwgYW5ub3RzWzBdLnRvU3RyaW5nKCkpOw0KKwkJYmluZGlu
+ZyA9IG1ldGhvZEJpbmRpbmcuZ2V0UmV0dXJuVHlwZSgpOw0KKwkJYW5ub3RzID0gYmluZGluZy5n
+ZXRUeXBlQW5ub3RhdGlvbnMoKTsNCisJCWFzc2VydEVxdWFscygiSW5jb3JyZWN0IG5vIG9mIGFu
+bm90YXRpb25zIiwgMSwgYW5ub3RzLmxlbmd0aCk7DQorCQlhc3NlcnRFcXVhbHMoIkluY29ycmVj
+dCBhbm5vdGF0aW9ucyBhdHRhY2hlZCIsIkBCKCkiLCBhbm5vdHNbMF0udG9TdHJpbmcoKSk7DQor
+CQl9IGZpbmFsbHkgew0KKwkJCWRlbGV0ZUZpbGUoIi9Db252ZXJ0ZXIxOC9zcmMvWC5qYXZhIik7
+DQorCQl9DQorCX0NCiB9DQpkaWZmIC0tZ2l0IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvZG9tL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL2RvbS9NZXRob2RCaW5kaW5nLmphdmEgYi9vcmcuZWNsaXBzZS5q
+ZHQuY29yZS9kb20vb3JnL2VjbGlwc2UvamR0L2NvcmUvZG9tL01ldGhvZEJpbmRpbmcuamF2YQpp
+bmRleCAzNzUzZTYzLi4wZGEyMjFlIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9k
+b20vb3JnL2VjbGlwc2UvamR0L2NvcmUvZG9tL01ldGhvZEJpbmRpbmcuamF2YQorKysgYi9vcmcu
+ZWNsaXBzZS5qZHQuY29yZS9kb20vb3JnL2VjbGlwc2UvamR0L2NvcmUvZG9tL01ldGhvZEJpbmRp
+bmcuamF2YQpAQCAtMSw0ICsxLDQgQEAKIC8qKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqCi0gKiBDb3B5
+cmlnaHQgKGMpIDIwMDAsIDIwMTMgSUJNIENvcnBvcmF0aW9uIGFuZCBvdGhlcnMuCisgKiBDb3B5
+cmlnaHQgKGMpIDIwMDAsIDIwMTQgSUJNIENvcnBvcmF0aW9uIGFuZCBvdGhlcnMuCiAgKiBBbGwg
+cmlnaHRzIHJlc2VydmVkLiBUaGlzIHByb2dyYW0gYW5kIHRoZSBhY2NvbXBhbnlpbmcgbWF0ZXJp
+YWxzCiAgKiBhcmUgbWFkZSBhdmFpbGFibGUgdW5kZXIgdGhlIHRlcm1zIG9mIHRoZSBFY2xpcHNl
+IFB1YmxpYyBMaWNlbnNlIHYxLjAKQEAgLTIzLDQgKzIzLDUgQEAKIGltcG9ydCBvcmcuZWNsaXBz
+ZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwLlJhd1R5cGVCaW5kaW5nOwogaW1wb3J0IG9y
+Zy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuUmVmZXJlbmNlQmluZGluZzsK
+K2ltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwLlRhZ0JpdHM7
+CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmxvb2t1cC5UeXBlQmlu
+ZGluZzsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwLlR5
+cGVWYXJpYWJsZUJpbmRpbmc7CkBAIC0xMDUsMjUgKzEwNiw1IEBACiAJCX0KIAkJb3JnLmVjbGlw
+c2UuamR0LmludGVybmFsLmNvbXBpbGVyLmxvb2t1cC5Bbm5vdGF0aW9uQmluZGluZ1tdIGludGVy
+bmFsQW5ub3RhdGlvbnMgPSB0aGlzLmJpbmRpbmcuZ2V0QW5ub3RhdGlvbnMoKTsKLQkJaW50IGxl
+bmd0aCA9IGludGVybmFsQW5ub3RhdGlvbnMgPT0gbnVsbCA/IDAgOiBpbnRlcm5hbEFubm90YXRp
+b25zLmxlbmd0aDsKLQkJaWYgKGxlbmd0aCAhPSAwKSB7Ci0JCQlJQW5ub3RhdGlvbkJpbmRpbmdb
+XSB0ZW1wQW5ub3RhdGlvbnMgPSBuZXcgSUFubm90YXRpb25CaW5kaW5nW2xlbmd0aF07Ci0JCQlp
+bnQgY29udmVydGVkQW5ub3RhdGlvbkNvdW50ID0gMDsKLQkJCWZvciAoaW50IGkgPSAwOyBpIDwg
+bGVuZ3RoOyBpKyspIHsKLQkJCQlvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9v
+a3VwLkFubm90YXRpb25CaW5kaW5nIGludGVybmFsQW5ub3RhdGlvbiA9IGludGVybmFsQW5ub3Rh
+dGlvbnNbaV07Ci0JCQkJZmluYWwgSUFubm90YXRpb25CaW5kaW5nIGFubm90YXRpb25JbnN0YW5j
+ZSA9IHRoaXMucmVzb2x2ZXIuZ2V0QW5ub3RhdGlvbkluc3RhbmNlKGludGVybmFsQW5ub3RhdGlv
+bik7Ci0JCQkJaWYgKGFubm90YXRpb25JbnN0YW5jZSA9PSBudWxsKSB7Ci0JCQkJCWNvbnRpbnVl
+OwotCQkJCX0KLQkJCQl0ZW1wQW5ub3RhdGlvbnNbY29udmVydGVkQW5ub3RhdGlvbkNvdW50Kytd
+ID0gYW5ub3RhdGlvbkluc3RhbmNlOwotCQkJfQotCQkJaWYgKGNvbnZlcnRlZEFubm90YXRpb25D
+b3VudCAhPSBsZW5ndGgpIHsKLQkJCQlpZiAoY29udmVydGVkQW5ub3RhdGlvbkNvdW50ID09IDAp
+IHsKLQkJCQkJcmV0dXJuIHRoaXMuYW5ub3RhdGlvbnMgPSBBbm5vdGF0aW9uQmluZGluZy5Ob0Fu
+bm90YXRpb25zOwotCQkJCX0KLQkJCQlTeXN0ZW0uYXJyYXljb3B5KHRlbXBBbm5vdGF0aW9ucywg
+MCwgKHRlbXBBbm5vdGF0aW9ucyA9IG5ldyBJQW5ub3RhdGlvbkJpbmRpbmdbY29udmVydGVkQW5u
+b3RhdGlvbkNvdW50XSksIDAsIGNvbnZlcnRlZEFubm90YXRpb25Db3VudCk7Ci0JCQl9Ci0JCQly
+ZXR1cm4gdGhpcy5hbm5vdGF0aW9ucyA9IHRlbXBBbm5vdGF0aW9uczsKLQkJfQotCQlyZXR1cm4g
+dGhpcy5hbm5vdGF0aW9ucyA9IEFubm90YXRpb25CaW5kaW5nLk5vQW5ub3RhdGlvbnM7CisJCXJl
+dHVybiB0aGlzLmFubm90YXRpb25zID0gZmlsdGVyVHlwZUFubm90YXRpb25zKGludGVybmFsQW5u
+b3RhdGlvbnMsIHRydWUpOwogCX0KIApAQCAtMjE0LDggKzE5NSw0MCBAQAogCQlpZiAodGhpcy5y
+ZXR1cm5UeXBlID09IG51bGwpIHsKIAkJCXRoaXMucmV0dXJuVHlwZSA9IHRoaXMucmVzb2x2ZXIu
+Z2V0VHlwZUJpbmRpbmcodGhpcy5iaW5kaW5nLnJldHVyblR5cGUpOworCQkJaWYgKHRoaXMuaXND
+b25zdHJ1Y3RvcigpKSB7CisJCQkJKChvcmcuZWNsaXBzZS5qZHQuY29yZS5kb20uVHlwZUJpbmRp
+bmcpdGhpcy5yZXR1cm5UeXBlKS50eXBlQW5ub3RhdGlvbnMgPSAKKwkJCQkJCQkJCQkJZmlsdGVy
+VHlwZUFubm90YXRpb25zKHRoaXMuYmluZGluZy5nZXRBbm5vdGF0aW9ucygpLCBmYWxzZSk7CisJ
+CQl9CiAJCX0KIAkJcmV0dXJuIHRoaXMucmV0dXJuVHlwZTsKIAl9CiAKKwkvLyBAcGFyYW0gT3V0
+T3JJbiBpZiB0cnVlIGlzIHBhc3NlZCB0eXBlIGFubm90YXRpb25zIGFyZSBmaWx0ZXJlZCBvdXQs
+IGVsc2Ugb3RoZXIga2luZCBvZiBhbm5vdGF0aW9ucyBhcmUgZmlsdGVyZWQgb3V0CisJcHJvdGVj
+dGVkIElBbm5vdGF0aW9uQmluZGluZ1tdIGZpbHRlclR5cGVBbm5vdGF0aW9ucygKKwkJCW9yZy5l
+Y2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuQW5ub3RhdGlvbkJpbmRpbmdbXSBp
+bnRlcm5hbEFubm90YXRpb25zLCBib29sZWFuIE91dE9ySW4pIHsKKwkJaW50IGxlbmd0aCA9IGlu
+dGVybmFsQW5ub3RhdGlvbnMgPT0gbnVsbCA/IDAgOiBpbnRlcm5hbEFubm90YXRpb25zLmxlbmd0
+aDsKKwkJaWYgKGxlbmd0aCAhPSAwKSB7CisJCQlJQW5ub3RhdGlvbkJpbmRpbmdbXSB0ZW1wQW5u
+b3RhdGlvbnMgPSBuZXcgSUFubm90YXRpb25CaW5kaW5nW2xlbmd0aF07CisJCQlpbnQgY29udmVy
+dGVkQW5ub3RhdGlvbkNvdW50ID0gMDsKKwkJCWZvciAoaW50IGkgPSAwOyBpIDwgbGVuZ3RoOyBp
+KyspIHsKKwkJCQlvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwLkFubm90
+YXRpb25CaW5kaW5nIGludGVybmFsQW5ub3RhdGlvbiA9IGludGVybmFsQW5ub3RhdGlvbnNbaV07
+CisJCQkJZmluYWwgUmVmZXJlbmNlQmluZGluZyBhbm5vdGF0aW9uVHlwZSA9IGludGVybmFsQW5u
+b3RhdGlvbi5nZXRBbm5vdGF0aW9uVHlwZSgpOworCQkJCWxvbmcgbWV0YVRhZ0JpdHMgPSBhbm5v
+dGF0aW9uVHlwZS5nZXRBbm5vdGF0aW9uVGFnQml0cygpOworCQkJCWlmICghdGhpcy5pc0NvbnN0
+cnVjdG9yKCkgfHwgKChtZXRhVGFnQml0cyAmIFRhZ0JpdHMuQW5ub3RhdGlvbkZvclR5cGVVc2Up
+ID09IDApID09IE91dE9ySW4pIHsKKwkJCQkJZmluYWwgSUFubm90YXRpb25CaW5kaW5nIGFubm90
+YXRpb25JbnN0YW5jZSA9IHRoaXMucmVzb2x2ZXIuZ2V0QW5ub3RhdGlvbkluc3RhbmNlKGludGVy
+bmFsQW5ub3RhdGlvbik7CisJCQkJCWlmIChhbm5vdGF0aW9uSW5zdGFuY2UgPT0gbnVsbCkgewor
+CQkJCQkJY29udGludWU7CisJCQkJCX0KKwkJCQkJdGVtcEFubm90YXRpb25zW2NvbnZlcnRlZEFu
+bm90YXRpb25Db3VudCsrXSA9IGFubm90YXRpb25JbnN0YW5jZTsKKwkJCQl9CisJCQl9CisJCQlp
+ZiAoY29udmVydGVkQW5ub3RhdGlvbkNvdW50ID09IGxlbmd0aCkgcmV0dXJuIHRlbXBBbm5vdGF0
+aW9uczsKKwkJCWlmIChjb252ZXJ0ZWRBbm5vdGF0aW9uQ291bnQgPT0gMCkgcmV0dXJuIEFubm90
+YXRpb25CaW5kaW5nLk5vQW5ub3RhdGlvbnM7CisJCQkKKwkJCVN5c3RlbS5hcnJheWNvcHkodGVt
+cEFubm90YXRpb25zLCAwLCAodGVtcEFubm90YXRpb25zID0gbmV3IElBbm5vdGF0aW9uQmluZGlu
+Z1tjb252ZXJ0ZWRBbm5vdGF0aW9uQ291bnRdKSwgMCwgY29udmVydGVkQW5ub3RhdGlvbkNvdW50
+KTsKKwkJCXJldHVybiB0ZW1wQW5ub3RhdGlvbnM7CisJCX0KKwkJcmV0dXJuIEFubm90YXRpb25C
+aW5kaW5nLk5vQW5ub3RhdGlvbnM7CisJfQorCiAJcHVibGljIE9iamVjdCBnZXREZWZhdWx0VmFs
+dWUoKSB7CiAJCWlmIChpc0Fubm90YXRpb25NZW1iZXIoKSkKZGlmZiAtLWdpdCBhL29yZy5lY2xp
+cHNlLmpkdC5jb3JlL2RvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vVHlwZUJpbmRpbmcuamF2
+YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2RvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vVHlw
+ZUJpbmRpbmcuamF2YQppbmRleCBmN2U3NDJjLi45YWRkMDJhIDEwMDY0NAotLS0gYS9vcmcuZWNs
+aXBzZS5qZHQuY29yZS9kb20vb3JnL2VjbGlwc2UvamR0L2NvcmUvZG9tL1R5cGVCaW5kaW5nLmph
+dmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvZG9tL29yZy9lY2xpcHNlL2pkdC9jb3JlL2Rv
+bS9UeXBlQmluZGluZy5qYXZhCkBAIC02NCw1ICs2NCw1IEBACiAJcHJpdmF0ZSBJVmFyaWFibGVC
+aW5kaW5nW10gZmllbGRzOwogCXByaXZhdGUgSUFubm90YXRpb25CaW5kaW5nW10gYW5ub3RhdGlv
+bnM7Ci0JcHJpdmF0ZSBJQW5ub3RhdGlvbkJpbmRpbmdbXSB0eXBlQW5ub3RhdGlvbnM7CisJSUFu
+bm90YXRpb25CaW5kaW5nW10gdHlwZUFubm90YXRpb25zOwogCXByaXZhdGUgSU1ldGhvZEJpbmRp
+bmdbXSBtZXRob2RzOwogCXByaXZhdGUgSVR5cGVCaW5kaW5nW10gbWVtYmVyczs=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>239782</attachid>
+            <date>2014-02-10 07:14:00 -0500</date>
+            <delta_ts>2014-02-10 07:14:30 -0500</delta_ts>
+            <desc>Updated patch</desc>
+            <filename>Bug-427320.patch</filename>
+            <type>text/plain</type>
+            <size>8781</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLm1vZGVsL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9kb20vVHlwZUJpbmRpbmdUZXN0czMwOC5qYXZhIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L2RvbS9UeXBlQmluZGluZ1Rlc3RzMzA4LmphdmEKaW5kZXggOTY2YTRkOS4uNTU1YzRkYSAxMDA2
+NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNl
+L2pkdC9jb3JlL3Rlc3RzL2RvbS9UeXBlQmluZGluZ1Rlc3RzMzA4LmphdmEKKysrIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUudGVzdHMubW9kZWwvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3Rz
+L2RvbS9UeXBlQmluZGluZ1Rlc3RzMzA4LmphdmEKQEAgLTIwMjgsNiArMjAyOCw1IEBACiAJCQkN
+CiAJCQlhbm5vdGF0aW9ucyA9IHR5cGVEZWNsLmdldE1ldGhvZHMoKVsxXS5yZXNvbHZlQmluZGlu
+ZygpLmdldEFubm90YXRpb25zKCk7DQotCQkJYXNzZXJ0VHJ1ZSgiU2hvdWxkIGJlIDEiLCBhbm5v
+dGF0aW9ucy5sZW5ndGggPT0gMSk7DQotCQkJYXNzZXJ0RXF1YWxzKCJBbm5vdGF0aW9uIG1pc21h
+dGNoIiwgIkBUKHZhbHVlID0gMjkpIiwgYW5ub3RhdGlvbnNbMF0udG9TdHJpbmcoKSk7DQorCQkJ
+YXNzZXJ0VHJ1ZSgiU2hvdWxkIGJlIDAiLCBhbm5vdGF0aW9ucy5sZW5ndGggPT0gMCk7DQogCQkJ
+DQogCQkJYW5ub3RhdGlvbnMgPSB0eXBlRGVjbC5nZXRUeXBlcygpWzBdLnJlc29sdmVCaW5kaW5n
+KCkuZ2V0QW5ub3RhdGlvbnMoKTsNCkBAIC0yMDcxLDYgKzIwNzAsNSBAQAogCQkJDQogCQkJYW5u
+b3RhdGlvbnMgPSB0eXBlQmluZGluZy5nZXRTdXBlcmNsYXNzKCkuZ2V0RGVjbGFyZWRNZXRob2Rz
+KClbMF0uZ2V0QW5ub3RhdGlvbnMoKTsNCi0JCQlhc3NlcnRUcnVlKCJTaG91bGQgYmUgMSIsIGFu
+bm90YXRpb25zLmxlbmd0aCA9PSAxKTsNCi0JCQlhc3NlcnRFcXVhbHMoIkFubm90YXRpb24gbWlz
+bWF0Y2giLCAiQFQodmFsdWUgPSA5KSIsIGFubm90YXRpb25zWzBdLnRvU3RyaW5nKCkpOw0KKwkJ
+CWFzc2VydFRydWUoIlNob3VsZCBiZSAwIiwgYW5ub3RhdGlvbnMubGVuZ3RoID09IDApOw0KIAkJ
+CQ0KIAkJCWFubm90YXRpb25zID0gdHlwZUJpbmRpbmcuZ2V0U3VwZXJjbGFzcygpLmdldERlY2xh
+cmVkVHlwZXMoKVswXS5nZXRBbm5vdGF0aW9ucygpOw0KQEAgLTIzNjAsMyArMjM1OCw1MiBAQAog
+CQlhc3NlcnRFcXVhbHMoIkBBKChpbnQpMikgT3V0ZXIuQEEoKGludCkzKSBNaWRkbGUiLCB0eXBl
+LnRvU3RyaW5nKCkpOw0KIAl9DQorCS8vIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy9idWdzL3No
+b3dfYnVnLmNnaT9pZD00MjczMjANCisJcHVibGljIHZvaWQgdGVzdEJ1ZzQyNzMyMCgpIHRocm93
+cyBFeGNlcHRpb24gew0KKwkJdHJ5IHsNCisJCQlTdHJpbmcgY29udGVudHMgPSANCisJCQkJCSJw
+dWJsaWMgY2xhc3MgWCB7XG4iICsNCisJCQkJCSIJQEEgQEIgQEMgWCgpIHt9XG4iICsNCisJCQkJ
+CSIJQEEgQEIgQEMgU3RyaW5nIGZvbygpIHtcbnJldHVybiBudWxsO1xufVxuIiArDQorCQkJCQki
+fVxuIiArDQorCQkJCQkiQGphdmEubGFuZy5hbm5vdGF0aW9uLlRhcmdldCAoe2phdmEubGFuZy5h
+bm5vdGF0aW9uLkVsZW1lbnRUeXBlLkNPTlNUUlVDVE9SLCAiDQorCQkJCQkJCQkJCQkJCSsgImph
+dmEubGFuZy5hbm5vdGF0aW9uLkVsZW1lbnRUeXBlLk1FVEhPRCwgamF2YS5sYW5nLmFubm90YXRp
+b24uRWxlbWVudFR5cGUuVFlQRV9VU0V9KVxuIiArDQorCQkJCQkiQGludGVyZmFjZSBBIHt9XG4i
+ICsNCisJCQkJCSJAamF2YS5sYW5nLmFubm90YXRpb24uVGFyZ2V0ICh7amF2YS5sYW5nLmFubm90
+YXRpb24uRWxlbWVudFR5cGUuQ09OU1RSVUNUT1IsICINCisJCQkJCQkJCQkJCQkJKyAiamF2YS5s
+YW5nLmFubm90YXRpb24uRWxlbWVudFR5cGUuTUVUSE9EfSlcbiIgKw0KKwkJCQkJIkBpbnRlcmZh
+Y2UgQiB7fVxuIiArDQorCQkJCQkiQGphdmEubGFuZy5hbm5vdGF0aW9uLlRhcmdldCAoamF2YS5s
+YW5nLmFubm90YXRpb24uRWxlbWVudFR5cGUuVFlQRV9VU0UpXG4iICsNCisJCQkJCSJAaW50ZXJm
+YWNlIEMge31cbiI7DQorCQkNCisJCXRoaXMud29ya2luZ0NvcHkgPSBnZXRXb3JraW5nQ29weSgi
+L0NvbnZlcnRlcjE4L3NyYy9YLmphdmEiLCB0cnVlLypyZXNvbHZlKi8pOw0KKwkJQVNUTm9kZSBu
+b2RlID0gYnVpbGRBU1QoY29udGVudHMsIHRoaXMud29ya2luZ0NvcHksIGZhbHNlKTsNCisJCWFz
+c2VydEVxdWFscygiTm90IGEgY29tcGlsYXRpb24gdW5pdCIsIEFTVE5vZGUuQ09NUElMQVRJT05f
+VU5JVCwgbm9kZS5nZXROb2RlVHlwZSgpKTsNCisJCUNvbXBpbGF0aW9uVW5pdCBjb21waWxhdGlv
+blVuaXQgPSAoQ29tcGlsYXRpb25Vbml0KSBub2RlOw0KKwkJYXNzZXJ0UHJvYmxlbXNTaXplKGNv
+bXBpbGF0aW9uVW5pdCwgMCk7DQorCQlMaXN0IHR5cGVzID0gY29tcGlsYXRpb25Vbml0LnR5cGVz
+KCk7DQorCQlUeXBlRGVjbGFyYXRpb24gdHlwZURlY2wgPSAoVHlwZURlY2xhcmF0aW9uKSB0eXBl
+cy5nZXQoMCk7DQorCQlNZXRob2REZWNsYXJhdGlvbiBtZXRob2QgPSB0eXBlRGVjbC5nZXRNZXRo
+b2RzKClbMF07DQorCQlhc3NlcnRUcnVlKCJTaG91bGQgYmUgYSBjb25zdHJ1Y3RvciIsIG1ldGhv
+ZC5pc0NvbnN0cnVjdG9yKCkpOw0KKwkJSU1ldGhvZEJpbmRpbmcgbWV0aG9kQmluZGluZyA9IG1l
+dGhvZC5yZXNvbHZlQmluZGluZygpOw0KKwkJSUFubm90YXRpb25CaW5kaW5nW10gYW5ub3RzID0g
+bWV0aG9kQmluZGluZy5nZXRBbm5vdGF0aW9ucygpOw0KKwkJYXNzZXJ0RXF1YWxzKCJJbmNvcnJl
+Y3Qgbm8gb2YgYW5ub3RhdGlvbnMiLCAyLCBhbm5vdHMubGVuZ3RoKTsNCisJCWFzc2VydEVxdWFs
+cygiSW5jb3JyZWN0IGFubm90YXRpb25zIGF0dGFjaGVkIiwiQEEoKSIsIGFubm90c1swXS50b1N0
+cmluZygpKTsNCisJCWFzc2VydEVxdWFscygiSW5jb3JyZWN0IGFubm90YXRpb25zIGF0dGFjaGVk
+IiwiQEIoKSIsIGFubm90c1sxXS50b1N0cmluZygpKTsNCisJCUlUeXBlQmluZGluZyBiaW5kaW5n
+ID0gbWV0aG9kQmluZGluZy5nZXRSZXR1cm5UeXBlKCk7DQorCQlhbm5vdHMgPSBiaW5kaW5nLmdl
+dFR5cGVBbm5vdGF0aW9ucygpOw0KKwkJYXNzZXJ0RXF1YWxzKCJJbmNvcnJlY3Qgbm8gb2YgYW5u
+b3RhdGlvbnMiLCAwLCBhbm5vdHMubGVuZ3RoKTsNCisJCQ0KKwkJbWV0aG9kID0gdHlwZURlY2wu
+Z2V0TWV0aG9kcygpWzFdOw0KKwkJbWV0aG9kQmluZGluZyA9IG1ldGhvZC5yZXNvbHZlQmluZGlu
+ZygpOw0KKwkJYW5ub3RzID0gbWV0aG9kQmluZGluZy5nZXRBbm5vdGF0aW9ucygpOw0KKwkJYXNz
+ZXJ0RXF1YWxzKCJJbmNvcnJlY3Qgbm8gb2YgYW5ub3RhdGlvbnMiLCAyLCBhbm5vdHMubGVuZ3Ro
+KTsNCisJCWFzc2VydEVxdWFscygiSW5jb3JyZWN0IGFubm90YXRpb25zIGF0dGFjaGVkIiwiQEEo
+KSIsIGFubm90c1swXS50b1N0cmluZygpKTsNCisJCWFzc2VydEVxdWFscygiSW5jb3JyZWN0IGFu
+bm90YXRpb25zIGF0dGFjaGVkIiwiQEIoKSIsIGFubm90c1sxXS50b1N0cmluZygpKTsNCisJCWJp
+bmRpbmcgPSBtZXRob2RCaW5kaW5nLmdldFJldHVyblR5cGUoKTsNCisJCWFubm90cyA9IGJpbmRp
+bmcuZ2V0VHlwZUFubm90YXRpb25zKCk7DQorCQlhc3NlcnRFcXVhbHMoIkluY29ycmVjdCBubyBv
+ZiBhbm5vdGF0aW9ucyIsIDIsIGFubm90cy5sZW5ndGgpOw0KKwkJYXNzZXJ0RXF1YWxzKCJJbmNv
+cnJlY3QgYW5ub3RhdGlvbnMgYXR0YWNoZWQiLCJAQSBAQyBTdHJpbmciLCBiaW5kaW5nLnRvU3Ry
+aW5nKCkpOw0KKwkJfSBmaW5hbGx5IHsNCisJCQlkZWxldGVGaWxlKCIvQ29udmVydGVyMTgvc3Jj
+L1guamF2YSIpOw0KKwkJfQ0KKwl9DQogfQ0KZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5j
+b3JlL2RvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vSU1ldGhvZEJpbmRpbmcuamF2YSBiL29y
+Zy5lY2xpcHNlLmpkdC5jb3JlL2RvbS9vcmcvZWNsaXBzZS9qZHQvY29yZS9kb20vSU1ldGhvZEJp
+bmRpbmcuamF2YQppbmRleCAzNWIyMTRmLi45NjdhNTM5IDEwMDY0NAotLS0gYS9vcmcuZWNsaXBz
+ZS5qZHQuY29yZS9kb20vb3JnL2VjbGlwc2UvamR0L2NvcmUvZG9tL0lNZXRob2RCaW5kaW5nLmph
+dmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvZG9tL29yZy9lY2xpcHNlL2pkdC9jb3JlL2Rv
+bS9JTWV0aG9kQmluZGluZy5qYXZhCkBAIC0xNzAsNCArMTcwLDEyIEBACiAJICogUmV0dXJucyB0
+aGUgYmluZGluZyBmb3IgdGhlIHJldHVybiB0eXBlIG9mIHRoaXMgbWV0aG9kLiBSZXR1cm5zIHRo
+ZQogCSAqIHNwZWNpYWwgcHJpbWl0aXZlIDxjb2RlPnZvaWQ8L2NvZGU+IHJldHVybiB0eXBlIGZv
+ciBjb25zdHJ1Y3RvcnMuCisJICogPHA+CisJICogRm9yIG1ldGhvZHMsIHRoZSB0eXBlIGJpbmRp
+bmcgdGhhdCBpcyByZXR1cm5lZCBjb250YWlucyB0eXBlIGFubm90YXRpb25zIAorCSAqIGlmIGFu
+eS4gRm9yIGUuZy4gdGhlIGZvbGxvd2luZyBjb2RlIHdvdWxkIGdldCB0aGUgdHlwZSBhbm5vdGF0
+aW9ucyBvbiBhIAorCSAqIG1ldGhvZDogPGJyPgorCSAqICA8Y29kZT4gSUFubm90YXRpb25CaW5k
+aW5nW10gYW5ub3RzID0gZ2V0UmV0dXJuVHlwZSgpLmdldFR5cGVBbm5vdGF0aW9ucygpIDwvY29k
+ZT4KKwkgKiA8L3A+PHA+CisJICogRm9yIGEgY29uc3RydWN0b3IsIGFzIG9mIG5vdywgdGhlIHJl
+dHVybmVkIGJpbmRpbmcgZG9lcyBub3QgaW5jbHVkZSAKKwkgKiB0eXBlIGFubm90YXRpb25zLgog
+CSAqCiAJICogQHJldHVybiB0aGUgYmluZGluZyBmb3IgdGhlIHJldHVybiB0eXBlIG9mIHRoaXMg
+bWV0aG9kLCBvciB0aGUKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2RvbS9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS9kb20vTWV0aG9kQmluZGluZy5qYXZhIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvZG9tL29yZy9lY2xpcHNlL2pkdC9jb3JlL2RvbS9NZXRob2RCaW5kaW5nLmphdmEKaW5k
+ZXggMzc1M2U2My4uMWJmOGI2NiAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvZG9t
+L29yZy9lY2xpcHNlL2pkdC9jb3JlL2RvbS9NZXRob2RCaW5kaW5nLmphdmEKKysrIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvZG9tL29yZy9lY2xpcHNlL2pkdC9jb3JlL2RvbS9NZXRob2RCaW5kaW5n
+LmphdmEKQEAgLTEsNCArMSw0IEBACiAvKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKgotICogQ29weXJp
+Z2h0IChjKSAyMDAwLCAyMDEzIElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgorICogQ29weXJp
+Z2h0IChjKSAyMDAwLCAyMDE0IElCTSBDb3Jwb3JhdGlvbiBhbmQgb3RoZXJzLgogICogQWxsIHJp
+Z2h0cyByZXNlcnZlZC4gVGhpcyBwcm9ncmFtIGFuZCB0aGUgYWNjb21wYW55aW5nIG1hdGVyaWFs
+cwogICogYXJlIG1hZGUgYXZhaWxhYmxlIHVuZGVyIHRoZSB0ZXJtcyBvZiB0aGUgRWNsaXBzZSBQ
+dWJsaWMgTGljZW5zZSB2MS4wCkBAIC0yMyw0ICsyMyw1IEBACiBpbXBvcnQgb3JnLmVjbGlwc2Uu
+amR0LmludGVybmFsLmNvbXBpbGVyLmxvb2t1cC5SYXdUeXBlQmluZGluZzsKIGltcG9ydCBvcmcu
+ZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwLlJlZmVyZW5jZUJpbmRpbmc7Citp
+bXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmxvb2t1cC5UYWdCaXRzOwog
+aW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuVHlwZUJpbmRp
+bmc7CiBpbXBvcnQgb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmxvb2t1cC5UeXBl
+VmFyaWFibGVCaW5kaW5nOwpAQCAtMTA1LDI1ICsxMDYsNSBAQAogCQl9CiAJCW9yZy5lY2xpcHNl
+LmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuQW5ub3RhdGlvbkJpbmRpbmdbXSBpbnRlcm5h
+bEFubm90YXRpb25zID0gdGhpcy5iaW5kaW5nLmdldEFubm90YXRpb25zKCk7Ci0JCWludCBsZW5n
+dGggPSBpbnRlcm5hbEFubm90YXRpb25zID09IG51bGwgPyAwIDogaW50ZXJuYWxBbm5vdGF0aW9u
+cy5sZW5ndGg7Ci0JCWlmIChsZW5ndGggIT0gMCkgewotCQkJSUFubm90YXRpb25CaW5kaW5nW10g
+dGVtcEFubm90YXRpb25zID0gbmV3IElBbm5vdGF0aW9uQmluZGluZ1tsZW5ndGhdOwotCQkJaW50
+IGNvbnZlcnRlZEFubm90YXRpb25Db3VudCA9IDA7Ci0JCQlmb3IgKGludCBpID0gMDsgaSA8IGxl
+bmd0aDsgaSsrKSB7Ci0JCQkJb3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmxvb2t1
+cC5Bbm5vdGF0aW9uQmluZGluZyBpbnRlcm5hbEFubm90YXRpb24gPSBpbnRlcm5hbEFubm90YXRp
+b25zW2ldOwotCQkJCWZpbmFsIElBbm5vdGF0aW9uQmluZGluZyBhbm5vdGF0aW9uSW5zdGFuY2Ug
+PSB0aGlzLnJlc29sdmVyLmdldEFubm90YXRpb25JbnN0YW5jZShpbnRlcm5hbEFubm90YXRpb24p
+OwotCQkJCWlmIChhbm5vdGF0aW9uSW5zdGFuY2UgPT0gbnVsbCkgewotCQkJCQljb250aW51ZTsK
+LQkJCQl9Ci0JCQkJdGVtcEFubm90YXRpb25zW2NvbnZlcnRlZEFubm90YXRpb25Db3VudCsrXSA9
+IGFubm90YXRpb25JbnN0YW5jZTsKLQkJCX0KLQkJCWlmIChjb252ZXJ0ZWRBbm5vdGF0aW9uQ291
+bnQgIT0gbGVuZ3RoKSB7Ci0JCQkJaWYgKGNvbnZlcnRlZEFubm90YXRpb25Db3VudCA9PSAwKSB7
+Ci0JCQkJCXJldHVybiB0aGlzLmFubm90YXRpb25zID0gQW5ub3RhdGlvbkJpbmRpbmcuTm9Bbm5v
+dGF0aW9uczsKLQkJCQl9Ci0JCQkJU3lzdGVtLmFycmF5Y29weSh0ZW1wQW5ub3RhdGlvbnMsIDAs
+ICh0ZW1wQW5ub3RhdGlvbnMgPSBuZXcgSUFubm90YXRpb25CaW5kaW5nW2NvbnZlcnRlZEFubm90
+YXRpb25Db3VudF0pLCAwLCBjb252ZXJ0ZWRBbm5vdGF0aW9uQ291bnQpOwotCQkJfQotCQkJcmV0
+dXJuIHRoaXMuYW5ub3RhdGlvbnMgPSB0ZW1wQW5ub3RhdGlvbnM7Ci0JCX0KLQkJcmV0dXJuIHRo
+aXMuYW5ub3RhdGlvbnMgPSBBbm5vdGF0aW9uQmluZGluZy5Ob0Fubm90YXRpb25zOworCQlyZXR1
+cm4gdGhpcy5hbm5vdGF0aW9ucyA9IGZpbHRlclR5cGVBbm5vdGF0aW9ucyhpbnRlcm5hbEFubm90
+YXRpb25zLCBmYWxzZSk7CiAJfQogCkBAIC0yMTgsNCArMTk5LDM0IEBACiAJfQogCisJcHJvdGVj
+dGVkIElBbm5vdGF0aW9uQmluZGluZ1tdIGZpbHRlclR5cGVBbm5vdGF0aW9ucygKKwkJCW9yZy5l
+Y2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuQW5ub3RhdGlvbkJpbmRpbmdbXSBp
+bnRlcm5hbEFubm90YXRpb25zLCBib29sZWFuIGlzVGFyZ2V0QVR5cGUpIHsKKwkJaW50IGxlbmd0
+aCA9IGludGVybmFsQW5ub3RhdGlvbnMgPT0gbnVsbCA/IDAgOiBpbnRlcm5hbEFubm90YXRpb25z
+Lmxlbmd0aDsKKwkJaWYgKGxlbmd0aCAhPSAwKSB7CisJCQlJQW5ub3RhdGlvbkJpbmRpbmdbXSB0
+ZW1wQW5ub3RhdGlvbnMgPSBuZXcgSUFubm90YXRpb25CaW5kaW5nW2xlbmd0aF07CisJCQlpbnQg
+Y29udmVydGVkQW5ub3RhdGlvbkNvdW50ID0gMDsKKwkJCWZvciAoaW50IGkgPSAwOyBpIDwgbGVu
+Z3RoOyBpKyspIHsKKwkJCQlvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3Vw
+LkFubm90YXRpb25CaW5kaW5nIGludGVybmFsQW5ub3RhdGlvbiA9IGludGVybmFsQW5ub3RhdGlv
+bnNbaV07CisJCQkJZmluYWwgUmVmZXJlbmNlQmluZGluZyBhbm5vdGF0aW9uVHlwZSA9IGludGVy
+bmFsQW5ub3RhdGlvbi5nZXRBbm5vdGF0aW9uVHlwZSgpOworCQkJCWxvbmcgbWV0YVRhZ0JpdHMg
+PSBhbm5vdGF0aW9uVHlwZS5nZXRBbm5vdGF0aW9uVGFnQml0cygpOworCQkJCQorCQkJCWlmIChp
+c1RhcmdldEFUeXBlID8gKG1ldGFUYWdCaXRzICYgVGFnQml0cy5Bbm5vdGF0aW9uRm9yQ29uc3Ry
+dWN0b3IpICE9IDAgOiAKKwkJCQkJdGhpcy5pc0NvbnN0cnVjdG9yKCkgPyAobWV0YVRhZ0JpdHMg
+JiBUYWdCaXRzLkFubm90YXRpb25Gb3JDb25zdHJ1Y3RvcikgIT0gMCA6IAorCQkJCQkJKG1ldGFU
+YWdCaXRzICYgVGFnQml0cy5Bbm5vdGF0aW9uRm9yTWV0aG9kKSAhPSAwKSB7CisJCQkJCWZpbmFs
+IElBbm5vdGF0aW9uQmluZGluZyBhbm5vdGF0aW9uSW5zdGFuY2UgPSB0aGlzLnJlc29sdmVyLmdl
+dEFubm90YXRpb25JbnN0YW5jZShpbnRlcm5hbEFubm90YXRpb24pOworCQkJCQlpZiAoYW5ub3Rh
+dGlvbkluc3RhbmNlID09IG51bGwpIHsKKwkJCQkJCWNvbnRpbnVlOworCQkJCQl9CisJCQkJCXRl
+bXBBbm5vdGF0aW9uc1tjb252ZXJ0ZWRBbm5vdGF0aW9uQ291bnQrK10gPSBhbm5vdGF0aW9uSW5z
+dGFuY2U7CisJCQkJfQorCQkJfQorCQkJaWYgKGNvbnZlcnRlZEFubm90YXRpb25Db3VudCA9PSBs
+ZW5ndGgpIHJldHVybiB0ZW1wQW5ub3RhdGlvbnM7CisJCQlpZiAoY29udmVydGVkQW5ub3RhdGlv
+bkNvdW50ID09IDApIHJldHVybiBBbm5vdGF0aW9uQmluZGluZy5Ob0Fubm90YXRpb25zOworCQkJ
+CisJCQlTeXN0ZW0uYXJyYXljb3B5KHRlbXBBbm5vdGF0aW9ucywgMCwgKHRlbXBBbm5vdGF0aW9u
+cyA9IG5ldyBJQW5ub3RhdGlvbkJpbmRpbmdbY29udmVydGVkQW5ub3RhdGlvbkNvdW50XSksIDAs
+IGNvbnZlcnRlZEFubm90YXRpb25Db3VudCk7CisJCQlyZXR1cm4gdGVtcEFubm90YXRpb25zOwor
+CQl9CisJCXJldHVybiBBbm5vdGF0aW9uQmluZGluZy5Ob0Fubm90YXRpb25zOworCX0KKwogCXB1
+YmxpYyBPYmplY3QgZ2V0RGVmYXVsdFZhbHVlKCkgewogCQlpZiAoaXNBbm5vdGF0aW9uTWVtYmVy
+KCkp
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

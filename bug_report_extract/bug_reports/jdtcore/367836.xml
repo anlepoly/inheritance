@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>367836</bug_id>
+          
+          <creation_ts>2012-01-04 06:58:00 -0500</creation_ts>
+          <short_desc>Inconsistent source range for error from build and reconciler (declared package does not match expected)</short_desc>
+          <delta_ts>2012-03-13 10:46:41 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.6.2</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>3.8 M6</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Markus Keller">markus_keller</reporter>
+          <assigned_to name="Ayushman Jain">amj87.iitr</assigned_to>
+          <cc>amj87.iitr</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>satyam.kandula</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2046005</commentid>
+    <comment_count>0</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-01-04 06:58:55 -0500</bug_when>
+    <thetext>HEAD, but already broken in 3.6.2.
+
+Create this CU in a non-default package:
+
+import java.util.Date;
+public class C {
+	Date d;
+}
+
+=&gt; The editor shows 2 errors in this CU, one from the reconciler with range [0, 1] and one from the builder with range [0, 0].
+
+Message: The declared package &quot;&quot; does not match the expected package &quot;p&quot;.
+
+The two errors should have the same range so that the editor can fold them together. The range [0, 1] is a bit better, since it shows up in the source and allows to show the quick fix hover.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2046560</commentid>
+    <comment_count>1</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-01-05 07:03:55 -0500</bug_when>
+    <thetext>Targetting M6.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2075087</commentid>
+    <comment_count>2</comment_count>
+      <attachid>212050</attachid>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-05 03:50:56 -0500</bug_when>
+    <thetext>Created attachment 212050
+proposed fix
+
+Markus, I think the bug is in the editor here, as it is unable to fold the error reported twice but with same range [0,0]. In both reconciler and editor the error range created is [0,0]. You can verify that by changing the call to handle(..) in org.eclipse.jdt.internal.compiler.problem.ProblemReporter.packageIsNotExpectedPackage(CompilationUnitDeclaration) to always take 0,0 as start and end respectively. Even then I see two errors in the editor. 
+
+Can you see if this can be fixed in the editor? The above patch will enforce the range to [0,1], but I think the root cause may need to be fixed in the editor too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2075480</commentid>
+    <comment_count>3</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-03-05 14:34:45 -0500</bug_when>
+    <thetext>No, the editor is not the culprit here.
+
+The problem is that there&apos;s no clean way to have an IProblem with length 0.
+IProblem#getSourceStart() and #getSourceEnd() both say that they answer
+&quot;the start/end position of the problem (inclusive)&quot;, so if you create a problem with start/end 0/0, then it actually has length 1.
+
+CompilationUnitAnnotationModel#createPositionFromProblem(IProblem) creates the right Position from the reconciler problem.
+
+On the other hand, IMarker#CHAR_END is exclusive, so the builder can create markers with length == 0.
+
+
+The inconsistency in JDT Core arises in AbstractImageBuilder#storeProblemsFor(..) line: 733
+... where end == 0 is handled different than all other values.
+
+You cannot simply remove the extra case, since that would reintroduce bug 204339.
+
+I think the fix should be to remove the extra case in AbstractImageBuilder (revert bug 204339) and decide in ProblemReporter whether start/end can be 0/0 (preferred) or whether they have to be 0/-1 (if compUnitDecl.sourceEnd == 0). This needs to be done for all cases where start/end are just set to 0.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2076424</commentid>
+    <comment_count>4</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-07 05:34:08 -0500</bug_when>
+    <thetext>Released in master via commit 57b394813576bd0089aca541b5b581458c1b6d75</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2076476</commentid>
+    <comment_count>5</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-03-07 07:24:27 -0500</bug_when>
+    <thetext>The ProblemReporter has more cases where end is set to 0. Many look like they can only occur in binary types, but I think some of them should also get protection: abortDueToInternalError(..), cannotReadSource(..), corruptedSignature(..).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2076591</commentid>
+    <comment_count>6</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-07 09:41:27 -0500</bug_when>
+    <thetext>(In reply to comment #5)
+&gt; The ProblemReporter has more cases where end is set to 0. Many look like they
+&gt; can only occur in binary types, but I think some of them should also get
+&gt; protection: abortDueToInternalError(..), cannotReadSource(..),
+&gt; corruptedSignature(..).
+
+I&apos;d looked at all possible locations inside ProblemReporter and did not see motivation to touch others apart from the 2 I already changed. As you already mentioned, most of them are for binaries. Include corruptedSignature(..) in that.
+abortDueToInternalError(..) does not produce any warning message at all, but throws an exception usually with an error marker on the CU. Nothing will change here.
+cannotReadSource(..) raises a warning when a CU&apos;s underlying buffer is lost or its encoding is bad. I dont understand what it means to create a problem with a -1 end. No problem marker is actually created for this problem, rather the compilation is aborted with an exception. Anyway, this has always worked with 0,0.  We should let the sleeping dog lie. :)
+
+Because of these reasons, I thought the current fix is sufficient. Let me know if I missed anything here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2076614</commentid>
+    <comment_count>7</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-03-07 10:13:31 -0500</bug_when>
+    <thetext>OK, thanks for the explanations. I guess we&apos;re OK then.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2079418</commentid>
+    <comment_count>8</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-03-13 09:03:40 -0400</bug_when>
+    <thetext>The default settings work good but I have run into one failure case.
+Steps to reproduce. 
+- Have the test case in comment 0. 
+- Ensure that you get only one warning
+- Now turn off &apos;Build Automatically&apos;
+- Move the first line
+- You will now see two errors coming 
+
+The error goes off if the file is built.
+
+This is a minor bug, can be addressed via a different bug. I just want to check with you before filing a separate bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2079435</commentid>
+    <comment_count>9</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-13 09:18:16 -0400</bug_when>
+    <thetext>(In reply to comment #8)
+&gt; The default settings work good but I have run into one failure case.
+&gt; Steps to reproduce. 
+&gt; - Have the test case in comment 0. 
+&gt; - Ensure that you get only one warning
+&gt; - Now turn off &apos;Build Automatically&apos;
+&gt; - Move the first line
+I cannot reproduce. Can you elaborate on what you mean by &apos;move the first line&apos;. The error gets stuck on the import statement and wherever i move it, the error moves along. I dont see any second error.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2079442</commentid>
+    <comment_count>10</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-03-13 09:24:26 -0400</bug_when>
+    <thetext>(In reply to comment #9)
+&gt; (In reply to comment #8)
+&gt; &gt; The default settings work good but I have run into one failure case.
+&gt; &gt; Steps to reproduce. 
+&gt; &gt; - Have the test case in comment 0. 
+&gt; &gt; - Ensure that you get only one warning
+&gt; &gt; - Now turn off &apos;Build Automatically&apos;
+&gt; &gt; - Move the first line
+&gt; I cannot reproduce. Can you elaborate on what you mean by &apos;move the first
+&gt; line&apos;. The error gets stuck on the import statement and wherever i move it, the
+&gt; error moves along. I dont see any second error.
+The reconciler still shows me at the first line.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2079493</commentid>
+    <comment_count>11</comment_count>
+    <who name="Ayushman Jain">amj87.iitr</who>
+    <bug_when>2012-03-13 10:01:54 -0400</bug_when>
+    <thetext>(In reply to comment #10)
+&gt; The reconciler still shows me at the first line.
+Confirmed with Satyam that this is an existent issue and has nothing to do with the fix. Please file a separate bug if desired.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2079519</commentid>
+    <comment_count>12</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-03-13 10:20:26 -0400</bug_when>
+    <thetext>I can reproduce comment 8 when I move the first line with Alt+Down, Alt+Up.
+
+But that&apos;s just a limitation of what we can do when you choose to have the reconciler enabled but auto-build disabled.
+
+When you move source ranges, we try to keep markers close to their original location. This cannot be precise, though. If the distance is big enough, we also can&apos;t collapse the marker and the reconciler problems into a single problem, and that&apos;s why you can get the reconciler problem plus a stale marker problem (gray-on-white icon).
+
+I doubt there&apos;s much we could improve here.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2079555</commentid>
+    <comment_count>13</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-03-13 10:45:40 -0400</bug_when>
+    <thetext>(In reply to comment #12)
+&gt; I can reproduce comment 8 when I move the first line with Alt+Down, Alt+Up.
+&gt; 
+&gt; But that&apos;s just a limitation of what we can do when you choose to have the
+&gt; reconciler enabled but auto-build disabled.
+&gt; 
+&gt; When you move source ranges, we try to keep markers close to their original
+&gt; location. This cannot be precise, though. If the distance is big enough, we
+&gt; also can&apos;t collapse the marker and the reconciler problems into a single
+&gt; problem, and that&apos;s why you can get the reconciler problem plus a stale marker
+&gt; problem (gray-on-white icon).
+&gt; 
+&gt; I doubt there&apos;s much we could improve here.
+I understand. So, I am not even opening a new bug too.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2079558</commentid>
+    <comment_count>14</comment_count>
+    <who name="Satyam Kandula">satyam.kandula</who>
+    <bug_when>2012-03-13 10:46:41 -0400</bug_when>
+    <thetext>Verified for 3.8M6 using build I20120312-1300</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>212050</attachid>
+            <date>2012-03-05 03:50:00 -0500</date>
+            <delta_ts>2012-03-08 00:29:55 -0500</delta_ts>
+            <desc>proposed fix</desc>
+            <filename>367836.patch</filename>
+            <type>text/plain</type>
+            <size>1560</size>
+            <attacher name="Ayushman Jain">amj87.iitr</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9wcm9ibGVtL1Byb2JsZW1SZXBvcnRlci5qYXZhIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L3Byb2JsZW0vUHJvYmxlbVJlcG9ydGVyLmphdmEKaW5kZXggMzc5ZjIzMi4uYTRiOTMwNCAxMDA2
+NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2lu
+dGVybmFsL2NvbXBpbGVyL3Byb2JsZW0vUHJvYmxlbVJlcG9ydGVyLmphdmEKKysrIGIvb3JnLmVj
+bGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVy
+L3Byb2JsZW0vUHJvYmxlbVJlcG9ydGVyLmphdmEKQEAgLTU5NjcsMTYgKzU5NjcsMTcgQEAKIAkJ
+Y29tcFVuaXREZWNsLmN1cnJlbnRQYWNrYWdlLnNvdXJjZUVuZCk7CiB9CiBwdWJsaWMgdm9pZCBw
+YWNrYWdlSXNOb3RFeHBlY3RlZFBhY2thZ2UoQ29tcGlsYXRpb25Vbml0RGVjbGFyYXRpb24gY29t
+cFVuaXREZWNsKSB7CisJYm9vbGVhbiBoYXNQYWNrYWdlRGVjbGFyYXRpb24gPSBjb21wVW5pdERl
+Y2wuY3VycmVudFBhY2thZ2UgPT0gbnVsbDsKIAlTdHJpbmdbXSBhcmd1bWVudHMgPSBuZXcgU3Ry
+aW5nW10gewogCQlDaGFyT3BlcmF0aW9uLnRvU3RyaW5nKGNvbXBVbml0RGVjbC5jb21waWxhdGlv
+blJlc3VsdC5jb21waWxhdGlvblVuaXQuZ2V0UGFja2FnZU5hbWUoKSksCi0JCWNvbXBVbml0RGVj
+bC5jdXJyZW50UGFja2FnZSA9PSBudWxsID8gIiIgOiBDaGFyT3BlcmF0aW9uLnRvU3RyaW5nKGNv
+bXBVbml0RGVjbC5jdXJyZW50UGFja2FnZS50b2tlbnMpLCAvLyROT04tTkxTLTEkCisJCWhhc1Bh
+Y2thZ2VEZWNsYXJhdGlvbiA/ICIiIDogQ2hhck9wZXJhdGlvbi50b1N0cmluZyhjb21wVW5pdERl
+Y2wuY3VycmVudFBhY2thZ2UudG9rZW5zKSwgLy8kTk9OLU5MUy0xJAogCX07CiAJdGhpcy5oYW5k
+bGUoCiAJCUlQcm9ibGVtLlBhY2thZ2VJc05vdEV4cGVjdGVkUGFja2FnZSwKIAkJYXJndW1lbnRz
+LAogCQlhcmd1bWVudHMsCi0JCWNvbXBVbml0RGVjbC5jdXJyZW50UGFja2FnZSA9PSBudWxsID8g
+MCA6IGNvbXBVbml0RGVjbC5jdXJyZW50UGFja2FnZS5zb3VyY2VTdGFydCwKLQkJY29tcFVuaXRE
+ZWNsLmN1cnJlbnRQYWNrYWdlID09IG51bGwgPyAwIDogY29tcFVuaXREZWNsLmN1cnJlbnRQYWNr
+YWdlLnNvdXJjZUVuZCk7CisJCWhhc1BhY2thZ2VEZWNsYXJhdGlvbiA/IDAgOiBjb21wVW5pdERl
+Y2wuY3VycmVudFBhY2thZ2Uuc291cmNlU3RhcnQsCisJCWhhc1BhY2thZ2VEZWNsYXJhdGlvbiA/
+IDEgOiBjb21wVW5pdERlY2wuY3VycmVudFBhY2thZ2Uuc291cmNlRW5kKTsKIH0KIHB1YmxpYyB2
+b2lkIHBhcmFtZXRlckFzc2lnbm1lbnQoTG9jYWxWYXJpYWJsZUJpbmRpbmcgbG9jYWwsIEFTVE5v
+ZGUgbG9jYXRpb24pIHsKIAlpbnQgc2V2ZXJpdHkgPSBjb21wdXRlU2V2ZXJpdHkoSVByb2JsZW0u
+UGFyYW1ldGVyQXNzaWdubWVudCk7
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

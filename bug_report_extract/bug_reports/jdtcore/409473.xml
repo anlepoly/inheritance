@@ -1,0 +1,433 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>409473</bug_id>
+          
+          <creation_ts>2013-05-30 05:48:00 -0400</creation_ts>
+          <short_desc>[compiler] JDT cannot compile against JRE 1.8</short_desc>
+          <delta_ts>2015-01-13 07:34:10 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>critical</bug_severity>
+          <target_milestone>4.3 RC3</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>aclement</cc>
+    
+    <cc>daniel_megert</cc>
+    
+    <cc>hauser</cc>
+    
+    <cc>jarthana</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="58143"
+          type_id="1"
+          status="?"
+          setter="jarthana"
+          requestee="srikanth_sankaran"
+    />
+    <flag name="review"
+          id="58146"
+          type_id="1"
+          status="+"
+          setter="markus_keller"
+    />
+    <flag name="review"
+          id="58152"
+          type_id="1"
+          status="+"
+          setter="daniel_megert"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2265413</commentid>
+    <comment_count>0</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-05-30 05:48:45 -0400</bug_when>
+    <thetext>This is a special consideration in the area of bug 390889:
+
+Try to compile this class 
+
+  public abstract class Foo&lt;E&gt; implements java.util.List&lt;E&gt; { }
+
+using ECJ 4.3 against early access JRE 1.8 (b90). Result is:
+
+  Duplicate methods named spliterator with the parameters () and () are inherited from the types List&lt;E&gt; and Collection&lt;E&gt;
+
+While Oracle says that this situation isn&apos;t and shouldn&apos;t be supported,
+Andy Clement has the details why this *is* an important use case for Eclipse.
+
+
+I was surprised to learn that this works just fine using ECJ 4.3 M6 but produces the
+above error since M7. I had hoped to find a bug in one of the commits of M7, but my
+analysis is this:
+
+The change is caused by the fix for bug 395681, but its impossible to pin point a
+particular problem in that fix because parts of the relevant method
+MethodVerifier15.checkMethods() have been essentially re-written, so direct code 
+comparison doesn&apos;t help much.
+
+However, I see a simple and safe way of fixing the issue for now. I have a one-line
+patch in testing that simply prevents the application of one particular check
+against unexpected non-abstract methods in interfaces. Looking at MethodVerifyTest
+this already reduces the number of failures (when running on JRE 1.8), I&apos;m currently
+looking for a way to make this test run green even on JRE 1.8.
+
+I&apos;ll post a proposed patch in a little while.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2265431</commentid>
+    <comment_count>1</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-05-30 06:24:28 -0400</bug_when>
+    <thetext>Stephan, please also include a risk assessment  for your proposed fix (risk with/without the fix, potential performance impact).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2265438</commentid>
+    <comment_count>2</comment_count>
+      <attachid>231741</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-05-30 06:42:11 -0400</bug_when>
+    <thetext>Created attachment 231741
+patch under test
+
+I&apos;m currently running the JDT/Core tests against this patch.
+
+The effect wrt MethodVerifyTest on JRE 1.8 b90:
+down to 3 distinct failures (was: 7 distinct failures), all 3 remaining are of the kind
+
+16. WARNING in DataSet.java (at line 34)
+	public void remove() {}
+	            ^^^^^^^^
+The method remove() of type DataSet&lt;T&gt; should be tagged with @Override since it actually overrides a superclass method
+
+I believe this to be perfectly acceptable at this point.
+
+
+The fix works by adding one more check in two locations: 
+instead of
+
+   method.isAbstract()
+
+we now say
+
+   method.isAbstract() || method.declaringClass.isInterface()
+
+When compiling against Java7- class files this second check should never change the 
+outcome, since all interface methods would be detected as abstract by the first check
+already.
+
+Also the performance impact is minimal, since the additional check involves no
+further computation (isInterface() has a trivial implementation).
+
+Is this sufficient information for a decision?
+
+I&apos;ll let you know once tests have completed on my machine.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2265447</commentid>
+    <comment_count>3</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-05-30 07:00:52 -0400</bug_when>
+    <thetext>Forgot to mention the risk without the patch:
+
+Any projects - even at compliance 1.7 - that link against libraries from a JRE 1.8 
+cannot be compiled using JDT 4.3, because they get bogus compile errors.
+
+Why this is a relevant setup can be better answered by others, but since we cannot
+ship Java8 support prior to 4.4 the current situation might force a significant
+group of leading edge developers to move away from Eclipse.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2265450</commentid>
+    <comment_count>4</comment_count>
+      <attachid>231742</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-05-30 07:09:41 -0400</bug_when>
+    <thetext>Created attachment 231742
+same patch as before, copyright updated
+
+JDT/Core tests pass, this patch is ready to be reviewed etc.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2265451</commentid>
+    <comment_count>5</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-05-30 07:15:54 -0400</bug_when>
+    <thetext>The fix and the explanation sound reasonable to me. Marking for review by Srikanth.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2265566</commentid>
+    <comment_count>6</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-05-30 10:10:19 -0400</bug_when>
+    <thetext>+1 for RC4. JDT UI tests pass as well.
+
+Some IDE behavior is still not nice when working with this unsupported setup, but you can at least compile.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2265646</commentid>
+    <comment_count>7</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-05-30 11:57:12 -0400</bug_when>
+    <thetext>The patch also looks good to me. +1 for RC4.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2265690</commentid>
+    <comment_count>8</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-05-30 12:55:44 -0400</bug_when>
+    <thetext>Stephan, I have released the patch in master via commit:
+
+http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=760ef9b34243875ff06c163b177d17f0c77d9df3</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2265975</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-05-30 18:46:27 -0400</bug_when>
+    <thetext>Adjusting the target milestone after I verified that the fix is indeed in this
+re-spin for RC3: http://download.eclipse.org/eclipse/downloads/drops4/I20130530-1430</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2266093</commentid>
+    <comment_count>10</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-05-31 05:11:08 -0400</bug_when>
+    <thetext>Verified in I20130530-1430.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297342</commentid>
+    <comment_count>11</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-08-21 10:43:19 -0400</bug_when>
+    <thetext>Stephan, 
+
+Just checking, does this need to be cherry-picked for BETA_JAVA8?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2297376</commentid>
+    <comment_count>12</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-21 11:29:14 -0400</bug_when>
+    <thetext>(In reply to comment #11)
+&gt; Just checking, does this need to be cherry-picked for BETA_JAVA8?
+
+We may want to adopt the test, but it already passes in BETA_JAVA8 without this fix,
+because much has changed in BETA_JAVA8 to accommodate default methods in all scenarii.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2504904</commentid>
+    <comment_count>13</comment_count>
+    <who name="Ralf Hauser">hauser</who>
+    <bug_when>2015-01-13 05:48:37 -0500</bug_when>
+    <thetext>a subsequent problem for debian stable (wheezy) users is bug 457315</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2504915</commentid>
+    <comment_count>14</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-13 06:16:36 -0500</bug_when>
+    <thetext>(In reply to Ralf Hauser from comment #13)
+&gt; a subsequent problem for debian stable (wheezy) users is bug 457315
+
+I don&apos;t see a strong relation. This bug is about compiler correctness. The other bug about some runtime issues (memory? cpu?).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2504942</commentid>
+    <comment_count>15</comment_count>
+    <who name="Ralf Hauser">hauser</who>
+    <bug_when>2015-01-13 07:34:10 -0500</bug_when>
+    <thetext>Admitted, the relationship is not very strong, but just for the record:
+java7 is suboptimal for TLS forward secrecy - 1.8 apparently better.
+Therefore an upgrade to 1.8 causes the need for an upgrade of eclipse (preferrably v&gt;=4.4 luna) and then we land here.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>231741</attachid>
+            <date>2013-05-30 06:42:00 -0400</date>
+            <delta_ts>2013-05-30 07:09:41 -0400</delta_ts>
+            <desc>patch under test</desc>
+            <filename>Bug-409473--compiler-JDT-cannot-compile-against-JRE-.patch</filename>
+            <type>text/plain</type>
+            <size>2702</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL01ldGhvZFZlcmlmeVRl
+c3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL01ldGhvZFZlcmlmeVRlc3Qu
+amF2YQppbmRleCAxMDU0MzJkLi4zODliNTBiIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGls
+ZXIvcmVncmVzc2lvbi9NZXRob2RWZXJpZnlUZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBp
+bGVyL3JlZ3Jlc3Npb24vTWV0aG9kVmVyaWZ5VGVzdC5qYXZhCkBAIC0xMzgyOSw0ICsxMzgyOSwx
+MSBAQAogCQl9LAogCQkiIik7CiB9CitwdWJsaWMgdm9pZCB0ZXN0QnVnNDA5NDczKCkgeworICAg
+IHRoaXMucnVuQ29uZm9ybVRlc3QoCisgICAgICAgIG5ldyBTdHJpbmdbXSB7CisgICAgICAgICAg
+ICAiRm9vLmphdmEiLAorICAgICAgICAgICAgInB1YmxpYyBhYnN0cmFjdCBjbGFzcyBGb288RT4g
+aW1wbGVtZW50cyBqYXZhLnV0aWwuTGlzdDxFPiB7IH0gIgorICAgICAgICB9KTsKK30KIH0KZGlm
+ZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9p
+bnRlcm5hbC9jb21waWxlci9sb29rdXAvTWV0aG9kVmVyaWZpZXIuamF2YSBiL29yZy5lY2xpcHNl
+LmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29r
+dXAvTWV0aG9kVmVyaWZpZXIuamF2YQppbmRleCA5YzU2MzdmLi44NjMwNDUwIDEwMDY0NAotLS0g
+YS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwv
+Y29tcGlsZXIvbG9va3VwL01ldGhvZFZlcmlmaWVyLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9N
+ZXRob2RWZXJpZmllci5qYXZhCkBAIC02ODQsNyArNjg0LDggQEAKIE1ldGhvZEJpbmRpbmcgZmlu
+ZEJlc3RJbmhlcml0ZWRBYnN0cmFjdE1ldGhvZChNZXRob2RCaW5kaW5nW10gbWV0aG9kcywgaW50
+IGxlbmd0aCkgewogCWZpbmRNZXRob2QgOiBmb3IgKGludCBpID0gMDsgaSA8IGxlbmd0aDsgaSsr
+KSB7CiAJCU1ldGhvZEJpbmRpbmcgbWV0aG9kID0gbWV0aG9kc1tpXTsKLQkJaWYgKCFtZXRob2Qu
+aXNBYnN0cmFjdCgpKSBjb250aW51ZSBmaW5kTWV0aG9kOworCQkvLyB3aGVuIHVuZXhwZWN0ZWRs
+eSBzZWVpbmcgYSBub24tYWJzdHJhY3QgaW50ZXJmYWNlIG1ldGhvZCByZWdhcmQgaXQgYXMgYWJz
+dHJhY3QsIHRvbywgZm9yIHRoaXMgY2hlY2s6CisJCWlmICghKG1ldGhvZC5pc0Fic3RyYWN0KCkg
+fHwgbWV0aG9kLmRlY2xhcmluZ0NsYXNzLmlzSW50ZXJmYWNlKCkpKSBjb250aW51ZSBmaW5kTWV0
+aG9kOwogCQlmb3IgKGludCBqID0gMDsgaiA8IGxlbmd0aDsgaisrKSB7CiAJCQlpZiAoaSA9PSBq
+KSBjb250aW51ZTsKIAkJCWlmICghY2hlY2tJbmhlcml0ZWRSZXR1cm5UeXBlcyhtZXRob2QsIG1l
+dGhvZHNbal0pKSB7CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9v
+cmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL01ldGhvZFZlcmlmaWVyMTUu
+amF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRl
+cm5hbC9jb21waWxlci9sb29rdXAvTWV0aG9kVmVyaWZpZXIxNS5qYXZhCmluZGV4IGU2MzI4YzUu
+LjM3Y2M0ZTUgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvTWV0aG9kVmVyaWZpZXIxNS5qYXZh
+CisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRl
+cm5hbC9jb21waWxlci9sb29rdXAvTWV0aG9kVmVyaWZpZXIxNS5qYXZhCkBAIC0yNzAsNyArMjcw
+LDkgQEAKIAlib29sZWFuIGNvbnRpbnVlSW52ZXN0aWdhdGlvbiA9IHRydWU7CiAJTWV0aG9kQmlu
+ZGluZyBjb25jcmV0ZU1ldGhvZCA9IG51bGw7CiAJZm9yIChpbnQgaSA9IDA7IGkgPCBsZW5ndGg7
+IGkrKykgewotCQlpZiAoIW1ldGhvZHNbaV0uaXNBYnN0cmFjdCgpKSB7CisJCS8vIHdoZW4gdW5l
+eHBlY3RlZGx5IHNlZWluZyBhIG5vbi1hYnN0cmFjdCBpbnRlcmZhY2UgbWV0aG9kIHJlZ2FyZCBp
+dCBhcyBhYnN0cmFjdCwgdG9vLCBmb3IgdGhpcyBjaGVjazoKKwkJYm9vbGVhbiBpc0Fic3RyYWN0
+ID0gbWV0aG9kc1tpXS5pc0Fic3RyYWN0KCkgfHwgbWV0aG9kc1tpXS5kZWNsYXJpbmdDbGFzcy5p
+c0ludGVyZmFjZSgpOworCQlpZiAoIWlzQWJzdHJhY3QpIHsKIAkJCWlmIChjb25jcmV0ZU1ldGhv
+ZCAhPSBudWxsKSB7CiAJCQkJcHJvYmxlbVJlcG9ydGVyKCkuZHVwbGljYXRlSW5oZXJpdGVkTWV0
+aG9kcyh0aGlzLnR5cGUsIGNvbmNyZXRlTWV0aG9kLCBtZXRob2RzW2ldKTsKIAkJCQljb250aW51
+ZUludmVzdGlnYXRpb24gPSBmYWxzZTs=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>231742</attachid>
+            <date>2013-05-30 07:09:00 -0400</date>
+            <delta_ts>2013-05-30 07:09:41 -0400</delta_ts>
+            <desc>same patch as before, copyright updated</desc>
+            <filename>Bug-409473--compiler-JDT-cannot-compile-against-JRE-.patch</filename>
+            <type>text/plain</type>
+            <size>4464</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL01ldGhvZFZlcmlmeVRl
+c3QuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNs
+aXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL01ldGhvZFZlcmlmeVRlc3Qu
+amF2YQppbmRleCAxMDU0MzJkLi5iZTQ0YmIzIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQu
+Y29yZS50ZXN0cy5jb21waWxlci9zcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGls
+ZXIvcmVncmVzc2lvbi9NZXRob2RWZXJpZnlUZXN0LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBp
+bGVyL3JlZ3Jlc3Npb24vTWV0aG9kVmVyaWZ5VGVzdC5qYXZhCkBAIC0xMCw2ICsxMCw3IEBACiAg
+KiAgICAgU3RlcGhhbiBIZXJybWFubiAtIENvbnRyaWJ1dGlvbnMgZm9yCiAgKgkJCQkJCQkJYnVn
+IDM4ODc5NSAtIFtjb21waWxlcl0gZGV0ZWN0aW9uIG9mIG5hbWUgY2xhc2ggZGVwZW5kcyBvbiBv
+cmRlciBvZiBzdXBlciBpbnRlcmZhY2VzCiAgKgkJCQkJCQkJYnVnIDM5NTY4MSAtIFtjb21waWxl
+cl0gSW1wcm92ZSBzaW11bGF0aW9uIG9mIGphdmFjNiBiZWhhdmlvciBmcm9tIGJ1ZyAzMTc3MTkg
+YWZ0ZXIgZml4aW5nIGJ1ZyAzODg3OTUKKyAqCQkJCQkJCQlidWcgNDA5NDczIC0gW2NvbXBpbGVy
+XSBKRFQgY2Fubm90IGNvbXBpbGUgYWdhaW5zdCBKUkUgMS44CiAgKgkgICBBbmR5IENsZW1lbnQg
+LSBDb250cmlidXRpb24gZm9yCiAgKgkJCQkJCQkJYnVnIDQwNjkyOCAtIGNvbXB1dGF0aW9uIG9m
+IGluaGVyaXRlZCBtZXRob2RzIHNlZW1zIGRhbWFnZWQgKGFmZmVjdGluZyBAT3ZlcnJpZGVzKQog
+ICoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKiovCkBAIC0xMzgyOSw0ICsxMzgzMCwxMyBAQAogCQl9LAog
+CQkiIik7CiB9CisvLyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvNDA5NDczIC0gW2NvbXBpbGVy
+XSBKRFQgY2Fubm90IGNvbXBpbGUgYWdhaW5zdCBKUkUgMS44CisvLyBUZXN0IGZhaWxlZCB3aGVu
+IHJ1bm5pbmcgb24gYSBKUkUgMS44IGI5MAorcHVibGljIHZvaWQgdGVzdEJ1ZzQwOTQ3MygpIHsK
+KyAgICB0aGlzLnJ1bkNvbmZvcm1UZXN0KAorICAgICAgICBuZXcgU3RyaW5nW10geworICAgICAg
+ICAgICAgIkZvby5qYXZhIiwKKyAgICAgICAgICAgICJwdWJsaWMgYWJzdHJhY3QgY2xhc3MgRm9v
+PEU+IGltcGxlbWVudHMgamF2YS51dGlsLkxpc3Q8RT4geyB9ICIKKyAgICAgICAgfSk7Cit9CiB9
+CmRpZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9q
+ZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL01ldGhvZFZlcmlmaWVyLmphdmEgYi9vcmcuZWNs
+aXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIv
+bG9va3VwL01ldGhvZFZlcmlmaWVyLmphdmEKaW5kZXggOWM1NjM3Zi4uNTEyODBlZSAxMDA2NDQK
+LS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVy
+bmFsL2NvbXBpbGVyL2xvb2t1cC9NZXRob2RWZXJpZmllci5qYXZhCisrKyBiL29yZy5lY2xpcHNl
+LmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29r
+dXAvTWV0aG9kVmVyaWZpZXIuamF2YQpAQCAtMTIsNiArMTIsNyBAQAogICoJCQkJCQkJCWJ1ZyAz
+ODgyODEgLSBbY29tcGlsZXJdW251bGxdIGluaGVyaXRhbmNlIG9mIG51bGwgYW5ub3RhdGlvbnMg
+YXMgYW4gb3B0aW9uCiAgKgkJCQkJCQkJYnVnIDM5NTY4MSAtIFtjb21waWxlcl0gSW1wcm92ZSBz
+aW11bGF0aW9uIG9mIGphdmFjNiBiZWhhdmlvciBmcm9tIGJ1ZyAzMTc3MTkgYWZ0ZXIgZml4aW5n
+IGJ1ZyAzODg3OTUKICAqCQkJCQkJCQlidWcgNDA2OTI4IC0gY29tcHV0YXRpb24gb2YgaW5oZXJp
+dGVkIG1ldGhvZHMgc2VlbXMgZGFtYWdlZCAoYWZmZWN0aW5nIEBPdmVycmlkZXMpCisgKgkJCQkJ
+CQkJYnVnIDQwOTQ3MyAtIFtjb21waWxlcl0gSkRUIGNhbm5vdCBjb21waWxlIGFnYWluc3QgSlJF
+IDEuOAogICoqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKiovCiBwYWNrYWdlIG9yZy5lY2xpcHNlLmpkdC5p
+bnRlcm5hbC5jb21waWxlci5sb29rdXA7CiAKQEAgLTY4NCw3ICs2ODUsOCBAQAogTWV0aG9kQmlu
+ZGluZyBmaW5kQmVzdEluaGVyaXRlZEFic3RyYWN0TWV0aG9kKE1ldGhvZEJpbmRpbmdbXSBtZXRo
+b2RzLCBpbnQgbGVuZ3RoKSB7CiAJZmluZE1ldGhvZCA6IGZvciAoaW50IGkgPSAwOyBpIDwgbGVu
+Z3RoOyBpKyspIHsKIAkJTWV0aG9kQmluZGluZyBtZXRob2QgPSBtZXRob2RzW2ldOwotCQlpZiAo
+IW1ldGhvZC5pc0Fic3RyYWN0KCkpIGNvbnRpbnVlIGZpbmRNZXRob2Q7CisJCS8vIHdoZW4gdW5l
+eHBlY3RlZGx5IHNlZWluZyBhIG5vbi1hYnN0cmFjdCBpbnRlcmZhY2UgbWV0aG9kIHJlZ2FyZCBp
+dCBhcyBhYnN0cmFjdCwgdG9vLCBmb3IgdGhpcyBjaGVjazoKKwkJaWYgKCEobWV0aG9kLmlzQWJz
+dHJhY3QoKSB8fCBtZXRob2QuZGVjbGFyaW5nQ2xhc3MuaXNJbnRlcmZhY2UoKSkpIGNvbnRpbnVl
+IGZpbmRNZXRob2Q7CiAJCWZvciAoaW50IGogPSAwOyBqIDwgbGVuZ3RoOyBqKyspIHsKIAkJCWlm
+IChpID09IGopIGNvbnRpbnVlOwogCQkJaWYgKCFjaGVja0luaGVyaXRlZFJldHVyblR5cGVzKG1l
+dGhvZCwgbWV0aG9kc1tqXSkpIHsKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2Nv
+bXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvTWV0aG9kVmVy
+aWZpZXIxNS5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2Uv
+amR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9NZXRob2RWZXJpZmllcjE1LmphdmEKaW5kZXgg
+ZTYzMjhjNS4uY2FhMGMyYyAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGls
+ZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9NZXRob2RWZXJpZmll
+cjE1LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2Uv
+amR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9NZXRob2RWZXJpZmllcjE1LmphdmEKQEAgLTE0
+LDYgKzE0LDcgQEAKICAqCQkJCQkJCQlidWcgMzg4Nzk1IC0gW2NvbXBpbGVyXSBkZXRlY3Rpb24g
+b2YgbmFtZSBjbGFzaCBkZXBlbmRzIG9uIG9yZGVyIG9mIHN1cGVyIGludGVyZmFjZXMKICAqCQkJ
+CQkJCQlidWcgMzk1MDAyIC0gU2VsZiBib3VuZCBnZW5lcmljIGNsYXNzIGRvZXNuJ3QgcmVzb2x2
+ZSBib3VuZHMgcHJvcGVybHkgZm9yIHdpbGRjYXJkcyBmb3IgY2VydGFpbiBwYXJhbWV0cmlzYXRp
+b24uCiAgKgkJCQkJCQkJYnVnIDM5NTY4MSAtIFtjb21waWxlcl0gSW1wcm92ZSBzaW11bGF0aW9u
+IG9mIGphdmFjNiBiZWhhdmlvciBmcm9tIGJ1ZyAzMTc3MTkgYWZ0ZXIgZml4aW5nIGJ1ZyAzODg3
+OTUKKyAqCQkJCQkJCQlidWcgNDA5NDczIC0gW2NvbXBpbGVyXSBKRFQgY2Fubm90IGNvbXBpbGUg
+YWdhaW5zdCBKUkUgMS44CiAgKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKi8KIHBhY2thZ2Ugb3JnLmVj
+bGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmxvb2t1cDsKIApAQCAtMjcwLDcgKzI3MSw5IEBA
+CiAJYm9vbGVhbiBjb250aW51ZUludmVzdGlnYXRpb24gPSB0cnVlOwogCU1ldGhvZEJpbmRpbmcg
+Y29uY3JldGVNZXRob2QgPSBudWxsOwogCWZvciAoaW50IGkgPSAwOyBpIDwgbGVuZ3RoOyBpKysp
+IHsKLQkJaWYgKCFtZXRob2RzW2ldLmlzQWJzdHJhY3QoKSkgeworCQkvLyB3aGVuIHVuZXhwZWN0
+ZWRseSBzZWVpbmcgYSBub24tYWJzdHJhY3QgaW50ZXJmYWNlIG1ldGhvZCByZWdhcmQgaXQgYXMg
+YWJzdHJhY3QsIHRvbywgZm9yIHRoaXMgY2hlY2s6CisJCWJvb2xlYW4gaXNBYnN0cmFjdCA9IG1l
+dGhvZHNbaV0uaXNBYnN0cmFjdCgpIHx8IG1ldGhvZHNbaV0uZGVjbGFyaW5nQ2xhc3MuaXNJbnRl
+cmZhY2UoKTsKKwkJaWYgKCFpc0Fic3RyYWN0KSB7CiAJCQlpZiAoY29uY3JldGVNZXRob2QgIT0g
+bnVsbCkgewogCQkJCXByb2JsZW1SZXBvcnRlcigpLmR1cGxpY2F0ZUluaGVyaXRlZE1ldGhvZHMo
+dGhpcy50eXBlLCBjb25jcmV0ZU1ldGhvZCwgbWV0aG9kc1tpXSk7CiAJCQkJY29udGludWVJbnZl
+c3RpZ2F0aW9uID0gZmFsc2U7
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

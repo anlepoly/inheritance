@@ -1,0 +1,285 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>431577</bug_id>
+          
+          <creation_ts>2014-03-30 07:39:00 -0400</creation_ts>
+          <short_desc>[1.8][bytecode] Bad type on operand stack (different than Bug 429733)</short_desc>
+          <delta_ts>2014-04-29 08:51:30 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3.2</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Mac OS X</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M7</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Daniel Dietrich">daniel.dietrich</reporter>
+          <assigned_to name="Sasikanth Bharadwaj">saammana</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      <flag name="review"
+          id="62097"
+          type_id="1"
+          status="+"
+          setter="stephan.herrmann"
+    />
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2382205</commentid>
+    <comment_count>0</comment_count>
+    <who name="Daniel Dietrich">daniel.dietrich</who>
+    <bug_when>2014-03-30 07:39:14 -0400</bug_when>
+    <thetext>Running this snipped in Eclipse Kepler SR2 with official JAVA8 plugins produces an error (see below). Running it on the command-line with 1.8.0_20-ea-b05 works fine.
+
+
+import java.util.function.Function;
+import java.util.function.IntFunction;
+
+public class Test&lt;R&gt; {
+
+	public static void main(String[] args) {
+		new Test&lt;&gt;().test((Integer i) -&gt; null);
+	}
+
+	// this method should be called
+	&lt;T&gt; void test(Function&lt;T, R&gt; f) {
+	}
+
+	// BUG: the presence of this method causes problems
+	void test(int i, IntFunction&lt;R&gt; f) {
+		// WORKAROUND: casting i to (Integer) i
+		new State&lt;&gt;(new Val&lt;&gt;(i));
+	}
+	
+	static class State&lt;R&gt; {
+		State(Val&lt;?&gt; o) {
+		}
+	}
+	
+	static class Val&lt;T&gt; {
+		Val(T t) {}
+	}
+
+}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2382208</commentid>
+    <comment_count>1</comment_count>
+    <who name="Daniel Dietrich">daniel.dietrich</who>
+    <bug_when>2014-03-30 07:58:03 -0400</bug_when>
+    <thetext>This is the error message:
+
+Exception in thread &quot;main&quot; java.lang.VerifyError: Bad type on operand stack
+Exception Details:
+  Location:
+    Test.test(ILjava/util/function/IntFunction;)V @8: invokespecial
+  Reason:
+    Type integer (current frame, stack[3]) is not assignable to &apos;java/lang/Object&apos;
+  Current Frame:
+    bci: @8
+    flags: { }
+    locals: { &apos;Test&apos;, integer, &apos;java/util/function/IntFunction&apos; }
+    stack: { uninitialized 0, uninitialized 3, uninitialized 3, integer }
+  Bytecode:
+    0000000: bb00 24bb 0026 591b b700 28b7 002b b1  
+
+	at java.lang.Class.getDeclaredMethods0(Native Method)
+	at java.lang.Class.privateGetDeclaredMethods(Class.java:2688)
+	at java.lang.Class.getMethod0(Class.java:2937)
+	at java.lang.Class.getMethod(Class.java:1771)
+	at sun.launcher.LauncherHelper.validateMainClass(LauncherHelper.java:544)
+	at sun.launcher.LauncherHelper.checkAndLoadMain(LauncherHelper.java:526)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2382209</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-03-30 08:22:04 -0400</bug_when>
+    <thetext>I can reproduce. This is the byte code of method test:
+
+  void test(int, java.util.function.IntFunction&lt;R&gt;);
+    flags: 
+    Signature: #25                          // (ILjava/util/function/IntFunction&lt;TR;&gt;;)V
+    Code:
+      stack=4, locals=3, args_size=3
+         0: new           #26                 // class Test$State
+         3: new           #28                 // class Test$Val
+         6: dup           
+         7: iload_1       
+         8: invokespecial #30                 // Method Test$Val.&quot;&lt;init&gt;&quot;:(Ljava/lang/Object;)V
+        11: invokespecial #33                 // Method Test$State.&quot;&lt;init&gt;&quot;:(LTest$Val;)V
+        14: return        
+      LineNumberTable:
+        line 19: 0
+        line 20: 14
+
+
+We&apos;re missing a boxing conversion after the iload_1.
+Root cause is probably the same as in bug 429733, just on a different call path.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2389019</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-04-15 01:18:14 -0400</bug_when>
+    <thetext>Sasi, since this has little to do with type inference per se, we can relieve
+Stephan of this task. Please follow up. See that we generate right code for
+1.7-. So you should be able to debug quickly to find out why 1.8 does not
+generate the boxing conversion.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2391108</commentid>
+    <comment_count>4</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-04-22 02:32:50 -0400</bug_when>
+    <thetext>The reason for this is the same as the one mentioned in bug 429733 - the call to resolvePart3() never occurs for the AllocationExpression new Val&lt;&gt;(i), thereby resulting in the missing conversion in generated code. acceptPendingPolyArguments() handles only non-poly generic invocations which are not connected by innerpolies, but the binding for the AllocationExpression is a ParameterizedMethodBinding and not a ParameterizedGenericMethodBinding. We probably need to handle other cases as well. Adding an else as below in acceptPendingPolyArguments() solves this problem. 
+
+	diff --git a/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/lookup/InferenceContext18.java b/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/lookup/InferenceContext18.java
+index 397f967..2e2962f 100644
+--- a/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/lookup/InferenceContext18.java
++++ b/org.eclipse.jdt.core/compiler/org/eclipse/jdt/internal/compiler/lookup/InferenceContext18.java
+@@ -1498,6 +1498,8 @@
+ 								ASTNode.resolvePolyExpressionArguments(invocation, innerBinding, this.scope);
+ 							}
+ 						}
++					} else {
++						expression.checkAgainstFinalTargetType(targetType, this.scope);
+ 					}
+ 				} else {
+ 					expression.setExpectedType(targetType);
+
+Will check this change with the tests and attach patch if all goes well</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2391113</commentid>
+    <comment_count>5</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-04-22 02:53:45 -0400</bug_when>
+    <thetext>My contribution for this defect fix complies with http://www.eclipse.org/legal/CoO.php</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2391706</commentid>
+    <comment_count>6</comment_count>
+      <attachid>242219</attachid>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-04-23 04:11:55 -0400</bug_when>
+    <thetext>Created attachment 242219
+changes in source and tests</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2391708</commentid>
+    <comment_count>7</comment_count>
+    <who name="Sasikanth Bharadwaj">saammana</who>
+    <bug_when>2014-04-23 04:13:55 -0400</bug_when>
+    <thetext>Patch with the proposed change and tests is attached. Same as the earlier change but made the else specific to ParameterizedMethodBinding. ALl Java8 tests pass with this change.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2391737</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2014-04-23 05:06:20 -0400</bug_when>
+    <thetext>Stephan, this is a very small code change in your original implementation.
+Thanks for a quick review.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2392423</commentid>
+    <comment_count>9</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2014-04-24 07:08:05 -0400</bug_when>
+    <thetext>Thanks, Sasi, a master piece in conciseness :)
+
+Since this was the first &quot;foreign&quot; contribution to class IC18 I updated the copyright accordingly (&quot;and others&quot; + IBM in list of contributors)
+
+Released for 4.4 M7 via commit http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=a56241bbe152cb118563d1e64b01141047ba92c7</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2394710</commentid>
+    <comment_count>10</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2014-04-29 08:51:30 -0400</bug_when>
+    <thetext>Verified for 4.4 M7 with build I20140428-2000</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>242219</attachid>
+            <date>2014-04-23 04:11:00 -0400</date>
+            <delta_ts>2014-04-23 04:11:55 -0400</delta_ts>
+            <desc>changes in source and tests</desc>
+            <filename>431577_eclipse.jdt.coreandtests.patch</filename>
+            <type>text/plain</type>
+            <size>2155</size>
+            <attacher name="Sasikanth Bharadwaj">saammana</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0dlbmVyaWNzUmVncmVz
+c2lvblRlc3RfMV84LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS50ZXN0cy5jb21waWxlci9z
+cmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvY29tcGlsZXIvcmVncmVzc2lvbi9HZW5lcmlj
+c1JlZ3Jlc3Npb25UZXN0XzFfOC5qYXZhCmluZGV4IDFhOWFlNGEuLmQwNTYwY2IgMTAwNjQ0Ci0t
+LSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlLnRlc3RzLmNvbXBpbGVyL3NyYy9vcmcvZWNsaXBzZS9q
+ZHQvY29yZS90ZXN0cy9jb21waWxlci9yZWdyZXNzaW9uL0dlbmVyaWNzUmVncmVzc2lvblRlc3Rf
+MV84LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUudGVzdHMuY29tcGlsZXIvc3JjL29y
+Zy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2NvbXBpbGVyL3JlZ3Jlc3Npb24vR2VuZXJpY3NSZWdy
+ZXNzaW9uVGVzdF8xXzguamF2YQpAQCAtMjkyNiw0ICsyOTI2LDMwIEBACiAJCQkifVxuIgogCQl9
+KTsKIH0KKy8vIGh0dHBzOi8vYnVncy5lY2xpcHNlLm9yZy9idWdzL3Nob3dfYnVnLmNnaT9pZD00
+MzE1NzcgWzEuOF1bYnl0ZWNvZGVdIEJhZCB0eXBlIG9uIG9wZXJhbmQgc3RhY2sgKGRpZmZlcmVu
+dCB0aGFuIEJ1ZyA0Mjk3MzMpCitwdWJsaWMgdm9pZCB0ZXN0QnVnNDMxNTc3KCkgeworCXJ1bkNv
+bmZvcm1UZXN0KAorCQluZXcgU3RyaW5nW10geworCQkJIlRlc3QuamF2YSIsCisJCQkiaW1wb3J0
+IGphdmEudXRpbC5mdW5jdGlvbi5GdW5jdGlvbjtcbiIgKyAKKwkJCSJpbXBvcnQgamF2YS51dGls
+LmZ1bmN0aW9uLkludEZ1bmN0aW9uO1xuIiArIAorCQkJInB1YmxpYyBjbGFzcyBUZXN0PFI+IHtc
+biIgKyAKKwkJCSIJcHVibGljIHN0YXRpYyB2b2lkIG1haW4oU3RyaW5nW10gYXJncykge1xuIiAr
+IAorCQkJIgluZXcgVGVzdDw+KCkudGVzdCgoSW50ZWdlciBpKSAtPiBudWxsKTtcbiIgKyAKKwkJ
+CSIJfVxuIiArIAorCQkJIgk8VD4gdm9pZCB0ZXN0KEZ1bmN0aW9uPFQsIFI+IGYpIHtcbiIgKyAK
+KwkJCSIJfVxuIiArIAorCQkJIgl2b2lkIHRlc3QoaW50IGksIEludEZ1bmN0aW9uPFI+IGYpIHtc
+biIgKyAKKwkJCSIJCW5ldyBTdGF0ZTw+KG5ldyBWYWw8PihpKSk7XG4iICsgCisJCQkiCX1cbiIg
+KyAKKwkJCSIJc3RhdGljIGNsYXNzIFN0YXRlPFI+IHtcbiIgKyAKKwkJCSIJCVN0YXRlKFZhbDw/
+PiBvKSB7XG4iICsgCisJCQkiCQl9XG4iICsgCisJCQkiCX1cbiIgKyAKKwkJCSIJc3RhdGljIGNs
+YXNzIFZhbDxUPiB7XG4iICsgCisJCQkiCQlWYWwoVCB0KSB7fVxuIiArIAorCQkJIgl9XG4iICsg
+CisJCQkifSIKKwl9KTsKK30KIH0KZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2Nv
+bXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvSW5mZXJlbmNl
+Q29udGV4dDE4LmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBz
+ZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvbG9va3VwL0luZmVyZW5jZUNvbnRleHQxOC5qYXZhCmlu
+ZGV4IDM5N2Y5NjcuLmFhNDBiOTQgMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2Nv
+bXBpbGVyL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb21waWxlci9sb29rdXAvSW5mZXJlbmNl
+Q29udGV4dDE4LmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2Vj
+bGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2xvb2t1cC9JbmZlcmVuY2VDb250ZXh0MTguamF2
+YQpAQCAtMTQ5OCw2ICsxNDk4LDggQEAKIAkJCQkJCQkJQVNUTm9kZS5yZXNvbHZlUG9seUV4cHJl
+c3Npb25Bcmd1bWVudHMoaW52b2NhdGlvbiwgaW5uZXJCaW5kaW5nLCB0aGlzLnNjb3BlKTsKIAkJ
+CQkJCQl9CiAJCQkJCQl9CisJCQkJCX0gZWxzZSBpZihtZXRob2QgaW5zdGFuY2VvZiBQYXJhbWV0
+ZXJpemVkTWV0aG9kQmluZGluZyl7CisJCQkJCQlleHByZXNzaW9uLmNoZWNrQWdhaW5zdEZpbmFs
+VGFyZ2V0VHlwZSh0YXJnZXRUeXBlLCB0aGlzLnNjb3BlKTsKIAkJCQkJfQogCQkJCX0gZWxzZSB7
+CiAJCQkJCWV4cHJlc3Npb24uc2V0RXhwZWN0ZWRUeXBlKHRhcmdldFR5cGUpOw==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,324 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>458577</bug_id>
+          
+          <creation_ts>2015-01-27 15:40:00 -0500</creation_ts>
+          <short_desc>IClassFile.getWorkingCopy() may lead to NPE in BecomeWorkingCopyOperation</short_desc>
+          <delta_ts>2015-03-18 10:17:55 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.5</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          <see_also>https://git.eclipse.org/r/41754</see_also>
+    
+    <see_also>https://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=09617092d586fc57d56d7255b395176bf3d6b1e7</see_also>
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.5 M6</target_milestone>
+          
+          <blocked>458201</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Stephan Herrmann">stephan.herrmann</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>jarthana</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2510985</commentid>
+    <comment_count>0</comment_count>
+      <attachid>250278</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-27 15:40:18 -0500</bug_when>
+    <thetext>Created attachment 250278
+proposed fixes
+
+In experiments regarding bug 458201 I ran into an NPE.
+
+It starts when I say
+
+   classFile.getWorkingCopy((WorkingCopyOwner)null, null);
+
+on a classFile representing a class of an external jar, for which a source attachment exists.
+
+
+In BecomeWorkingCopyOperation.executeOperation() we NPE upon a non-existent resource.
+
+I tried two ways for avoiding the NPE:
+
+1. If resource == null completely avoid adding a delta.
+This approach caused another NPE down the line:
+Util.getUnresolvedJavaElement(TypeBinding ...) found a SourceTypeBinding for which none of the following attempts succeed:
+- check if file is *.class -&gt; create a ClassFile
+- else getCompilationUnit()
+In this situation fileName referred to a *.jar, =&gt; we return null.
+NPE occurred when the result of a recursive invocation was not checked for null (the type variable branch).
+
+Should jars be handled here? Or is just the fileName wrong? Should it point to the class file insided the jar?
+
+2. As an alternative I tried branching into &quot;// report an ADDED delta&quot;.
+This one additionally(?) caused CCE in ClassFile.existsUsingJarTypeCache() where we expect a ClassFile but now have a ClassFileWorkingCopy.
+Here an instanceof check seems a natural solution.
+
+
+I&apos;m attaching a patch which should make all three locations safer - for good measure. It demonstrates (2) even though the other option might be preferrable(?)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2510991</commentid>
+    <comment_count>1</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-27 15:51:01 -0500</bug_when>
+    <thetext>The issues should be reproducible when applying the patch attachment 250165 (from the JDT/UI bug 458201).
+
+Then in a runtime workbench, open any class from the JRE, and try Ctrl-1 somewhere in the class file editor.
+
+For the 2nd NPE (in Util) one needs to select a type variable before hitting Ctrl-1. 
+
+
+@Jay, can you advise regarding the choice (1) or (2) above? I.e., should we generate a delta (added) for a ClassFileWorkingCopy, or just skip that step?
+
+Investigating, whether Util.getUnresolvedJavaElement() should handle jar files sounds like a bonus, but since null seems to be a legal return value, a simple null return if null was found sounds fair enough, IMHO.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511672</commentid>
+    <comment_count>2</comment_count>
+      <attachid>250325</attachid>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-28 16:12:56 -0500</bug_when>
+    <thetext>Created attachment 250325
+proposed fixes v2
+
+This version balances the fix in BecomeWorkingCopyOperation with a corresponding fix in DiscardWorkingCopyOperation, which is necessary to prevent leaking a ClassFileWorkingCopy.
+
+I also found that the deltas are part of the API contract, so the current solution should be the right thing to do (rather than completely avoiding this part for class files).
+
+Whether or not these fixes will be needed depends on whether bug 458201 is accepted or not.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2511826</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-01-29 04:28:59 -0500</bug_when>
+    <thetext>(In reply to Stephan Herrmann from comment #1)
+&gt; @Jay, can you advise regarding the choice (1) or (2) above? I.e., should we
+&gt; generate a delta (added) for a ClassFileWorkingCopy, or just skip that step?
+
+Stephan, I haven&apos;t applied the patch and look at the code yet or the problems you ran into, but I think it&apos;s okay not to generate delta for class file working copy? At the moment I can&apos;t imagine why we would need that.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2512825</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-01-31 18:24:55 -0500</bug_when>
+    <thetext>I caught one more situation where a ClassFileWorkingCopy causes grief downstream: ASTParser. Luckily, simply reverting to the underlying ClassFile resolves the issue in a two-liner.
+
+Symptom was: CU generated from the CFWC had a wrong file name (the jar name), which caused resolving to fail (IProblem.PublicClassMustMatchFileName). Special handling for exact this issue is already present for ClassFile. That&apos;s what the fix piggy-backs on.
+
+Feature branch, commit 50247d3918ef4bb3d4a8928e6849a54c53425221</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518114</commentid>
+    <comment_count>5</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-02-12 11:28:24 -0500</bug_when>
+    <thetext>New Gerrit change created: https://git.eclipse.org/r/41754</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518191</commentid>
+    <comment_count>6</comment_count>
+    <who name="Eclipse Genie">genie</who>
+    <bug_when>2015-02-12 13:12:04 -0500</bug_when>
+    <thetext>Gerrit change https://git.eclipse.org/r/41754 was merged to [master].
+Commit: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?id=09617092d586fc57d56d7255b395176bf3d6b1e7</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2518193</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2015-02-12 13:14:11 -0500</bug_when>
+    <thetext>I&apos;ve released (for 4.5M6) the safety net for those locations where ClassFileWorkingCopy has been observed to trigger exceptions.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2533657</commentid>
+    <comment_count>8</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2015-03-18 10:17:55 -0400</bug_when>
+    <thetext>Verified for 4.5 M6 by code inspection.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="1"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>250278</attachid>
+            <date>2015-01-27 15:40:00 -0500</date>
+            <delta_ts>2015-01-28 16:12:56 -0500</delta_ts>
+            <desc>proposed fixes</desc>
+            <filename>propose-fixes.patch</filename>
+            <type>text/plain</type>
+            <size>2756</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9p
+bnRlcm5hbC9jb3JlL0JlY29tZVdvcmtpbmdDb3B5T3BlcmF0aW9uLmphdmEgYi9vcmcuZWNsaXBz
+ZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29yZS9CZWNvbWVXb3Jr
+aW5nQ29weU9wZXJhdGlvbi5qYXZhCmluZGV4IDdmNWJlOWEuLjBhNGIxY2IgMTAwNjQ0Ci0tLSBh
+L29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3Jl
+L0JlY29tZVdvcmtpbmdDb3B5T3BlcmF0aW9uLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNv
+cmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvQmVjb21lV29ya2luZ0NvcHlP
+cGVyYXRpb24uamF2YQpAQCAtMTAsOSArMTAsOCBAQAogICoqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKiov
+CiBwYWNrYWdlIG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb3JlOwogCitpbXBvcnQgb3JnLmVj
+bGlwc2UuY29yZS5yZXNvdXJjZXMuSVJlc291cmNlOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5j
+b3JlLio7Ci1pbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuSUphdmFFbGVtZW50OwotaW1wb3J0
+IG9yZy5lY2xpcHNlLmpkdC5jb3JlLkphdmFNb2RlbEV4Y2VwdGlvbjsKIAogLyoqCiAgKiBTd2l0
+Y2ggYW5kIElDb21waWxhdGlvblVuaXQgdG8gd29ya2luZyBjb3B5IG1vZGUKQEAgLTQzLDcgKzQy
+LDggQEAKIAkJCWRlbHRhLmFkZGVkKHdvcmtpbmdDb3B5KTsKIAkJCWFkZERlbHRhKGRlbHRhKTsK
+IAkJfSBlbHNlIHsKLQkJCWlmICh3b3JraW5nQ29weS5nZXRSZXNvdXJjZSgpLmlzQWNjZXNzaWJs
+ZSgpKSB7CisJCQlJUmVzb3VyY2UgcmVzb3VyY2UgPSB3b3JraW5nQ29weS5nZXRSZXNvdXJjZSgp
+OworCQkJaWYgKHJlc291cmNlICE9IG51bGwgJiYgcmVzb3VyY2UuaXNBY2Nlc3NpYmxlKCkpIHsK
+IAkJCQkvLyByZXBvcnQgYSBGX1BSSU1BUllfV09SS0lOR19DT1BZIGNoYW5nZSBkZWx0YSBmb3Ig
+YSBwcmltYXJ5IHdvcmtpbmcgY29weQogCQkJCUphdmFFbGVtZW50RGVsdGEgZGVsdGEgPSBuZXcg
+SmF2YUVsZW1lbnREZWx0YShnZXRKYXZhTW9kZWwoKSk7CiAJCQkJZGVsdGEuY2hhbmdlZCh3b3Jr
+aW5nQ29weSwgSUphdmFFbGVtZW50RGVsdGEuRl9QUklNQVJZX1dPUktJTkdfQ09QWSk7CmRpZmYg
+LS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29yZS9DbGFzc0ZpbGUuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NsYXNzRmlsZS5qYXZhCmluZGV4IGEzOWY5ZDYuLjIy
+NDdkYTggMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNl
+L2pkdC9pbnRlcm5hbC9jb3JlL0NsYXNzRmlsZS5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5j
+b3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NsYXNzRmlsZS5qYXZhCkBA
+IC0yMDcsNyArMjA3LDggQEAKIAkJCS8vIGlmIHBhcmVudCBpcyBvcGVuLCB0aGlzIGNsYXNzIGZp
+bGUgbXVzdCBiZSBpbiBpdHMgY2hpbGRyZW4KIAkJCUlKYXZhRWxlbWVudFtdIGNoaWxkcmVuID0g
+cGFyZW50SW5mby5nZXRDaGlsZHJlbigpOwogCQkJZm9yIChpbnQgaSA9IDAsIGxlbmd0aCA9IGNo
+aWxkcmVuLmxlbmd0aDsgaSA8IGxlbmd0aDsgaSsrKSB7Ci0JCQkJaWYgKHRoaXMubmFtZS5lcXVh
+bHMoKChDbGFzc0ZpbGUpIGNoaWxkcmVuW2ldKS5uYW1lKSkKKwkJCQlJSmF2YUVsZW1lbnQgY2hp
+bGQgPSBjaGlsZHJlbltpXTsKKwkJCQlpZiAoY2hpbGQgaW5zdGFuY2VvZiBDbGFzc0ZpbGUgJiYg
+dGhpcy5uYW1lLmVxdWFscygoKENsYXNzRmlsZSkgY2hpbGQpLm5hbWUpKQogCQkJCQlyZXR1cm4g
+dHJ1ZTsKIAkJCX0KIAkJCXJldHVybiBmYWxzZTsKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL3V0aWwvVXRpbC5qYXZh
+IGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2Nv
+cmUvdXRpbC9VdGlsLmphdmEKaW5kZXggNGU3ZWZjNS4uYTkyNmM2ZCAxMDA2NDQKLS0tIGEvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvdXRp
+bC9VdGlsLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2Uv
+amR0L2ludGVybmFsL2NvcmUvdXRpbC9VdGlsLmphdmEKQEAgLTE1MTYsNiArMTUxNiw4IEBACiAJ
+CQkJcmV0dXJuIChKYXZhRWxlbWVudCkgZGVjbGFyaW5nTWV0aG9kLmdldFR5cGVQYXJhbWV0ZXIo
+dHlwZVZhcmlhYmxlTmFtZSk7CiAJCQl9IGVsc2UgewogCQkJCUlUeXBlIGRlY2xhcmluZ1R5cGUg
+PSAoSVR5cGUpIGdldFVucmVzb2x2ZWRKYXZhRWxlbWVudCgoVHlwZUJpbmRpbmcpIGRlY2xhcmlu
+Z0VsZW1lbnQsIHdvcmtpbmdDb3B5T3duZXIsIGJpbmRpbmdzVG9Ob2Rlcyk7CisJCQkJaWYgKGRl
+Y2xhcmluZ1R5cGUgPT0gbnVsbCkKKwkJCQkJcmV0dXJuIG51bGw7CiAJCQkJcmV0dXJuIChKYXZh
+RWxlbWVudCkgZGVjbGFyaW5nVHlwZS5nZXRUeXBlUGFyYW1ldGVyKHR5cGVWYXJpYWJsZU5hbWUp
+OwogCQkJfQogCQl9IGVsc2Ugewo=
+</data>
+
+          </attachment>
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>250325</attachid>
+            <date>2015-01-28 16:12:00 -0500</date>
+            <delta_ts>2015-01-28 16:12:56 -0500</delta_ts>
+            <desc>proposed fixes v2</desc>
+            <filename>Bug-458577--IClassFilegetWorkingCopy-may-lead-to-NPE.patch</filename>
+            <type>text/plain</type>
+            <size>3977</size>
+            <attacher name="Stephan Herrmann">stephan.herrmann</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9p
+bnRlcm5hbC9jb3JlL0JlY29tZVdvcmtpbmdDb3B5T3BlcmF0aW9uLmphdmEgYi9vcmcuZWNsaXBz
+ZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29yZS9CZWNvbWVXb3Jr
+aW5nQ29weU9wZXJhdGlvbi5qYXZhCmluZGV4IDdmNWJlOWEuLjBhNGIxY2IgMTAwNjQ0Ci0tLSBh
+L29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3Jl
+L0JlY29tZVdvcmtpbmdDb3B5T3BlcmF0aW9uLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNv
+cmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvQmVjb21lV29ya2luZ0NvcHlP
+cGVyYXRpb24uamF2YQpAQCAtMTAsOSArMTAsOCBAQAogICoqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKiov
+CiBwYWNrYWdlIG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb3JlOwogCitpbXBvcnQgb3JnLmVj
+bGlwc2UuY29yZS5yZXNvdXJjZXMuSVJlc291cmNlOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5j
+b3JlLio7Ci1pbXBvcnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuSUphdmFFbGVtZW50OwotaW1wb3J0
+IG9yZy5lY2xpcHNlLmpkdC5jb3JlLkphdmFNb2RlbEV4Y2VwdGlvbjsKIAogLyoqCiAgKiBTd2l0
+Y2ggYW5kIElDb21waWxhdGlvblVuaXQgdG8gd29ya2luZyBjb3B5IG1vZGUKQEAgLTQzLDcgKzQy
+LDggQEAKIAkJCWRlbHRhLmFkZGVkKHdvcmtpbmdDb3B5KTsKIAkJCWFkZERlbHRhKGRlbHRhKTsK
+IAkJfSBlbHNlIHsKLQkJCWlmICh3b3JraW5nQ29weS5nZXRSZXNvdXJjZSgpLmlzQWNjZXNzaWJs
+ZSgpKSB7CisJCQlJUmVzb3VyY2UgcmVzb3VyY2UgPSB3b3JraW5nQ29weS5nZXRSZXNvdXJjZSgp
+OworCQkJaWYgKHJlc291cmNlICE9IG51bGwgJiYgcmVzb3VyY2UuaXNBY2Nlc3NpYmxlKCkpIHsK
+IAkJCQkvLyByZXBvcnQgYSBGX1BSSU1BUllfV09SS0lOR19DT1BZIGNoYW5nZSBkZWx0YSBmb3Ig
+YSBwcmltYXJ5IHdvcmtpbmcgY29weQogCQkJCUphdmFFbGVtZW50RGVsdGEgZGVsdGEgPSBuZXcg
+SmF2YUVsZW1lbnREZWx0YShnZXRKYXZhTW9kZWwoKSk7CiAJCQkJZGVsdGEuY2hhbmdlZCh3b3Jr
+aW5nQ29weSwgSUphdmFFbGVtZW50RGVsdGEuRl9QUklNQVJZX1dPUktJTkdfQ09QWSk7CmRpZmYg
+LS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29yZS9DbGFzc0ZpbGUuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9l
+Y2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NsYXNzRmlsZS5qYXZhCmluZGV4IGEzOWY5ZDYuLjIy
+NDdkYTggMTAwNjQ0Ci0tLSBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNl
+L2pkdC9pbnRlcm5hbC9jb3JlL0NsYXNzRmlsZS5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5j
+b3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0NsYXNzRmlsZS5qYXZhCkBA
+IC0yMDcsNyArMjA3LDggQEAKIAkJCS8vIGlmIHBhcmVudCBpcyBvcGVuLCB0aGlzIGNsYXNzIGZp
+bGUgbXVzdCBiZSBpbiBpdHMgY2hpbGRyZW4KIAkJCUlKYXZhRWxlbWVudFtdIGNoaWxkcmVuID0g
+cGFyZW50SW5mby5nZXRDaGlsZHJlbigpOwogCQkJZm9yIChpbnQgaSA9IDAsIGxlbmd0aCA9IGNo
+aWxkcmVuLmxlbmd0aDsgaSA8IGxlbmd0aDsgaSsrKSB7Ci0JCQkJaWYgKHRoaXMubmFtZS5lcXVh
+bHMoKChDbGFzc0ZpbGUpIGNoaWxkcmVuW2ldKS5uYW1lKSkKKwkJCQlJSmF2YUVsZW1lbnQgY2hp
+bGQgPSBjaGlsZHJlbltpXTsKKwkJCQlpZiAoY2hpbGQgaW5zdGFuY2VvZiBDbGFzc0ZpbGUgJiYg
+dGhpcy5uYW1lLmVxdWFscygoKENsYXNzRmlsZSkgY2hpbGQpLm5hbWUpKQogCQkJCQlyZXR1cm4g
+dHJ1ZTsKIAkJCX0KIAkJCXJldHVybiBmYWxzZTsKZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpk
+dC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL0Rpc2NhcmRXb3JraW5n
+Q29weU9wZXJhdGlvbi5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlw
+c2UvamR0L2ludGVybmFsL2NvcmUvRGlzY2FyZFdvcmtpbmdDb3B5T3BlcmF0aW9uLmphdmEKaW5k
+ZXggNGUzNDA5ZC4uZGI5MDQyNiAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9k
+ZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvRGlzY2FyZFdvcmtpbmdDb3B5T3BlcmF0
+aW9uLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0
+L2ludGVybmFsL2NvcmUvRGlzY2FyZFdvcmtpbmdDb3B5T3BlcmF0aW9uLmphdmEKQEAgLTEwLDYg
+KzEwLDcgQEAKICAqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioq
+KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKioqLwogcGFja2FnZSBvcmcuZWNsaXBzZS5q
+ZHQuaW50ZXJuYWwuY29yZTsKIAoraW1wb3J0IG9yZy5lY2xpcHNlLmNvcmUucmVzb3VyY2VzLklS
+ZXNvdXJjZTsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuY29yZS5JSmF2YUVsZW1lbnQ7CiBpbXBv
+cnQgb3JnLmVjbGlwc2UuamR0LmNvcmUuSUphdmFFbGVtZW50RGVsdGE7CiBpbXBvcnQgb3JnLmVj
+bGlwc2UuamR0LmNvcmUuSUphdmFQcm9qZWN0OwpAQCAtNDIsNyArNDMsOCBAQAogCQkJCWFkZERl
+bHRhKGRlbHRhKTsKIAkJCQlyZW1vdmVSZWNvbmNpbGVEZWx0YSh3b3JraW5nQ29weSk7CiAJCQl9
+IGVsc2UgewotCQkJCWlmICh3b3JraW5nQ29weS5nZXRSZXNvdXJjZSgpLmlzQWNjZXNzaWJsZSgp
+KSB7CisJCQkJSVJlc291cmNlIHJlc291cmNlID0gd29ya2luZ0NvcHkuZ2V0UmVzb3VyY2UoKTsK
+KwkJCQlpZiAocmVzb3VyY2UgIT0gbnVsbCAmJiByZXNvdXJjZS5pc0FjY2Vzc2libGUoKSkgewog
+CQkJCQkvLyByZXBvcnQgYSBGX1BSSU1BUllfV09SS0lOR19DT1BZIGNoYW5nZSBkZWx0YSBmb3Ig
+YSBwcmltYXJ5IHdvcmtpbmcgY29weQogCQkJCQlKYXZhRWxlbWVudERlbHRhIGRlbHRhID0gbmV3
+IEphdmFFbGVtZW50RGVsdGEoZ2V0SmF2YU1vZGVsKCkpOwogCQkJCQlkZWx0YS5jaGFuZ2VkKHdv
+cmtpbmdDb3B5LCBJSmF2YUVsZW1lbnREZWx0YS5GX1BSSU1BUllfV09SS0lOR19DT1BZKTsKZGlm
+ZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVsL29yZy9lY2xpcHNlL2pkdC9pbnRl
+cm5hbC9jb3JlL3V0aWwvVXRpbC5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3Jn
+L2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvdXRpbC9VdGlsLmphdmEKaW5kZXggNGU3ZWZjNS4u
+YTkyNmM2ZCAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlw
+c2UvamR0L2ludGVybmFsL2NvcmUvdXRpbC9VdGlsLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvdXRpbC9VdGlsLmphdmEK
+QEAgLTE1MTYsNiArMTUxNiw4IEBACiAJCQkJcmV0dXJuIChKYXZhRWxlbWVudCkgZGVjbGFyaW5n
+TWV0aG9kLmdldFR5cGVQYXJhbWV0ZXIodHlwZVZhcmlhYmxlTmFtZSk7CiAJCQl9IGVsc2Ugewog
+CQkJCUlUeXBlIGRlY2xhcmluZ1R5cGUgPSAoSVR5cGUpIGdldFVucmVzb2x2ZWRKYXZhRWxlbWVu
+dCgoVHlwZUJpbmRpbmcpIGRlY2xhcmluZ0VsZW1lbnQsIHdvcmtpbmdDb3B5T3duZXIsIGJpbmRp
+bmdzVG9Ob2Rlcyk7CisJCQkJaWYgKGRlY2xhcmluZ1R5cGUgPT0gbnVsbCkKKwkJCQkJcmV0dXJu
+IG51bGw7CiAJCQkJcmV0dXJuIChKYXZhRWxlbWVudCkgZGVjbGFyaW5nVHlwZS5nZXRUeXBlUGFy
+YW1ldGVyKHR5cGVWYXJpYWJsZU5hbWUpOwogCQkJfQogCQl9IGVsc2Ugewo=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

@@ -1,0 +1,357 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>415734</bug_id>
+          
+          <creation_ts>2013-08-23 03:27:00 -0400</creation_ts>
+          <short_desc>Eclipse gives compilation error calling method with an inferred generic return type</short_desc>
+          <delta_ts>2013-09-18 00:48:30 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.3</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Linux</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>INVALID</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.4 M2</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Piotr Findeisen">piotr.findeisen</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>daniel_megert</cc>
+    
+    <cc>jarthana</cc>
+          
+          <votes>1</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2298230</commentid>
+    <comment_count>0</comment_count>
+    <who name="Piotr Findeisen">piotr.findeisen</who>
+    <bug_when>2013-08-23 03:27:15 -0400</bug_when>
+    <thetext>The following code compiles without a problem on
+ * Eclipse Indigo SR1, SR2
+ * Eclipse Juno SR1
+
+----------------------------------
+import java.util.ArrayList;
+import java.util.List;
+
+public class Compile {
+
+	public &lt;T, Exp extends List&lt;T&gt;&gt; Exp typedNull() {
+		return null;
+	}
+
+	public void call() {
+		ArrayList&lt;String&gt; list = typedNull();
+	}
+}
+----------------------------------
+
+however it Eclipse Kepler&apos;s compiler says
+&quot;Type mismatch: cannot convert from List&lt;Object&gt; to ArrayList&lt;String&gt;&quot;
+
+Moreover, it still fails even if the type of `list` variable is changed to `List&lt;String&gt;`.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298239</commentid>
+    <comment_count>1</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-08-23 04:03:36 -0400</bug_when>
+    <thetext>Stephan, I can reproduce this on HEAD. Please follow up.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298258</commentid>
+    <comment_count>2</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-08-23 04:50:00 -0400</bug_when>
+    <thetext>(In reply to comment #0)
+&gt; The following code compiles without a problem on
+cannot convert from List&lt;Object&gt; to ArrayList&lt;String&gt;&quot;
+&gt; 
+&gt; Moreover, it still fails even if the type of `list` variable is changed to
+&gt; `List&lt;String&gt;`.
+
+I think it&apos;s more of the type parameter &apos;String&apos; vs Object than List vs ArrayList. Now I am not even sure if it&apos;s a bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298262</commentid>
+    <comment_count>3</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-08-23 04:57:21 -0400</bug_when>
+    <thetext>Okay, javac reports an error too. So, I am guessing we must have put this behavior intentionally.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298316</commentid>
+    <comment_count>4</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-23 07:30:08 -0400</bug_when>
+    <thetext>Yes, not reporting an error was bug 405706, which got fixed for 4.3 M7.
+
+What surprises me: in bug 405706 the same reporter used a very similar example to say, we had a bug. After we fixed it this should be a bug, too?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298322</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-23 07:48:52 -0400</bug_when>
+    <thetext>I&apos;ve added GenericsRegressionTest.testBug415734() (*expecting* the compile error) via commit 9337b3165955bcb5471291138f985bf635bc2c65
+
+Looking closer, ecj&apos;s error message isn&apos;t optimal, actually: by saying
+  &quot;Type mismatch: cannot convert from List&lt;Object&gt; to ArrayList&lt;String&gt;&quot;
+we don&apos;t explain, *why* List&lt;Object&gt; was inferred.
+
+javac is more explicit by saying:
+  &quot;error: invalid inferred types for T,Exp; inferred type does not conform to declared bound(s)
+                ArrayList&lt;String&gt; list = typedNull();
+                                                  ^
+    inferred: ArrayList&lt;String&gt;
+    bound(s): List&lt;Object&gt;
+    ...&quot;
+
+Which means, inference &quot;would like to&quot; infer &apos;ArrayList&lt;String&gt;&apos; but this candidate is eliminated because it doesn&apos;t conform to the upper bound &apos;List&lt;Object&gt;&apos;.
+I interpret this as: inference is not able to simultaneously infer a generic type (ArrayList) together with its type parameter (String).
+
+javac 8 ea even mentions that the inferred type is an intersection type:
+  &quot;INT#1 extends ArrayList&lt;String&gt;,List&lt;Object&gt;&quot;
+
+Should we change this bug into an RFE for BETA_JAVA8 to give a more helpful error message? I don&apos;t feel like putting much polish work into 1.7 type inference at this point.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298379</commentid>
+    <comment_count>6</comment_count>
+    <who name="Piotr Findeisen">piotr.findeisen</who>
+    <bug_when>2013-08-23 09:23:21 -0400</bug_when>
+    <thetext>First, bug 405706 is a different case -- in *that* case there was no correct type to be inferred, so the only acceptable result was an error message.
+
+Second, in this case I apologize I did not check what javac says about this code. However, previous Eclipse versions used to be able to infer the correct types in this case (as the correct types exist), now Kelper lost this ability.
+
+Is it JLS-mandated that the compiler cannot infer generic types in this case, even if it was able to do so?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2298425</commentid>
+    <comment_count>7</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-08-23 10:27:47 -0400</bug_when>
+    <thetext>(In reply to comment #6)
+&gt; Is it JLS-mandated that the compiler cannot infer generic types in this
+&gt; case, even if it was able to do so?
+
+I&apos;m not 100% sure, but given that currently javac and ecj agree means we would cause more harm than benefit if we change it back to accepting this code.
+
+Moving forward I will investigate whether Java 8 will improve the situation. The specification for type inference is being re-writting for Java 8. Unfortunately, it isn&apos;t yet complete enough to make a call, I&apos;m afraid.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2299857</commentid>
+    <comment_count>8</comment_count>
+    <who name="Piotr Findeisen">piotr.findeisen</who>
+    <bug_when>2013-08-28 03:50:32 -0400</bug_when>
+    <thetext>(In reply to comment #7)
+&gt; &gt; Is it JLS-mandated that the compiler cannot infer generic types in this
+&gt; &gt; case, even if it was able to do so?
+&gt; 
+&gt; I&apos;m not 100% sure, but given that currently javac and ecj agree means we
+&gt; would cause more harm than benefit if we change it back to accepting this
+&gt; code.
+
+I tried to parse the JLS ingerence spec, but I would appreciate if anyone more fluent in this could redo this excercise.
+
+From what I understood:
+ * inference for return type [1] is more or less the same as for arguments [2]
+ * when nothing could be inferred, &apos;Object&apos; is used (&quot;Any remaining type variable T that has not yet been inferred is then inferred to have type Object&quot;)
+ * so it seems comiler could not recognize that T was mean to be a String
+
+From the spec, however, it remains unclear to me that the algorithm should be single-pass and left-to-right... Perhaps I wasn&apos;t reading carefully enough.
+
+(In fact, I consider the prolem of generic type inference quite complex -- perhaps too complex to be solved with a linear algorithm. So, if there can be any influence on future shape of this section of the JLS...)
+
+[1] http://docs.oracle.com/javase/specs/jls/se7/html/jls-15.html#jls-15.12.2.8
+[2] http://docs.oracle.com/javase/specs/jls/se7/html/jls-15.html#jls-15.12.2.7</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2303621</commentid>
+    <comment_count>9</comment_count>
+    <who name="Piotr Findeisen">piotr.findeisen</who>
+    <bug_when>2013-09-06 06:51:25 -0400</bug_when>
+    <thetext>Hi,
+
+it&apos;s me again. I was working on fixing my code so that
+ 1. it&apos;s correct Java
+ 2. compiles under Kepler
+
+Since I don&apos;t know how to determine #1, I&apos;m leaving this out to you to decide.
+I&apos;ve arrive at the following code:
+
+----------------------------------
+@SuppressWarnings(&quot;unused&quot;)
+public class Compile2 {
+
+	public interface Entity&lt;Id&gt; { }
+
+	public interface DAO&lt;EntityType, Id&gt; { }
+
+	public &lt;Id,
+			EntityType extends Entity&lt;Id&gt;,
+			Implementation extends DAO&lt;EntityType, Id&gt;&gt;
+			Implementation find(Class&lt;EntityType&gt; xClass) {
+
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	static class FirstEntity implements Entity&lt;String&gt; { }
+
+	static class FirstEntityDao implements DAO&lt;FirstEntity, String&gt; { }
+
+	static class SecondEntity implements Entity&lt;String&gt; { }
+
+	interface SecondEntityDao&lt;EntityType extends SecondEntity&gt; extends DAO&lt;EntityType, String&gt; { }
+
+	private void doSomething() {
+
+		// this works
+		FirstEntityDao firstDao = find(FirstEntity.class);
+		
+		// the following gives compilation error in Kepler
+		// Type mismatch: cannot convert
+		// from Compile2.DAO&lt;Compile2.SecondEntity,String&gt;
+		// to Compile2.SecondEntityDao&lt;Compile2.SecondEntity&gt;
+		SecondEntityDao&lt;SecondEntity&gt; secondDao = find(SecondEntity.class);
+		
+		// however this works
+		DAO&lt;SecondEntity, String&gt; secondDao2 = find(SecondEntity.class);
+	}
+}
+----------------------------------
+
+what&apos;s interesting, this code compiles without a warning (even with -Xlint:all) on javac 1.7.0_09</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2304816</commentid>
+    <comment_count>10</comment_count>
+    <who name="Piotr Findeisen">piotr.findeisen</who>
+    <bug_when>2013-09-10 07:57:12 -0400</bug_when>
+    <thetext>Hi,
+
+here goes another example. This one is more brief and still does not compile under my Kepler but does so using javac 7 (this time i was using javac 1.7.0_21)
+
+----------------------------------
+public class Compile3 {
+	public static &lt;T,
+			Y extends List&lt;T&gt;,
+			ReturnType extends List&lt;T&gt;&gt;
+			ReturnType nullCopy(Y list) {
+		return null;
+	}
+
+	public static void main(String[] args) {
+		List&lt;String&gt; nullList = null;
+		ArrayList&lt;String&gt; list = nullCopy(nullList);
+	}
+}
+----------------------------------
+
+Hopefully this simplified example helpers sorting out whether this should compile and, if it should compile, in fixing the bug.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2305314</commentid>
+    <comment_count>11</comment_count>
+    <who name="Piotr Findeisen">piotr.findeisen</who>
+    <bug_when>2013-09-11 05:43:31 -0400</bug_when>
+    <thetext>I found a WORKAROUND that &quot;fixes&quot; the &quot;Compile3&quot; case.  It is strange, but the code compiles (both Eclipse Kepler, Javac 1.7.0_21) if I add &quot;IntermediateReturnType&quot; like this:
+
+----------------------------------
+public class Compile3 {
+	public static &lt;T,
+			Y extends List&lt;T&gt;,
+			IntermediateReturnType extends List&lt;T&gt;, // changed
+			ReturnType extends IntermediateReturnType&gt; // added
+			ReturnType nullCopy(Y list) {
+		return null;
+	}
+
+	public static void main(String[] args) {
+		List&lt;String&gt; nullList = null;
+		ArrayList&lt;String&gt; list = nullCopy(nullList);
+	}
+}
+----------------------------------
+
+Hopefully this helps anyone who encounters the same problem (whether it is a bug or not, of course).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2307694</commentid>
+    <comment_count>12</comment_count>
+    <who name="Piotr Findeisen">piotr.findeisen</who>
+    <bug_when>2013-09-17 04:59:54 -0400</bug_when>
+    <thetext>Note: the workaround from comment 11 works in simple cases, but in more complicate ones it leads to bug 417402.
+
+While it still may help somebody else, this workaround will not help me :(</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2307731</commentid>
+    <comment_count>13</comment_count>
+    <who name="Dani Megert">daniel_megert</who>
+    <bug_when>2013-09-17 05:53:33 -0400</bug_when>
+    <thetext>We don&apos;t want to derive from javac here. As Stephan said, this might get revised with Java 8 but for now it is treated as an error.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2307740</commentid>
+    <comment_count>14</comment_count>
+    <who name="Piotr Findeisen">piotr.findeisen</who>
+    <bug_when>2013-09-17 06:12:13 -0400</bug_when>
+    <thetext>Hi Dani,
+
+I am not sure I follow. Stephan said my INITIAL example was INCORRECT Java and pointed out that even if it was CORRECT javac still does not compile this.
+
+However, my next example, the &quot;Compile3&quot; class in comment #10 shows something that is PROBABLY CORRECT java and javac DOES COMPILE this but Eclipse Kepler does not.
+Please note that Stephan did NOT comment the &quot;Compile3&quot; example in any way (at least in the bugzilla).
+
+Do you indeed want to tell me that &quot;Compile3&quot; example in comment #10 will never compile in Eclipse Kepler even if it does compile in javac?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2307752</commentid>
+    <comment_count>15</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2013-09-17 06:58:08 -0400</bug_when>
+    <thetext>Piotr,
+
+I hadn&apos;t the time to closely analyse all your examples in comment 9 ff.
+For those cases where ecj deviates from javac feel free to open a new bug
+(referring to this one for background).
+
+However, during clean-up for M2 we need to have a defined status for this
+bug and regarding comment 0 it is resolved invalid.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2307761</commentid>
+    <comment_count>16</comment_count>
+    <who name="Piotr Findeisen">piotr.findeisen</who>
+    <bug_when>2013-09-17 07:26:48 -0400</bug_when>
+    <thetext>Stephan,
+
+thank you for the clarification. I&apos;ve re-reported the example from comment 10 as bug 417412.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2308140</commentid>
+    <comment_count>17</comment_count>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-09-18 00:48:30 -0400</bug_when>
+    <thetext>Verified for 4.4 M2.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>

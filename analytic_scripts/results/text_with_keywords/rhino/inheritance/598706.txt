@@ -1,0 +1,75 @@
+BUG REPORT COMMENTS:
+User-Agent:       Mozilla/5.0 (Windows; U; Windows NT 5.0; de; rv:1.9.2.10) Gecko/20100914 Firefox/3.6.10
+Build Identifier: Sources from CVS
+
+It is possible to replace Rhino's RegExpImpl my own subclass (ScriptRuntime.setRegExpProxy(...)). This works so far, but if e.g. RegExp.$1 is evaluated, this evaluation is done based on attributes of class RegExpImpl. My replacement class is already a subclass of RegExpImpl. But at the moment i have no chance to modify the fields of RegExpImp (without placing my class in a rhino package).
+Please make the fields (patach attached) package protected. Because some fields are refering to SubString this class has to be public (see patch).
+
+Reproducible: Always
+
+Steps to Reproduce:
+1. See description;
+The concrete subclass i use is part of the HtmlUnit project.
+
+
+
+Index: src/org/mozilla/javascript/regexp/SubString.java
+===================================================================
+RCS file: /cvsroot/mozilla/js/rhino/src/org/mozilla/javascript/regexp/SubString.java,v
+retrieving revision 1.10
+diff -u -r1.10 SubString.java
+--- src/org/mozilla/javascript/regexp/SubString.java	21 Apr 2008 19:54:01 -0000	1.10
++++ src/org/mozilla/javascript/regexp/SubString.java	22 Sep 2010 18:35:57 -0000
+@@ -37,7 +37,7 @@
+ 
+ package org.mozilla.javascript.regexp;
+ 
+-class SubString {
++public class SubString {
+ 
+     public SubString()
+     {
+@@ -67,7 +67,7 @@
+                : new String(charArray, index, length);
+     }
+ 
+-    static final SubString emptySubString = new SubString();
++    public static final SubString emptySubString = new SubString();
+ 
+     char[] charArray;
+     int    index;
+Index: src/org/mozilla/javascript/regexp/RegExpImpl.java
+===================================================================
+RCS file: /cvsroot/mozilla/js/rhino/src/org/mozilla/javascript/regexp/RegExpImpl.java,v
+retrieving revision 1.39
+diff -u -r1.39 RegExpImpl.java
+--- src/org/mozilla/javascript/regexp/RegExpImpl.java	18 Jan 2010 09:56:34 -0000	1.39
++++ src/org/mozilla/javascript/regexp/RegExpImpl.java	22 Sep 2010 18:35:57 -0000
+@@ -727,14 +727,14 @@
+         return (i != -1) ? i : length;
+     }
+ 
+-    String          input;         /* input string to match (perl $_, GC root) */
+-    boolean         multiline;     /* whether input contains newlines (perl $*) */
+-    SubString[]     parens;        /* Vector of SubString; last set of parens
++    protected String          input;         /* input string to match (perl $_, GC root) */
++    protected boolean         multiline;     /* whether input contains newlines (perl $*) */
++    protected SubString[]     parens;        /* Vector of SubString; last set of parens
+                                       matched (perl $1, $2) */
+-    SubString       lastMatch;     /* last string matched (perl $&) */
+-    SubString       lastParen;     /* last paren matched (perl $+) */
+-    SubString       leftContext;   /* input to left of last match (perl $`) */
+-    SubString       rightContext;  /* input to right of last match (perl $') */
++    protected SubString       lastMatch;     /* last string matched (perl $&) */
++    protected SubString       lastParen;     /* last paren matched (perl $+) */
++    protected SubString       leftContext;   /* input to left of last match (perl $`) */
++    protected SubString       rightContext;  /* input to right of last match (perl $') */
+ }
+
+Thanks for your patch, I committed it. 
+
+Out of curiosity (and in the light of bug #390659): what are you using to replace Rhino's RegExp implementation?
+HtmlUnit uses a java.util.regex based implementation of RegExp backed by Rhino's current implementation for cases where our conversion to java.util.regex has failed. It is not the perfect solution but it is much faster than Rhino's RegExp and this fixes many of Rhino currently opened RegExp issues.
+
+I think that ideally Rhino should pick Mozilla's C++ RegExp code and convert it to Java as it has obviously already be done for many many years.
+

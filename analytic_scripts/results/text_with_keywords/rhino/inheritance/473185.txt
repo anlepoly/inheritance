@@ -1,0 +1,130 @@
+BUG TITLE:
+JavaAdapter does not support extending classes with non-empty constructors.
+
+BUG REPORT COMMENTS:
+User-Agent:       Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 5.1; InfoPath.1; .NET CLR 1.1.4322; .NET CLR 2.0.50727)
+Build Identifier: 1.7
+
+I receive a java exception in the following script:
+
+...
+var MyConn = new JavaAdapter(Packages.com.trilead.ssh2.Connection,
+{
+   addedFunc: function(){
+      ...
+   }
+});
+...
+The Packages.com.trilead.ssh2.Connection constructor requires a string as an argument.  There is no empty constructor for the Connection object.
+
+Reproducible: Always
+
+Steps to Reproduce:
+1. Enter a similar script to above (making sure to attempt to extend a class with a non-empty constructor)
+2. Attempt to run it via the rhino 1.7 shell (org.mozilla.javascript.tools.shell.Main)
+Actual Results:  
+Exception in thread "Thread-4" java.lang.NoSuchMethodError: com.trilead.ssh2.Connection: method <init>()V not found
+	at adapter6.<init>(<adapter>)
+	at sun.reflect.NativeConstructorAccessorImpl.newInstance0(Native Method)
+	at sun.reflect.NativeConstructorAccessorImpl.newInstance(Unknown Source)
+	at sun.reflect.DelegatingConstructorAccessorImpl.newInstance(Unknown Source)
+	at java.lang.reflect.Constructor.newInstance(Unknown Source)
+	at org.mozilla.javascript.JavaAdapter.js_createAdapter(JavaAdapter.java:203)
+	at org.mozilla.javascript.JavaAdapter.execIdCall(JavaAdapter.java:124)
+	at org.mozilla.javascript.IdFunctionObject.call(IdFunctionObject.java:127)
+	at org.mozilla.javascript.BaseFunction.construct(BaseFunction.java:328)
+	at org.mozilla.javascript.Interpreter.interpretLoop(Interpreter.java:3380)
+	at org.mozilla.javascript.Interpreter.interpret(Interpreter.java:2484)
+	at org.mozilla.javascript.InterpretedFunction.call(InterpretedFunction.java:162)
+	at org.mozilla.javascript.ScriptRuntime.evalSpecial(ScriptRuntime.java:2425)
+	at org.mozilla.javascript.ScriptRuntime.callSpecial(ScriptRuntime.java:2277)
+	at org.mozilla.javascript.Interpreter.interpretLoop(Interpreter.java:3223)
+	at org.mozilla.javascript.Interpreter.interpret(Interpreter.java:2484)
+	at org.mozilla.javascript.InterpretedFunction.call(InterpretedFunction.java:162)
+	at org.mozilla.javascript.ScriptRuntime.evalSpecial(ScriptRuntime.java:2425)
+	at org.mozilla.javascript.ScriptRuntime.callSpecial(ScriptRuntime.java:2277)
+	at org.mozilla.javascript.Interpreter.interpretLoop(Interpreter.java:3223)
+	at org.mozilla.javascript.Interpreter.interpret(Interpreter.java:2484)
+	at org.mozilla.javascript.InterpretedFunction.call(InterpretedFunction.java:162)
+	at org.mozilla.javascript.ContextFactory.doTopCall(ContextFactory.java:401)
+	at org.mozilla.javascript.ScriptRuntime.doTopCall(ScriptRuntime.java:3003)
+	at org.mozilla.javascript.InterpretedFunction.call(InterpretedFunction.java:160)
+	at org.mozilla.javascript.Context$1.run(Context.java:488)
+	at org.mozilla.javascript.Context.call(Context.java:499)
+	at org.mozilla.javascript.Context.call(Context.java:486)
+	at org.mozilla.javascript.JavaAdapter.callMethod(JavaAdapter.java:538)
+	at adapter2.run(<adapter>)
+
+Expected Results:  
+(no errors)
+
+The JavaAdapter function should provide a way to extend classes with non-empty constructors.  Moreover, it should provide the functionality to add a constructor to the parent class.
+I have this issue too, is it possible to overwrite constructor of an Java object?
+I've started working on this, and hope to get it ready for being committed within the next few weeks.
+Hi, Hannes
+I'd like to have a look at this problem too, if you can kindly give me some idea about how to fix it.
+Maybe I can submit a patch if I can fix it.
+Thanks for your great help.
+The plan I've come up with is to override all public superclass constructors in JavaAdapters, and then more or less use the same mechanism for JavaAdapter constructor lookup that is used when calling an ordinary Java classes (see NativeJavaClass.constructSpecific). If no extra args are provided, the current code path would be used. 
+
+Overwriting all constructors is necessary because calling the super-constructor is the first thing you have to do in a constructor, so we can't just generate one constructor and let that figure out which super-constructor to use.
+
+The major problems I still haven't figured out are actually trivial ones - How do you pass extra constructor args to JavaAdapter (the simple approach is to look for non-java-class arguments between JavaAdapter(javaClass, ..., jsObject), but what about constructors taking a java class parameter?), and how to keep generated constructors apart (there's specifically one 3-argument JavaAdapter constructor that's used for serialization that could cause conflicts).
+I came out following thoughts. Here is my two cents...
+
+In normal usage you don't have to pass constructor args. It could just get from the out-side scope.
+
+var arg = ...;
+var childObj = new JavaAdapter(parentClass, {
+	'<init>': function (){
+		super(arg);
+	}
+});
+
+Above code adapts a Java Class to a js Obj.
+It is okay for javascript style object based OOP which has no notion of Class.
+
+I guess what you are trying to do is to instantiate obj and define constructor at the same time.
+I suggest to separate two cases and provide a non-leak abstraction for it.
+
+For example, maybe we can have a JavaAdapterConstructor to return a js constructor for the JavaAdapter.
+var childConstructor = new JavaAdapterConstructor(parentClass, {
+	'<init>': function (arg){
+		super(arg);
+	}
+});
+var childObj = new childConstructor(arg);
+
+or just define a constructor function childConstructor. I don't know if this is a feasible solution.
+
+var childConstructor = function(arg){
+	... //Init JavaAdapter here
+};
+
+childConstructor.prototype = ...something...; //or here
+
+
+If we like to generate a Java Class complete inter-operable from the Java side, we might need the ability to create a complete Class information from javascript.
+
+Which yields following sudo-code.
+
+var cls = new JavaClass({
+	name: 'className',
+	extends: parentClass,
+	implements: [interfaces...],
+	define: {
+		...field and function with type and signature
+	}
+});
+
+I might call it "Writing Java in Javascript"! :p
+Fixed in git master and rhino_1_8 branch:
+
+https://github.com/mozilla/rhino/commit/b96c299c9a824fe4a8aa703b7bc366f32465da0f
+
+Copied from commit message:
+
+This changes JavaAdapter to accept additional arguments after the JavaScript implementation object to be passed to the super-class constructor.
+
+To avoid ambiguity when parsing arguments, JavaAdapter expects the implementation object (previously the last argument to JavaAdapter) to be strictly an instance of NativeObject (a plain JavaScript object) when called with additional constructor arguments.
+

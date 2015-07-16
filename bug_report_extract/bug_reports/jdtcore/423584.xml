@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>423584</bug_id>
+          
+          <creation_ts>2013-12-09 07:11:00 -0500</creation_ts>
+          <short_desc>[1.8][dom ast] NPE in LambdaExpression#getMethodBinding() for lambda with unresolved type</short_desc>
+          <delta_ts>2013-12-16 23:34:07 -0500</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Markus Keller">markus_keller</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>anchakrk</cc>
+    
+    <cc>noopur_gupta</cc>
+    
+    <cc>srikanth_sankaran</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2339293</commentid>
+    <comment_count>0</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2013-12-09 07:11:43 -0500</bug_when>
+    <thetext>NPE in LambdaExpression#getMethodBinding() for lambda with unresolved type.
+The example is the same as in bug 423582.
+
+interface I { }
+
+public class X {
+    static void goo(I i) {
+        System.out.println(&quot;goo(I)&quot;);
+    }
+    
+    public static void main(String[] args) {
+        goo(s -&gt; 0);
+    }
+}
+
+java.lang.NullPointerException
+	at org.eclipse.jdt.internal.compiler.ast.LambdaExpression.getMethodBinding(LambdaExpression.java:912)
+	at org.eclipse.jdt.core.dom.DefaultBindingResolver.resolveMethod(DefaultBindingResolver.java:886)
+	at org.eclipse.jdt.core.dom.LambdaExpression.resolveMethodBinding(LambdaExpression.java:319)
+	at org.eclipse.jdt.astview.views.ASTViewContentProvider.getNodeChildren(ASTViewContentProvider.java:149)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2339313</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-09 08:27:54 -0500</bug_when>
+    <thetext>Thanks for the report. If any of the recent bugs are super blockers for your
+project, let me know - I am deeply submerged in the code assist land (https://bugs.eclipse.org/bugs/show_bug.cgi?id=422468) and would like to
+avoid context switches - For serious blockers, I will switch context.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2340266</commentid>
+    <comment_count>2</comment_count>
+      <attachid>238233</attachid>
+    <who name="ANIRBAN CHAKRABORTY">anchakrk</who>
+    <bug_when>2013-12-11 01:39:16 -0500</bug_when>
+    <thetext>Created attachment 238233
+code patch
+
+Hello,
+Uploading code patch. Complete patch with testcase to follow.
+This had 2 issues. (1) NPE while &apos;LambdaExpression&apos;, that was reported, is solved. (2) UnsupportedOperationException, which was unreported, and which was happening when &apos;LambdaExpression&apos; is expanded. That is also fixed.
+Thanks
+Anirban</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2340283</commentid>
+    <comment_count>3</comment_count>
+    <who name="ANIRBAN CHAKRABORTY">anchakrk</who>
+    <bug_when>2013-12-11 02:22:33 -0500</bug_when>
+    <thetext>Bug 423574 reports the UnsupportedOperationException. Missed that.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2341443</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-13 04:34:46 -0500</bug_when>
+    <thetext>This patch suffers from some serious problems:
+
+(1) Lambda expressions cannot be resolved by calling resolveType on them,
+They need to be furnished with a context and an expected type and only then
+can be meaningfully resolved.
+
+(2) PolyTypeBinding&apos;s are supposed to transient short lived objects that
+should not &quot;escape&quot; the overload resolution context. That they seem to do
+as witnessed by the recent spate of 4-5 bugs shows some fundamental problem
+that cannot papered over by instanceof checks.
+
+(3) Nobody but code assist should ask for elided parameters to be treated
+as JLO. Actually, with the recent fixes to code assist, even code assist
+does not do that.
+
+We need to understand the control flow here. We need a junit that shows the
+problem.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2341447</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-13 04:40:21 -0500</bug_when>
+    <thetext>OK, the fix for this is simple. (I got confused because of this
+being combined with PolyTypeBinding escape/leak issues)
+
+When getMethodBinding() is called, if this.binding is null, we should
+simply compose and return a PMB.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2341453</commentid>
+    <comment_count>6</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-13 04:58:02 -0500</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #5)
+&gt; OK, the fix for this is simple. (I got confused because of this
+&gt; being combined with PolyTypeBinding escape/leak issues)
+&gt; 
+&gt; When getMethodBinding() is called, if this.binding is null, we should
+&gt; simply compose and return a PMB.
+
+Steps:
+
+1. Please start by adding a test in ASTConverter18Test that shows the NPE.
+2. In FunctionalExpression.resolveType, if we encounter a problem, create a
+ProblemMethodBinding with a suitable problem id and assign it to this.binding.
+3. Verify that we do the right thing for ReferenceExpressions also.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342575</commentid>
+    <comment_count>7</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-16 22:20:27 -0500</bug_when>
+    <thetext>I&apos;ll take over this one so Anirban can focus on EA2 testing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342580</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-16 22:50:17 -0500</bug_when>
+    <thetext>(In reply to ANIRBAN CHAKRABORTY from comment #2)
+&gt; Created attachment 238233 [details]
+&gt; code patch
+&gt; 
+&gt; Hello,
+&gt; Uploading code patch. Complete patch with testcase to follow.
+&gt; This had 2 issues. (1) NPE while &apos;LambdaExpression&apos;, that was reported, is
+&gt; solved. 
+
+Interestingly, completely inadvertently and unwittingly, I ended up releasing
+this part of the fix along with unconnected ones in http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=3a372fa727520c809be84deca2b7b9c51a2e6869.
+
+This does not solve the problem as witnessed by a new test which very much
+continues to NPE:
+
+	public void test423584() throws JavaModelException {
+		String contents =
+				&quot;interface I { }\n&quot; +
+				&quot;public class X {\n&quot; +
+				&quot;    static void goo(I i) {\n&quot; +
+				&quot;        System.out.println(\&quot;goo(I)\&quot;);\n&quot; +
+				&quot;    }\n&quot; +
+				&quot;    public static void main(String[] args) {\n&quot; +
+				&quot;        goo(s -&gt; 0);\n&quot; +
+				&quot;    }\n&quot; +
+				&quot;}\n&quot;;
+		this.workingCopy = getWorkingCopy(&quot;/Converter18/src/X.java&quot;, true/*resolve*/);
+		ASTNode node = buildAST(contents, this.workingCopy, false);
+		assertEquals(&quot;Not a compilation unit&quot;, ASTNode.COMPILATION_UNIT, node.getNodeType());
+		CompilationUnit compilationUnit = (CompilationUnit) node;
+		assertProblemsSize(compilationUnit, 2, &quot;The method goo(I) in the type X is not applicable for the arguments ((&lt;no type&gt; s) -&gt; 0)\n&quot; + 
+												&quot;The target type of this expression must be a functional interface&quot;);
+		node = getASTNode(compilationUnit, 1);
+		assertEquals(&quot;Not a type declaration&quot;, ASTNode.TYPE_DECLARATION, node.getNodeType());
+		MethodDeclaration[] methods = ((TypeDeclaration) node).getMethods();
+		assertEquals(&quot;Incorrect no of methods&quot;, 2, methods.length);
+		MethodDeclaration method = methods[1];
+		List statements = method.getBody().statements();
+		LambdaExpression lambda = (LambdaExpression) ((MethodInvocation) ((ExpressionStatement) statements.get(0)).getExpression()).arguments().get(0);
+		IMethodBinding resolveMethodBinding = lambda.resolveMethodBinding();
+		assertTrue(&quot;Should be effectively final&quot;, true);
+	}</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2342583</commentid>
+    <comment_count>9</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-12-16 23:34:07 -0500</bug_when>
+    <thetext>Fix and tests available here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=42f1e70a46f62ba06d110671431cc4e0acafff68</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>238233</attachid>
+            <date>2013-12-11 01:39:00 -0500</date>
+            <delta_ts>2013-12-11 01:39:16 -0500</delta_ts>
+            <desc>code patch</desc>
+            <filename>Bug-423584-code-patch-WIP.patch</filename>
+            <type>text/plain</type>
+            <size>4601</size>
+            <attacher name="ANIRBAN CHAKRABORTY">anchakrk</attacher>
+            
+              <data encoding="base64">ZGlmZiAtLWdpdCBhL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9hc3QvTGFtYmRhRXhwcmVzc2lvbi5qYXZhIGIvb3JnLmVjbGlw
+c2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2Fz
+dC9MYW1iZGFFeHByZXNzaW9uLmphdmEKaW5kZXggMDEwYWFjZC4uMGEwM2E5NyAxMDA2NDQKLS0t
+IGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFs
+L2NvbXBpbGVyL2FzdC9MYW1iZGFFeHByZXNzaW9uLmphdmEKKysrIGIvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvY29tcGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL2FzdC9MYW1i
+ZGFFeHByZXNzaW9uLmphdmEKQEAgLTkwOSw2ICs5MDksOSBAQAogCS8vIFJldHVybiB0aGUgYWN0
+dWFsIG1ldGhvZCBiaW5kaW5nIGRldm9pZCBvZiBzeW50aGV0aWNzLiAKIAlwdWJsaWMgTWV0aG9k
+QmluZGluZyBnZXRNZXRob2RCaW5kaW5nKCkgewogCQlpZiAodGhpcy5hY3R1YWxNZXRob2RCaW5k
+aW5nID09IG51bGwpIHsKKwkJCWlmICh0aGlzLmJpbmRpbmcgPT0gbnVsbCkgeworCQkJCXRoaXMu
+cmVzb2x2ZVR5cGUoKEJsb2NrU2NvcGUpdGhpcy5zY29wZS5wYXJlbnQpOworCQkJfQogCQkJdGhp
+cy5hY3R1YWxNZXRob2RCaW5kaW5nID0gbmV3IE1ldGhvZEJpbmRpbmcodGhpcy5iaW5kaW5nLm1v
+ZGlmaWVycywgdGhpcy5iaW5kaW5nLnNlbGVjdG9yLCB0aGlzLmJpbmRpbmcucmV0dXJuVHlwZSwg
+CiAJCQkJCXRoaXMuYmluZGluZyBpbnN0YW5jZW9mIFN5bnRoZXRpY01ldGhvZEJpbmRpbmcgPyB0
+aGlzLmRlc2NyaXB0b3IucGFyYW1ldGVycyA6IHRoaXMuYmluZGluZy5wYXJhbWV0ZXJzLCAgLy8g
+cmV0YWluIGFueSBmYXVsdHMgaW4gcGFyYW1ldGVyIGxpc3QuCiAJCQkJCQkJdGhpcy5iaW5kaW5n
+LnRocm93bkV4Y2VwdGlvbnMsIHRoaXMuYmluZGluZy5kZWNsYXJpbmdDbGFzcyk7CmRpZmYgLS1n
+aXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJu
+YWwvY29tcGlsZXIvcGFyc2VyL1BhcnNlci5qYXZhIGIvb3JnLmVjbGlwc2UuamR0LmNvcmUvY29t
+cGlsZXIvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvbXBpbGVyL3BhcnNlci9QYXJzZXIuamF2
+YQppbmRleCAyZmU5NDAxLi4wZGQ3NzNlIDEwMDY0NAotLS0gYS9vcmcuZWNsaXBzZS5qZHQuY29y
+ZS9jb21waWxlci9vcmcvZWNsaXBzZS9qZHQvaW50ZXJuYWwvY29tcGlsZXIvcGFyc2VyL1BhcnNl
+ci5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2NvbXBpbGVyL29yZy9lY2xpcHNlL2pk
+dC9pbnRlcm5hbC9jb21waWxlci9wYXJzZXIvUGFyc2VyLmphdmEKQEAgLTEwMTAsNyArMTAxMCw3
+IEBACiBwcm90ZWN0ZWQgaW50IHVuc3RhY2tlZEFjdCA9IEVSUk9SX0FDVElPTjsKIHByaXZhdGUg
+Ym9vbGVhbiBoYWx0T25TeW50YXhFcnJvciA9IGZhbHNlOwogcHJpdmF0ZSBib29sZWFuIHRvbGVy
+YXRlRGVmYXVsdENsYXNzTWV0aG9kcyA9IGZhbHNlOwotcHJpdmF0ZSBib29sZWFuIHByb2Nlc3Np
+bmdMYW1iZGFQYXJhbWV0ZXJMaXN0ID0gZmFsc2U7Citwcm90ZWN0ZWQgYm9vbGVhbiBwcm9jZXNz
+aW5nTGFtYmRhUGFyYW1ldGVyTGlzdCA9IGZhbHNlOwogcHJpdmF0ZSBib29sZWFuIGV4cGVjdFR5
+cGVBbm5vdGF0aW9uID0gZmFsc2U7CiAKIC8vIHJlc3VtZU9uU3ludGF4RXJyb3IgY29kZXM6CmRp
+ZmYgLS1naXQgYS9vcmcuZWNsaXBzZS5qZHQuY29yZS9kb20vb3JnL2VjbGlwc2UvamR0L2NvcmUv
+ZG9tL1R5cGVCaW5kaW5nLmphdmEgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9kb20vb3JnL2VjbGlw
+c2UvamR0L2NvcmUvZG9tL1R5cGVCaW5kaW5nLmphdmEKaW5kZXggMTQwZDNlMi4uMTI3YWU2MyAx
+MDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0LmNvcmUvZG9tL29yZy9lY2xpcHNlL2pkdC9jb3Jl
+L2RvbS9UeXBlQmluZGluZy5qYXZhCisrKyBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL2RvbS9vcmcv
+ZWNsaXBzZS9qZHQvY29yZS9kb20vVHlwZUJpbmRpbmcuamF2YQpAQCAtMzAsNiArMzAsNyBAQAog
+aW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuTWV0aG9kQmlu
+ZGluZzsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIubG9va3VwLlBh
+Y2thZ2VCaW5kaW5nOwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5s
+b29rdXAuUGFyYW1ldGVyaXplZFR5cGVCaW5kaW5nOworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5p
+bnRlcm5hbC5jb21waWxlci5sb29rdXAuUG9seVR5cGVCaW5kaW5nOwogaW1wb3J0IG9yZy5lY2xp
+cHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuUmF3VHlwZUJpbmRpbmc7CiBpbXBvcnQg
+b3JnLmVjbGlwc2UuamR0LmludGVybmFsLmNvbXBpbGVyLmxvb2t1cC5SZWZlcmVuY2VCaW5kaW5n
+OwogaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5sb29rdXAuU2NvcGU7
+CkBAIC04MTEsNyArODEyLDcgQEAKIAkJCQkJYnVmZmVyLmFwcGVuZChnZXROYW1lKCkpOwogCQkJ
+CQlyZXR1cm4gU3RyaW5nLnZhbHVlT2YoYnVmZmVyKTsKIAkJCQl9Ci0JCQkJUGFja2FnZUJpbmRp
+bmcgcGFja2FnZUJpbmRpbmcgPSB0aGlzLmJpbmRpbmcuZ2V0UGFja2FnZSgpOworCQkJCVBhY2th
+Z2VCaW5kaW5nIHBhY2thZ2VCaW5kaW5nID0gdGhpcy5iaW5kaW5nIGluc3RhbmNlb2YgUG9seVR5
+cGVCaW5kaW5nID8gbnVsbCA6IHRoaXMuYmluZGluZy5nZXRQYWNrYWdlKCk7CiAJCQkJYnVmZmVy
+ID0gbmV3IFN0cmluZ0J1ZmZlcigpOwogCQkJCWlmIChwYWNrYWdlQmluZGluZyAhPSBudWxsICYm
+IHBhY2thZ2VCaW5kaW5nLmNvbXBvdW5kTmFtZSAhPSBDaGFyT3BlcmF0aW9uLk5PX0NIQVJfQ0hB
+UikgewogCQkJCQlidWZmZXIuYXBwZW5kKENoYXJPcGVyYXRpb24uY29uY2F0V2l0aChwYWNrYWdl
+QmluZGluZy5jb21wb3VuZE5hbWUsICcuJykpLmFwcGVuZCgnLicpOwpkaWZmIC0tZ2l0IGEvb3Jn
+LmVjbGlwc2UuamR0LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvdXRp
+bC9Db21tZW50UmVjb3JkZXJQYXJzZXIuamF2YSBiL29yZy5lY2xpcHNlLmpkdC5jb3JlL21vZGVs
+L29yZy9lY2xpcHNlL2pkdC9pbnRlcm5hbC9jb3JlL3V0aWwvQ29tbWVudFJlY29yZGVyUGFyc2Vy
+LmphdmEKaW5kZXggM2YyN2ZjOC4uZjBkOTA3ZCAxMDA2NDQKLS0tIGEvb3JnLmVjbGlwc2UuamR0
+LmNvcmUvbW9kZWwvb3JnL2VjbGlwc2UvamR0L2ludGVybmFsL2NvcmUvdXRpbC9Db21tZW50UmVj
+b3JkZXJQYXJzZXIuamF2YQorKysgYi9vcmcuZWNsaXBzZS5qZHQuY29yZS9tb2RlbC9vcmcvZWNs
+aXBzZS9qZHQvaW50ZXJuYWwvY29yZS91dGlsL0NvbW1lbnRSZWNvcmRlclBhcnNlci5qYXZhCkBA
+IC0xMSw2ICsxMSw3IEBACiBwYWNrYWdlIG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5jb3JlLnV0
+aWw7CiAKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIuYXN0LkNvbXBp
+bGF0aW9uVW5pdERlY2xhcmF0aW9uOworaW1wb3J0IG9yZy5lY2xpcHNlLmpkdC5pbnRlcm5hbC5j
+b21waWxlci5hc3QuTGFtYmRhRXhwcmVzc2lvbjsKIGltcG9ydCBvcmcuZWNsaXBzZS5qZHQuaW50
+ZXJuYWwuY29tcGlsZXIuY2xhc3NmbXQuQ2xhc3NGaWxlQ29uc3RhbnRzOwogaW1wb3J0IG9yZy5l
+Y2xpcHNlLmpkdC5pbnRlcm5hbC5jb21waWxlci5pbXBsLkNvbXBpbGVyT3B0aW9uczsKIGltcG9y
+dCBvcmcuZWNsaXBzZS5qZHQuaW50ZXJuYWwuY29tcGlsZXIucGFyc2VyLlBhcnNlcjsKQEAgLTI2
+NSw0ICsyNjYsMTcgQEAKIAkJcHVzaE9uQ29tbWVudHNTdGFjaygwLCB0aGlzLnNjYW5uZXIuY29t
+bWVudFB0cik7CiAJCXN1cGVyLnJlc2V0TW9kaWZpZXJzKCk7CiAJfQorCXByb3RlY3RlZCB2b2lk
+IGNvbnN1bWVOZXN0ZWRMYW1iZGEoKSB7CisJCS8vIE5lc3RlZExhbWJkYSA6Oj0gJGVtcHR5IC0g
+d2UgZ2V0IGhlcmUganVzdCBhZnRlciB0aGUgdHlwZStwYXJlbnRoZXNpcyBlbGlkZWQgc2luZ2xl
+dG9uIHBhcmFtZXRlciBvciBqdXN0IGJlZm9yZSB0aGUgJygnIG9mIHRoZSBwYXJhbWV0ZXIgbGlz
+dC4gCisJCWNvbnN1bWVOZXN0ZWRUeXBlKCk7CisJCXRoaXMubmVzdGVkTWV0aG9kW3RoaXMubmVz
+dGVkVHlwZV0gKys7CisJCUxhbWJkYUV4cHJlc3Npb24gbGFtYmRhID0gbmV3IExhbWJkYUV4cHJl
+c3Npb24odGhpcy5jb21waWxhdGlvblVuaXQuY29tcGlsYXRpb25SZXN1bHQsIHRydWUpOworCQlw
+dXNoT25Bc3RTdGFjayhsYW1iZGEpOworCQlpZiAodGhpcy5jdXJyZW50RWxlbWVudCAhPSBudWxs
+KSB7CisJCQl0aGlzLmN1cnJlbnRFbGVtZW50ID0gdGhpcy5jdXJyZW50RWxlbWVudC5hZGQobGFt
+YmRhLCAwKTsKKwkJCXRoaXMubGFzdENoZWNrUG9pbnQgPSB0aGlzLnNjYW5uZXIuY3VycmVudFBv
+c2l0aW9uOworCQkJdGhpcy5sYXN0SWdub3JlZFRva2VuID0gLTE7CisJCX0KKwkJdGhpcy5wcm9j
+ZXNzaW5nTGFtYmRhUGFyYW1ldGVyTGlzdCA9IHRydWU7CQorCX0KIH0=
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

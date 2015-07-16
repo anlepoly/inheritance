@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>418096</bug_id>
+          
+          <creation_ts>2013-09-26 09:26:00 -0400</creation_ts>
+          <short_desc>[1.8][compiler] Misattribution of annotations with C style array declarations</short_desc>
+          <delta_ts>2013-09-28 18:37:04 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>4.4</version>
+          <rep_platform>PC</rep_platform>
+          <op_sys>Windows 7</op_sys>
+          <bug_status>RESOLVED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>BETA J8</target_milestone>
+          
+          <blocked>287648</blocked>
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Srikanth Sankaran">srikanth_sankaran</reporter>
+          <assigned_to name="Srikanth Sankaran">srikanth_sankaran</assigned_to>
+          <cc>jarthana</cc>
+    
+    <cc>manpalat</cc>
+    
+    <cc>markus_keller</cc>
+    
+    <cc>stephan.herrmann</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2311097</commentid>
+    <comment_count>0</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-09-26 09:26:03 -0400</bug_when>
+    <thetext>BETA_JAVA8:
+
+We just ran into this testing APT changes for JSR308.
+
+Given:
+
+// ---
+import org.eclipse.jdt.annotation.NonNull;
+import org.eclipse.jdt.annotation.Nullable;
+
+
+public class X {
+	int @Nullable [] f @NonNull [] = null; 
+}
+// ----
+
+
+on the compiler side, when incorrectly fold the extra dimensions into total 
+dimensions and end up with 
+
+int @Nullable [] @NonNull [] f;
+
+It should be 
+
+int @NonNull [] @Nullable[] f;
+
+Since in a C style array declaration, the extra dimension should bind
+more readily with the field than any type components preceding it.
+
+While the compiler side story is easy to fix, it will break DOM/AST encoding
+unless care it taken: some original dimensions could start showing up as
+extra dimensions and vice versa !
+
+I think it is not hard to fix cleanly end to end. I&apos;ll see what can be done.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2311111</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-09-26 09:36:39 -0400</bug_when>
+    <thetext>(In reply to Srikanth Sankaran from comment #0)
+
+&gt; I think it is not hard to fix cleanly end to end.
+
+Did I write that ? We have different notions of elementType to begin with :)
+or should that emoticon be :( :)
+
+Jay also reported that given:
+
+@TypeUseAnnotation(&quot;a&quot;) String @TypeUseAnnotation(&quot;a1&quot;) [] @TypeUseAnnotation(&quot;a2&quot;) [] @TypeUseAnnotation(&quot;a3&quot;) [] _field2 , _field3 @TypeUseAnnotation(&quot;a4&quot;) [][] = null;
+
+when looking at the annotations on dimensions for _field3, all but a4 was
+missing.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2311388</commentid>
+    <comment_count>2</comment_count>
+      <attachid>235876</attachid>
+    <who name="Jay Arthanareeswaran">jarthana</who>
+    <bug_when>2013-09-27 01:10:00 -0400</bug_when>
+    <thetext>Created attachment 235876
+Test case
+
+This is a patch with new tests in TypeBindingTests308 for the failing scenarios. This only tests the DOM bindings, but should be good enough.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2311925</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-09-28 07:59:48 -0400</bug_when>
+    <thetext>(In reply to Jayaprakash Arthanareeswaran from comment #2)
+&gt; Created attachment 235876 [details]
+&gt; Test case
+&gt; 
+&gt; This is a patch with new tests in TypeBindingTests308 for the failing
+&gt; scenarios. This only tests the DOM bindings, but should be good enough.
+
+Thanks, but no thanks :) The test has a bug in it, as you traverse the
+component types, it is not updating the binding, but expects different
+annotations, but fortunately didn&apos;t cause too much loss of time.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2311960</commentid>
+    <comment_count>4</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-09-28 13:36:47 -0400</bug_when>
+    <thetext>Fix and tests released here: http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=5663a1e0521003a6152962cf3fce8cc9ca6a4647
+
+I have disabled one failing test org.eclipse.jdt.core.tests.dom.TypeBindingTests308._test005() temporarily.
+I&apos;ll fix it before resolving this bug.
+
+Solution sketch:
+
+- Make the field annotationsOnDimensions private and force clients
+to use an accessor which takes a boolesn indicating whether clients
+want to see annotations on dimensions in &quot;source order&quot; or &quot;external
+order&quot;. The former would be used by ASTConverter, Formatters, AST vistors
+etc. The latter would be used in binding creation, toString() outputs and
+code generation.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2311981</commentid>
+    <comment_count>5</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2013-09-28 18:37:04 -0400</bug_when>
+    <thetext>http://git.eclipse.org/c/jdt/eclipse.jdt.core.git/commit/?h=BETA_JAVA8&amp;id=c611850252ecccb24f660547467e0d555dd4fb70 takes care of that
+failure and this is ready to be resolved.</thetext>
+  </long_desc>
+      
+          <attachment
+              isobsolete="0"
+              ispatch="1"
+              isprivate="0"
+          >
+            <attachid>235876</attachid>
+            <date>2013-09-27 01:10:00 -0400</date>
+            <delta_ts>2013-09-27 01:10:00 -0400</delta_ts>
+            <desc>Test case</desc>
+            <filename>Test-for-bug-418096.patch</filename>
+            <type>text/plain</type>
+            <size>2728</size>
+            <attacher name="Jay Arthanareeswaran">jarthana</attacher>
+            
+              <data encoding="base64">IyMjIEVjbGlwc2UgV29ya3NwYWNlIFBhdGNoIDEuMAojUCBvcmcuZWNsaXBzZS5qZHQuY29yZS50
+ZXN0cy5tb2RlbApkaWZmIC0tZ2l0IHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9kb20v
+VHlwZUJpbmRpbmdUZXN0czMwOC5qYXZhIHNyYy9vcmcvZWNsaXBzZS9qZHQvY29yZS90ZXN0cy9k
+b20vVHlwZUJpbmRpbmdUZXN0czMwOC5qYXZhCmluZGV4IDNlNTIwZTkuLjEzZjA2YzkgMTAwNjQ0
+Ci0tLSBzcmMvb3JnL2VjbGlwc2UvamR0L2NvcmUvdGVzdHMvZG9tL1R5cGVCaW5kaW5nVGVzdHMz
+MDguamF2YQorKysgc3JjL29yZy9lY2xpcHNlL2pkdC9jb3JlL3Rlc3RzL2RvbS9UeXBlQmluZGlu
+Z1Rlc3RzMzA4LmphdmEKQEAgLTEwNDMsMyArMTA0MywzOCBAQAogCQl2ZXJpZnlBbm5vdGF0aW9u
+T25UeXBlKChUeXBlKSB0eXBlQXJncy5nZXQoMCksIG5ldyBTdHJpbmdbXXsiQE1hcmtlcjMoKSJ9
+KTsNCiAJfQ0KKwkvLyBodHRwczovL2J1Z3MuZWNsaXBzZS5vcmcvYnVncy9zaG93X2J1Zy5jZ2k/
+aWQ9NDE4MDk2DQorCXB1YmxpYyB2b2lkIHRlc3QwMjgoKSB0aHJvd3MgRXhjZXB0aW9uIHsNCisJ
+CVN0cmluZyBjb250ZW50cyA9IA0KKwkJCQkicHVibGljIGNsYXNzIFgge1xuIiArDQorCQkJCSIg
+ICAgQFR5cGVVc2VBbm5vdGF0aW9uKFwiYVwiKSBTdHJpbmcgQFR5cGVVc2VBbm5vdGF0aW9uKFwi
+YTFcIikgW10gQFR5cGVVc2VBbm5vdGF0aW9uKFwiYTJcIikgW10gX2ZpZWxkMiBAVHlwZVVzZUFu
+bm90YXRpb24oXCJhM1wiKSBbXSwgX2ZpZWxkMyBAVHlwZVVzZUFubm90YXRpb24oXCJhNFwiKSBb
+XVtdID0gbnVsbDtcbiIgKw0KKwkJCQkifSIgKw0KKwkJCQkiQGphdmEubGFuZy5hbm5vdGF0aW9u
+LlRhcmdldCAoamF2YS5sYW5nLmFubm90YXRpb24uRWxlbWVudFR5cGUuVFlQRV9VU0UpXG4iICsN
+CisJCQkJIkBpbnRlcmZhY2UgVHlwZVVzZUFubm90YXRpb24ge1xuIiArDQorCQkJCSIJU3RyaW5n
+IHZhbHVlKCkgZGVmYXVsdCBcIlwiO1xuIiArDQorCQkJCSJ9XG4iOw0KKwkJdGhpcy53b3JraW5n
+Q29weSA9IGdldFdvcmtpbmdDb3B5KCIvQ29udmVydGVyMTgvc3JjL1guamF2YSIsIHRydWUpOw0K
+KwkJQVNUTm9kZSBub2RlID0gYnVpbGRBU1QoY29udGVudHMsIHRoaXMud29ya2luZ0NvcHkpOw0K
+KwkJYXNzZXJ0RXF1YWxzKCJOb3QgYSBjb21waWxhdGlvbiB1bml0IiwgQVNUTm9kZS5DT01QSUxB
+VElPTl9VTklULCBub2RlLmdldE5vZGVUeXBlKCkpOw0KKwkJQ29tcGlsYXRpb25Vbml0IGNvbXBp
+bGF0aW9uVW5pdCA9IChDb21waWxhdGlvblVuaXQpIG5vZGU7DQorCQlhc3NlcnRQcm9ibGVtc1Np
+emUoY29tcGlsYXRpb25Vbml0LCAwKTsNCisJCUxpc3QgdHlwZXMgPSBjb21waWxhdGlvblVuaXQu
+dHlwZXMoKTsNCisJCWFzc2VydEVxdWFscygiSW5jb3JyZWN0IG5vIG9mIHR5cGVzIiwgMiwgdHlw
+ZXMuc2l6ZSgpKTsNCisJCVR5cGVEZWNsYXJhdGlvbiB0eXBlRGVjbCA9IChUeXBlRGVjbGFyYXRp
+b24pIHR5cGVzLmdldCgwKTsNCisJCUZpZWxkRGVjbGFyYXRpb25bXSBmaWVsZHMgPSB0eXBlRGVj
+bC5nZXRGaWVsZHMoKTsNCisJCWFzc2VydEVxdWFscygiSW5jb3JyZWN0IG5vIG9mIGZpZWxkcyIs
+IDEsIGZpZWxkcy5sZW5ndGgpOw0KKwkJRmllbGREZWNsYXJhdGlvbiBmaWVsZCA9IGZpZWxkc1sw
+XTsNCisJCUxpc3QgZnJhZ21lbnRzID0gZmllbGQuZnJhZ21lbnRzKCk7DQorCQlhc3NlcnRFcXVh
+bHMoIkluY29ycmVjdCBubyBvZiBmcmFnbWVudHMiLCAyLCBmcmFnbWVudHMuc2l6ZSgpKTsNCisJ
+CVZhcmlhYmxlRGVjbGFyYXRpb25GcmFnbWVudCBmcmFnbWVudCA9IChWYXJpYWJsZURlY2xhcmF0
+aW9uRnJhZ21lbnQpIGZyYWdtZW50cy5nZXQoMCk7DQorCQlJVHlwZUJpbmRpbmcgYmluZGluZyA9
+IGZyYWdtZW50LnJlc29sdmVCaW5kaW5nKCkuZ2V0VHlwZSgpOw0KKwkJdmVyaWZ5QW5ub3RhdGlv
+bnNPbkJpbmRpbmcoYmluZGluZywgbmV3IFN0cmluZ1tdeyJAVHlwZVVzZUFubm90YXRpb24odmFs
+dWUgPSBhMykifSk7DQorCQl2ZXJpZnlBbm5vdGF0aW9uc09uQmluZGluZyhiaW5kaW5nLmdldENv
+bXBvbmVudFR5cGUoKSwgbmV3IFN0cmluZ1tdeyJAVHlwZVVzZUFubm90YXRpb24odmFsdWUgPSBh
+MSkifSk7DQorCQl2ZXJpZnlBbm5vdGF0aW9uc09uQmluZGluZyhiaW5kaW5nLmdldENvbXBvbmVu
+dFR5cGUoKSwgbmV3IFN0cmluZ1tdeyJAVHlwZVVzZUFubm90YXRpb24odmFsdWUgPSBhMikifSk7
+DQorCQlmcmFnbWVudCA9IChWYXJpYWJsZURlY2xhcmF0aW9uRnJhZ21lbnQpIGZyYWdtZW50cy5n
+ZXQoMSk7DQorCQliaW5kaW5nID0gZnJhZ21lbnQucmVzb2x2ZUJpbmRpbmcoKS5nZXRUeXBlKCk7
+DQorCQl2ZXJpZnlBbm5vdGF0aW9uc09uQmluZGluZyhiaW5kaW5nLCBuZXcgU3RyaW5nW117IkBU
+eXBlVXNlQW5ub3RhdGlvbih2YWx1ZSA9IGE0KSJ9KTsNCisJCXZlcmlmeUFubm90YXRpb25zT25C
+aW5kaW5nKGJpbmRpbmcuZ2V0Q29tcG9uZW50VHlwZSgpLCBuZXcgU3RyaW5nW117fSk7DQorCQl2
+ZXJpZnlBbm5vdGF0aW9uc09uQmluZGluZyhiaW5kaW5nLmdldENvbXBvbmVudFR5cGUoKSwgbmV3
+IFN0cmluZ1tdeyJAVHlwZVVzZUFubm90YXRpb24odmFsdWUgPSBhMSkifSk7DQorCQl2ZXJpZnlB
+bm5vdGF0aW9uc09uQmluZGluZyhiaW5kaW5nLmdldENvbXBvbmVudFR5cGUoKSwgbmV3IFN0cmlu
+Z1tdeyJAVHlwZVVzZUFubm90YXRpb24odmFsdWUgPSBhMikifSk7DQorCX0NCiB9DQ==
+</data>
+
+          </attachment>
+      
+
+    </bug>
+
+</bugzilla>

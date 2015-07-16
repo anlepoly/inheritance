@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<!DOCTYPE bugzilla SYSTEM "https://bugs.eclipse.org/bugs/page.cgi?id=bugzilla.dtd">
+
+<bugzilla version="4.4.7"
+          urlbase="https://bugs.eclipse.org/bugs/"
+          
+          maintainer="webmaster@eclipse.org"
+>
+
+    <bug>
+          <bug_id>381445</bug_id>
+          
+          <creation_ts>2012-06-01 18:12:00 -0400</creation_ts>
+          <short_desc>[compiler][resource] Can the resource leak check be made aware of Closeables.closeQuietly?</short_desc>
+          <delta_ts>2013-06-11 11:08:10 -0400</delta_ts>
+          <reporter_accessible>1</reporter_accessible>
+          <cclist_accessible>1</cclist_accessible>
+          <classification_id>2</classification_id>
+          <classification>Eclipse</classification>
+          <product>JDT</product>
+          <component>Core</component>
+          <version>3.8</version>
+          <rep_platform>All</rep_platform>
+          <op_sys>All</op_sys>
+          <bug_status>VERIFIED</bug_status>
+          <resolution>FIXED</resolution>
+          
+          
+          <bug_file_loc></bug_file_loc>
+          <status_whiteboard></status_whiteboard>
+          <keywords></keywords>
+          <priority>P3</priority>
+          <bug_severity>normal</bug_severity>
+          <target_milestone>4.3 M4</target_milestone>
+          
+          
+          <everconfirmed>1</everconfirmed>
+          <reporter name="Tor Norbye">tor.norbye</reporter>
+          <assigned_to name="Stephan Herrmann">stephan.herrmann</assigned_to>
+          <cc>markus_keller</cc>
+    
+    <cc>matthias.keller</cc>
+    
+    <cc>michael.veit</cc>
+    
+    <cc>srikanth_sankaran</cc>
+    
+    <cc>wangyizhuo</cc>
+          
+          <votes>0</votes>
+
+      
+
+      
+
+      
+
+          <comment_sort_order>oldest_to_newest</comment_sort_order>  
+          <long_desc isprivate="0" >
+    <commentid>2118026</commentid>
+    <comment_count>0</comment_count>
+    <who name="Tor Norbye">tor.norbye</who>
+    <bug_when>2012-06-01 18:12:35 -0400</bug_when>
+    <thetext>Build Identifier: 20120524-0130 
+
+The new resource leak check in Eclipse 4.2 is really nice.
+
+However, in code we generally use Guava to close up resources, since we can do it with a single line:
+     Closeables.closeQuietly(input);
+instead of the equivalent but much more verbose
+    if (input != null) {
+        try {
+            input.close();
+        } catch (IOException ioe) {
+            // ignore
+        }
+    }
+
+I&apos;ve started adding @SuppressWarnings(&quot;resource&quot;) to hide all the places where the code was correctly closing the resource but Eclipse was complaining, but I think it would be great if Eclipse could know about these special cases and just consider Closeables.close and Closeables.closeQuietly as a wrapper for input.close().
+
+Similarly, in some JUnit tests, I had places where I had 
+    assertNotNull(x);
+and I would later get a warning from the null analysis that &quot;x may be null&quot;. When I inserted a &quot;assert x != null&quot; after the assertNotNull JUnit call, the warning went away, but in a similar spirit to the Closeables.closeQuietly issue, it would be nice if this JUnit API call could be known to be synonymous with assert != null.
+
+Reproducible: Always
+
+Steps to Reproduce:
+1. Take a valid InputStream code snippet (where the input stream is properly closed), and remove the input.close() call and replace it with Guava&apos;s Closeables.closeQuietly.
+2. Observe that the resource checker now believes the resource is no longer properly closed.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2118060</commentid>
+    <comment_count>1</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-06-01 22:16:23 -0400</bug_when>
+    <thetext>(In reply to comment #0)
+
+&gt; The new resource leak check in Eclipse 4.2 is really nice.
+
+Thank you ! Thanks Stephan.
+
+Stephan, please follow up. TIA.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2118120</commentid>
+    <comment_count>2</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-06-02 06:13:47 -0400</bug_when>
+    <thetext>The proposal makes sense and technically it should be easy to implement.
+
+Just in one regard this would set a precedent that AFAIK we so far avoided: to hard-code a special case for a class that is neither part of the JDK nor the Eclipse SDK.
+
+@Srikanth, do you see an issue with special-casing a Guava class?
+
+Alternatively, we could of course let users specify a list of methods that are known to close the closeable passed as an argument, but that sounds a bit like overkill to me.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2118601</commentid>
+    <comment_count>3</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-06-04 09:11:25 -0400</bug_when>
+    <thetext>(In reply to comment #2)
+
+&gt; @Srikanth, do you see an issue with special-casing a Guava class?
+
+Sorry, I am clueless as to how widely adopted Guava is and how much of an 
+industry standard de facto or de jure it is. Markus, can you weigh in on
+this ? 
+
+&gt; Alternatively, we could of course let users specify a list of methods that are
+&gt; known to close the closeable passed as an argument, but that sounds a bit like
+&gt; overkill to me.
+
+This would appear to be the standard way of doing things ...</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2118713</commentid>
+    <comment_count>4</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-06-04 11:22:22 -0400</bug_when>
+    <thetext>I think we can open up a bit and also hardcode utility methods that appear in widely used and well-supported general libraries like Guava and Apache Commons that just fill gaps in the JDK APIs.
+
+However, I wouldn&apos;t support domain-specific libraries or cases where maturity of the APIs are questionable.
+
+&gt; let users specify a list of methods
+We shouldn&apos;t bother users here. The problem originates in Eclipse (which implements the warning without further flow analysis) or in the library (which has no way to influence Eclipse), so it should not be something every user has to care about.
+
+As a more general solution, I would rather improve the analysis so that it supports such helper methods natively, e.g. by expanding the analysis into static helper methods that take a resource as an argument.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2118754</commentid>
+    <comment_count>5</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-06-04 12:00:12 -0400</bug_when>
+    <thetext>(In reply to comment #4)
+&gt; As a more general solution, I would rather improve the analysis so that it
+&gt; supports such helper methods natively, e.g. by expanding the analysis into
+&gt; static helper methods that take a resource as an argument.
+
+Sounds cool, but seems to require two things we haven&apos;t touched at all so far:
+a) flow analysis based on byte code
+b) persisting analysis results
+
+Unless I&apos;m missing a much simpler solution this options sounds like: 
+&quot;not for 4.x&quot; ;-P
+
+b) could *perhaps* become viable after we&apos;ve tackled the null-annotations-for-libraries issue, I could image some re-use of infra-structure there.
+
+
+So, a special case for Guava&apos;s Closeables will be it for now?</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2118764</commentid>
+    <comment_count>6</comment_count>
+    <who name="Markus Keller">markus_keller</who>
+    <bug_when>2012-06-04 12:11:42 -0400</bug_when>
+    <thetext>&gt; So, a special case for Guava&apos;s Closeables will be it for now?
+
+Yes (with &apos;now &gt; 3.8&apos;;-).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2118782</commentid>
+    <comment_count>7</comment_count>
+    <who name="Tor Norbye">tor.norbye</who>
+    <bug_when>2012-06-04 12:30:12 -0400</bug_when>
+    <thetext>First, note that there&apos;s a similar issue for nullness with the assertNotNull annotation in JUnit; in my unit tests I&apos;ve had to both insert assertNotNull (for JUnit) and assert != null (for Eclipse null analysis). Should I file a separate issue for that? (It&apos;s lower priority for me than the close issue, since I&apos;m not as picky about removing all warnings in unit tests as I am in non-test code).
+
+On the topic of close/closeQuietly: Another possibility rather than to hardcode it for Guava, is to ignore the class name. If in a resource block you see a static method call to a method called &quot;close&quot; or &quot;closeQuietly&quot; which takes a single parameter, the resource, then consider that equivalent to resource.close(). This would cover both Guava and Apache Commons -- and possibly other frameworks or libraries as well.  It&apos;s hard to imagine that a method named close, which takes our resource as a parameter, wouldn&apos;t be doing the necessary cleanup that we&apos;re looking for.
+
+I was going to bring this up in the context of null analysis. Right now there&apos;s a setting where I can specify what my @Nullable and @NonNull annotations are, e.g.
+org.eclipse.jdt.core.prefs:org.eclipse.jdt.core.compiler.annotation.nonnull=com.android.annotations.NonNull
+
+What Findbugs does is to simply *ignore* the package name, and consider *any* annotation named &quot;NonNull&quot;, regardless of its package prefix, as a non-null annotation. In addition to not requiring the user to configure annotations prior to analysis, this has the very desirable property that it works on codebases with multiple nullness annotations.  Imagine for example that library A uses JSR 308 nullness annotations, and library B uses Eclipse nullness annotations; if your project depends on both, how do you configure your nullness annotation settings? If Eclipse would simply use the package name, it would consider them equivalent. (And this would also allow it to consider multiple synonyms, such as both @NonNull and @NotNull).
+
+Anyway, I&apos;ve strayed a bit from the original bug here, but my point was that there could be an advantage in simply considering the method name in order to hardcode this to a particular API, since it&apos;s likely that this will be helpful, and unlikely that this will hide real leaks where there&apos;s some method named close taking the resource which does in fact not actually close the resource. 
+
+(If you agree with the findbugs approach to null annotations, I&apos;d be happy to file a separate issue on that.)</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2119068</commentid>
+    <comment_count>8</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-06-04 19:55:44 -0400</bug_when>
+    <thetext>(In reply to comment #4)
+
+&gt; &gt; let users specify a list of methods
+&gt; We shouldn&apos;t bother users here. The problem originates in Eclipse (which
+
+Agreed.
+
+(In reply to comment #5)
+
+&gt; So, a special case for Guava&apos;s Closeables will be it for now?
+
+Yes,
+
+(In reply to comment #7)
+&gt; First, note that there&apos;s a similar issue for nullness with the assertNotNull
+&gt; annotation in JUnit; in my unit tests I&apos;ve had to both insert assertNotNull
+&gt; (for JUnit) and assert != null (for Eclipse null analysis). Should I file a
+&gt; separate issue for that? (It&apos;s lower priority for me than the close issue,
+
+Yes, please.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2121384</commentid>
+    <comment_count>9</comment_count>
+    <who name="Tor Norbye">tor.norbye</who>
+    <bug_when>2012-06-07 18:32:23 -0400</bug_when>
+    <thetext>As requested I&apos;ve filed
+ https://bugs.eclipse.org/bugs/show_bug.cgi?id=382069
+to track the null-assertion portion.</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2165329</commentid>
+    <comment_count>10</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-09-27 15:12:45 -0400</bug_when>
+    <thetext>*** Bug 390530 has been marked as a duplicate of this bug. ***</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2189772</commentid>
+    <comment_count>11</comment_count>
+    <who name="Stephan Herrmann">stephan.herrmann</who>
+    <bug_when>2012-12-02 16:31:45 -0500</bug_when>
+    <thetext>Released for 4.3 M4 via commit 277792ba446c3713bcfdc898c37875d45fc06c18.
+
+The fix covers the following well-known methods:
+- com.google.common.io.Closeables.closeQuietly(Closeable)
+- com.google.common.io.Closeables.close(Closeable,boolean)
+- org.apache.commons.io.IOUtils.closeQuietly(Closeable) (suggested in bug 390530).</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2192811</commentid>
+    <comment_count>12</comment_count>
+    <who name="Srikanth Sankaran">srikanth_sankaran</who>
+    <bug_when>2012-12-11 03:15:22 -0500</bug_when>
+    <thetext>Verified for 4.3 M4 using build I20121210-2000</thetext>
+  </long_desc><long_desc isprivate="0" >
+    <commentid>2271262</commentid>
+    <comment_count>13</comment_count>
+    <who name="Michael Veit">michael.veit</who>
+    <bug_when>2013-06-11 11:08:10 -0400</bug_when>
+    <thetext>One suggestion:
+
+Instead of hard-coding the methods which close a Closeable, it would be much better to support an annotation in these interfaces.
+These annotations could tell that the method is going to close the Closeable.
+
+e.g.
+@Closes(&quot;closeable&quot;)
+public static void close(@Nullable
+         Closeable closeable,
+         boolean swallowIOException)
+                  throws IOException
+
+This approach would be much cleaner than @SuppressWarnings or hard-coding of specific interfaces.</thetext>
+  </long_desc>
+      
+      
+
+    </bug>
+
+</bugzilla>
